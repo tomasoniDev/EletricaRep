@@ -456,37 +456,36 @@ export default function Home() {
   }
 
   if (!isAuthenticated) {
+    const isLoginMode = authMode === "login";
+    const isRegisterMode = authMode === "register";
+    const isResetMode = authMode === "reset";
+
     return (
       <main className="login-page">
         <form className="login-card" onSubmit={signIn}>
           <Image className="login-logo" src="/tomasoni-logo-reference.png" alt="Tomasoni" width={300} height={80} priority />
-          <div>
-            <p className="eyebrow">Acesso corporativo</p>
-            <h1>Relatórios de atendimento</h1>
-          </div>
-          <p>Entre com seu e-mail e senha corporativos para acessar os dados da empresa.</p>
-          <div className="auth-toggle" role="tablist" aria-label="Modo de acesso">
-            <button className={authMode === "login" ? "active" : ""} type="button" onClick={() => setAuthMode("login")}>Entrar</button>
-            <button className={authMode === "register" ? "active" : ""} type="button" onClick={() => setAuthMode("register")}>Criar acesso</button>
-            <button className={authMode === "reset" ? "active" : ""} type="button" onClick={() => setAuthMode("reset")}>Redefinir senha</button>
-          </div>
           <label>
             E-mail corporativo
             <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder={`nome@${ALLOWED_EMAIL_DOMAINS[0]}`} required />
           </label>
-          {authMode !== "reset" && (
+          {!isResetMode && (
             <label>
               Senha
               <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="Sua senha" required minLength={6} />
             </label>
           )}
-          {authMode === "register" && (
+          {isRegisterMode && (
             <label>
               Confirmar senha
               <input value={passwordConfirmation} onChange={(event) => setPasswordConfirmation(event.target.value)} type="password" placeholder="Confirme sua senha" required minLength={6} />
             </label>
           )}
-          <button className="button primary" type="submit">{authMode === "login" ? "Entrar" : authMode === "register" ? "Criar acesso" : "Enviar link de redefinição"}</button>
+          <button className="button primary" type="submit">{isLoginMode ? "Entrar" : isRegisterMode ? "Criar acesso" : "Enviar link de redefinição"}</button>
+          <div className="auth-links">
+            {!isRegisterMode && <button type="button" onClick={() => setAuthMode("register")}>Criar acesso</button>}
+            {!isResetMode && <button type="button" onClick={() => setAuthMode("reset")}>Esqueceu a senha?</button>}
+            {!isLoginMode && <button type="button" onClick={() => setAuthMode("login")}>Voltar ao login</button>}
+          </div>
           <span className="form-message">{message}</span>
         </form>
       </main>
@@ -536,7 +535,7 @@ export default function Home() {
                         <td>{machine.serial || "-"}</td>
                         <td>{machine.software_version || "-"}</td>
                         <td>{formatDate(lastServiceDate(machine))}</td>
-                        <td><button className="button ghost" onClick={() => deleteMachine(machine.id)}>Excluir</button></td>
+                        <td><button className="icon-button danger" type="button" title="Excluir máquina" aria-label={`Excluir máquina ${machine.code}`} onClick={() => deleteMachine(machine.id)}>×</button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -560,7 +559,7 @@ export default function Home() {
                 <label>Forma de acesso<input name="access_method" defaultValue={selectedMachine?.access_method ?? ""} /></label>
                 <label className="wide">E-mails do cliente<textarea name="emails" rows={3} defaultValue={selectedMachine?.machine_emails?.map((item) => item.email).join("; ") ?? ""} /></label>
               </div>
-              {selectedMachine && <button type="button" className="button ghost" onClick={() => setEditingMachineId(selectedMachine.id)}>Alterar cadastro atual</button>}
+              {selectedMachine && <button type="button" className="icon-button edit" title="Alterar cadastro atual" aria-label="Alterar cadastro atual" onClick={() => setEditingMachineId(selectedMachine.id)}>✎</button>}
             </form>
 
             {selectedMachine && (
@@ -625,7 +624,7 @@ export default function Home() {
               <div className="table-wrap">
                 <table className="compact-table">
                   <thead><tr><th>Nome</th><th>E-mail</th><th>Ações</th></tr></thead>
-                  <tbody>{technicians.map((technician) => <tr key={technician.id}><td>{technician.name}</td><td>{technician.email || "-"}</td><td><button className="button ghost" onClick={() => deleteTechnician(technician.id)}>Excluir</button></td></tr>)}</tbody>
+                  <tbody>{technicians.map((technician) => <tr key={technician.id}><td>{technician.name}</td><td>{technician.email || "-"}</td><td><button className="icon-button danger" type="button" title="Excluir técnico" aria-label={`Excluir técnico ${technician.name}`} onClick={() => deleteTechnician(technician.id)}>×</button></td></tr>)}</tbody>
                 </table>
               </div>
             </section>

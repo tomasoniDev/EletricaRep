@@ -40,7 +40,7 @@ button { cursor: pointer; }
 
 .login-card {
   display: grid;
-  gap: 18px;
+  gap: 16px;
   width: min(440px, calc(100vw - 32px));
   padding: 30px;
   border: 1px solid var(--line);
@@ -87,7 +87,12 @@ button { cursor: pointer; }
 
 .side-nav { display: grid; gap: 8px; }
 
-.logout-button { margin-top: auto; }
+.logout-button {
+  min-height: 34px;
+  margin-top: auto;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
 
 .nav-item {
   width: 100%;
@@ -198,32 +203,47 @@ input:focus, textarea:focus, select:focus {
 .button.primary { background: var(--primary); color: #fff; }
 .button.ghost { border-color: var(--line); background: transparent; }
 
-.auth-toggle {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  border-radius: 8px;
-}
-
-.auth-toggle button {
-  min-height: 40px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-2);
+.icon-button {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
   color: var(--muted);
+  font-size: 1.25rem;
   font-weight: 800;
+  line-height: 1;
 }
 
-.auth-toggle button.active {
-  background: #fff;
-  color: var(--primary-dark);
-  box-shadow: 0 6px 16px rgba(20, 35, 55, 0.08);
-}
+.icon-button:hover { background: var(--surface-2); }
+.icon-button.danger { color: var(--danger); font-size: 1.45rem; }
+.icon-button.edit { color: var(--primary-dark); }
 
 .form-message {
   color: var(--muted);
   line-height: 1.4;
 }
+
+.auth-links {
+  display: flex;
+  justify-content: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: -4px;
+}
+
+.auth-links button {
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  padding: 0;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.auth-links button:hover { color: var(--primary-dark); }
 
 .fields-grid {
   display: grid;
@@ -346,6 +366,7 @@ tbody tr:hover { background: #eef5ff; }
   .workspace, .sidebar { padding: 18px; }
   .topbar, .section-header { align-items: stretch; flex-direction: column; }
   .actions-row, .modal-actions { align-items: stretch; flex-direction: column; }
+  .auth-links { justify-content: center; }
   .fields-grid { grid-template-columns: 1fr; }
   .button { width: 100%; }
 }
