@@ -40,6 +40,8 @@ function authMessage(error: string) {
   if (normalized.includes("email not confirmed")) return "Confirme seu e-mail antes de entrar.";
   if (normalized.includes("user already registered")) return "Usuário já cadastrado.";
   if (normalized.includes("signup is disabled")) return "O cadastro de novos usuários está desativado no Supabase.";
+  if (normalized.includes("email rate limit") || normalized.includes("over_email_send_rate_limit")) return "Limite temporário de envio de e-mails atingido. Aguarde alguns minutos e tente novamente.";
+  if (normalized.includes("for security purposes")) return "Aguarde alguns segundos antes de solicitar um novo envio.";
   if (normalized.includes("password")) return "Verifique a senha informada. Use pelo menos 6 caracteres.";
   return "Não foi possível concluir a autenticação. Verifique os dados e tente novamente.";
 }
@@ -127,14 +129,29 @@ export default function Home() {
 
   async function signIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const normalizedEmail = email.trim().toLowerCase();
 
-    if (!isCorporateEmail(email)) {
+    if (!isCorporateEmail(normalizedEmail)) {
       setMessage("Acesso permitido somente para e-mails corporativos da Tomasoni.");
       return;
     }
 
     if (authMode === "reset") {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      const { data: emailExists, error: lookupError } = await supabase.rpc("auth_email_exists", {
+        input_email: normalizedEmail
+      });
+
+      if (lookupError) {
+        setMessage(dataMessage(lookupError.message));
+        return;
+      }
+
+      if (!emailExists) {
+        setMessage("E-mail não cadastrado.");
+        return;
+      }
+
+      const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
         redirectTo: window.location.origin
       });
 
@@ -157,8 +174,22 @@ export default function Home() {
         return;
       }
 
+      const { data: emailExists, error: lookupError } = await supabase.rpc("auth_email_exists", {
+        input_email: normalizedEmail
+      });
+
+      if (lookupError) {
+        setMessage(dataMessage(lookupError.message));
+        return;
+      }
+
+      if (emailExists) {
+        setMessage("Usuário já cadastrado.");
+        return;
+      }
+
       const { data, error } = await supabase.auth.signUp({
-        email: email.trim().toLowerCase(),
+        email: normalizedEmail,
         password,
         options: { emailRedirectTo: window.location.origin }
       });
