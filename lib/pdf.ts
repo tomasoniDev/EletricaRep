@@ -17,12 +17,27 @@ const BLUE = "1268D8";
 const DARK = "111111";
 const MUTED = "646A73";
 const LINE = "D9E2EF";
-const SOFT = "F6F8FB";
 
 function formatDate(value?: string | null) {
   if (!value) return "-";
   const [year, month, day] = value.split("-");
   return `${day}/${month}/${year}`;
+}
+
+function reportCode(machine: Machine, record: ServiceRecord) {
+  const [year, month, day] = record.service_date.split("-");
+  const prefix = `RAT-${year.slice(2)}${month}${day}`;
+  const sameDayRecords = [
+    ...(machine.service_records?.filter((item) => item.service_date === record.service_date) ?? []),
+    record
+  ];
+  const uniqueRecords = Array.from(new Map(sameDayRecords.map((item) => [item.id, item])).values());
+  const sortedRecords = uniqueRecords.sort((a, b) => {
+    const created = a.created_at.localeCompare(b.created_at);
+    return created || a.id.localeCompare(b.id);
+  });
+  const index = Math.max(sortedRecords.findIndex((item) => item.id === record.id), 0) + 1;
+  return `${prefix}-${String(index).padStart(2, "0")}`;
 }
 
 function clean(value: unknown) {
@@ -111,23 +126,21 @@ function drawHeader(page: PdfPage, machine: Machine, record: ServiceRecord) {
   rect(page, MARGIN + 139, 782, 15, 10, "16833A", "16833A");
   text(page, "BR", MARGIN + 142, 785, { color: "FFFFFF", font: "bold", size: 5 });
   text(page, "Relatorio de Atendimento Tecnico", 305, 792, { color: BLUE, font: "bold", size: 16 });
-  text(page, `N do relatorio: ${record.id.slice(0, 8).toUpperCase()}`, 305, 773, { color: MUTED, size: 8 });
+  text(page, `N do relatorio: ${reportCode(machine, record)}`, 305, 773, { color: MUTED, size: 8 });
   text(page, `Data: ${formatDate(record.service_date)}`, 430, 773, { color: MUTED, size: 8 });
   line(page, MARGIN, 758, PAGE_WIDTH - MARGIN, 758, BLUE, 2);
   text(page, "Documento tecnico gerado pelo sistema de relatorios Tomasoni", MARGIN, 742, { color: MUTED, size: 8 });
-  text(page, machine.client, 420, 742, { color: DARK, font: "bold", size: 9 });
 }
 
 function drawMachineData(page: PdfPage, machine: Machine, y: number) {
   sectionTitle(page, "Dados da maquina", y);
   const top = y - 42;
   const col = (PAGE_WIDTH - MARGIN * 2 - 24) / 3;
-  labelValue(page, "Codigo", machine.code, MARGIN, top, col);
-  labelValue(page, "Modelo", machine.model, MARGIN + col + 12, top, col);
-  labelValue(page, "Cliente", machine.client, MARGIN + (col + 12) * 2, top, col);
-  labelValue(page, "Numero de serie", machine.serial, MARGIN, top - 39, col);
-  labelValue(page, "Versao do software", machine.software_version, MARGIN + col + 12, top - 39, col);
-  labelValue(page, "Forma de acesso", machine.access_method, MARGIN + (col + 12) * 2, top - 39, col);
+  labelValue(page, "Cliente", machine.client, MARGIN, top, col);
+  labelValue(page, "Unidade / Cidade", machine.unit_city || "-", MARGIN + col + 12, top, col);
+  labelValue(page, "Modelo", machine.model, MARGIN + (col + 12) * 2, top, col);
+  labelValue(page, "Codigo", machine.code, MARGIN, top - 39, col);
+  labelValue(page, "Numero de serie", machine.serial, MARGIN + col + 12, top - 39, col);
 }
 
 function drawServiceData(page: PdfPage, record: ServiceRecord, y: number) {
@@ -206,7 +219,7 @@ export function downloadServicePdf(machine: Machine, record: ServiceRecord) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `relatorio-atendimento-${machine.code}-${record.service_date}.pdf`;
+  link.download = `${reportCode(machine, record)}-${machine.code}.pdf`;
   document.body.appendChild(link);
   link.click();
   link.remove();

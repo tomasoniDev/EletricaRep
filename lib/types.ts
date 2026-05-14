@@ -3,6 +3,7 @@ export type Machine = {
   code: string;
   model: string;
   client: string;
+  unit_city: string | null;
   serial: string | null;
   software_version: string | null;
   access_method: string | null;

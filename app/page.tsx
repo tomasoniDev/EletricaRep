@@ -259,7 +259,7 @@ export default function Home() {
       })
       .filter((machine) => {
         if (!term) return true;
-        return [machine.code, machine.model, machine.client, machine.serial, machine.software_version, machine.access_method]
+        return [machine.code, machine.model, machine.client, machine.unit_city, machine.serial, machine.software_version, machine.access_method]
           .join(" ")
           .toLowerCase()
           .includes(term);
@@ -287,6 +287,7 @@ export default function Home() {
       code: String(form.get("code") ?? "").trim().toUpperCase(),
       model: String(form.get("model") ?? "").trim(),
       client: String(form.get("client") ?? "").trim(),
+      unit_city: String(form.get("unit_city") ?? "").trim() || null,
       serial: String(form.get("serial") ?? "").trim() || null,
       software_version: String(form.get("software_version") ?? "").trim() || null,
       access_method: String(form.get("access_method") ?? "").trim() || null
@@ -524,13 +525,14 @@ export default function Home() {
               <div className="section-header"><h2>Máquinas cadastradas</h2><span>{filteredMachines.length} registros</span></div>
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>Código</th><th>Modelo</th><th>Cliente</th><th>Série</th><th>Software</th><th>Último atendimento</th><th>Ações</th></tr></thead>
+                  <thead><tr><th>Código</th><th>Modelo</th><th>Cliente</th><th>Unidade / Cidade</th><th>Série</th><th>Software</th><th>Último atendimento</th><th>Ações</th></tr></thead>
                   <tbody>
                     {filteredMachines.map((machine) => (
                       <tr key={machine.id}>
                         <td><button className="link-button" onClick={() => { setSelectedMachineId(machine.id); setView("machine"); }}>{machine.code}</button></td>
                         <td>{machine.model}</td>
                         <td>{machine.client}</td>
+                        <td>{machine.unit_city || "-"}</td>
                         <td>{machine.serial || "-"}</td>
                         <td>{machine.software_version || "-"}</td>
                         <td>{formatDate(lastServiceDate(machine))}</td>
@@ -552,6 +554,7 @@ export default function Home() {
                 <label>Código<input name="code" required defaultValue={selectedMachine?.code ?? ""} /></label>
                 <label>Modelo<input name="model" required defaultValue={selectedMachine?.model ?? ""} /></label>
                 <label>Cliente<input name="client" required defaultValue={selectedMachine?.client ?? ""} /></label>
+                <label>Unidade / Cidade<input name="unit_city" defaultValue={selectedMachine?.unit_city ?? ""} /></label>
                 <label>Número de série<input name="serial" defaultValue={selectedMachine?.serial ?? ""} /></label>
                 <label>Versão do software<input name="software_version" defaultValue={selectedMachine?.software_version ?? ""} /></label>
                 <label>Forma de acesso<input name="access_method" defaultValue={selectedMachine?.access_method ?? ""} /></label>
