@@ -55,6 +55,35 @@ function dataMessage(error: string) {
   return "Não foi possível concluir a operação. Revise os dados e tente novamente.";
 }
 
+function PlusIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+function SaveIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M5 4h12l2 2v14H5z" />
+      <path d="M8 4v6h8V4M8 20v-6h8v6" />
+    </svg>
+  );
+}
+
+function PdfDownloadIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M7 3h7l4 4v14H7z" />
+      <path d="M14 3v5h4" />
+      <path d="M12 10v6" />
+      <path d="M9.5 13.5 12 16l2.5-2.5" />
+      <path d="M9 19h6" />
+    </svg>
+  );
+}
+
 export default function Home() {
   const [sessionReady, setSessionReady] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -511,7 +540,7 @@ export default function Home() {
           <div>
             <h1>Núcleo de Assistência</h1>
           </div>
-          <button className="icon-button add-action" type="button" title="Novo atendimento" aria-label="Novo atendimento" onClick={() => setView("service")}>+</button>
+          <button className="icon-button add-action" type="button" title="Novo atendimento" aria-label="Novo atendimento" onClick={() => setView("service")}><PlusIcon /></button>
         </header>
 
         <section className="status-band"><strong>{message}</strong></section>
@@ -549,7 +578,7 @@ export default function Home() {
         {view === "machine" && (
           <section className="view active">
             <form className="form-panel" onSubmit={saveMachine}>
-              <div className="section-header"><h2>{editingMachineId ? "Alterar máquina" : "Cadastrar máquina"}</h2><button className="icon-button save-action" title="Salvar máquina" aria-label="Salvar máquina">✓</button></div>
+              <div className="section-header"><h2>{editingMachineId ? "Alterar máquina" : "Cadastrar máquina"}</h2><button className="icon-button save-action" title="Salvar máquina" aria-label="Salvar máquina"><SaveIcon /></button></div>
               <div className="fields-grid">
                 <label>Código<input name="code" required defaultValue={selectedMachine?.code ?? ""} /></label>
                 <label>Modelo<input name="model" required defaultValue={selectedMachine?.model ?? ""} /></label>
@@ -579,7 +608,7 @@ export default function Home() {
                           <td>{record.request}</td>
                           <td>{record.diagnosis}</td>
                           <td>{record.service_done}</td>
-                          <td><button className="icon-button download" type="button" title="Baixar PDF" aria-label="Baixar PDF" onClick={(event) => { event.stopPropagation(); downloadServicePdf(selectedMachine, record); }}>↓</button></td>
+                          <td><button className="icon-button download" type="button" title="Baixar PDF" aria-label="Baixar PDF" onClick={(event) => { event.stopPropagation(); downloadServicePdf(selectedMachine, record); }}><PdfDownloadIcon /></button></td>
                         </tr>
                       ))}
                     </tbody>
@@ -596,7 +625,7 @@ export default function Home() {
               <h2>{editingServiceRecord ? "Editar atendimento" : "Registrar atendimento"}</h2>
               <div className="actions-row">
                 {editingServiceRecord && <button className="button ghost" type="button" onClick={() => setEditingServiceRecord(null)}>Cancelar edição</button>}
-                <button className="icon-button save-action" title={editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"} aria-label={editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"}>✓</button>
+                <button className="icon-button save-action" title={editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"} aria-label={editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"}><SaveIcon /></button>
               </div>
             </div>
             <div className="fields-grid">
@@ -615,7 +644,7 @@ export default function Home() {
         {view === "technicians" && (
           <section className="view active">
             <form className="form-panel" onSubmit={saveTechnician}>
-              <div className="section-header"><h2>{editingTechnicianId ? "Alterar técnico" : "Cadastrar técnico"}</h2><button className="icon-button save-action" title="Salvar técnico" aria-label="Salvar técnico">✓</button></div>
+              <div className="section-header"><h2>{editingTechnicianId ? "Alterar técnico" : "Cadastrar técnico"}</h2><button className="icon-button save-action" title="Salvar técnico" aria-label="Salvar técnico"><SaveIcon /></button></div>
               <div className="fields-grid">
                 <label>Nome<input name="name" required /></label>
                 <label>E-mail<input name="email" type="email" /></label>
@@ -651,7 +680,7 @@ export default function Home() {
                 <div><span>Observações</span><p>{selectedServiceRecord.observations || "-"}</p></div>
               </div>
               <div className="modal-actions">
-                <button className="icon-button download" type="button" title="Baixar PDF" aria-label="Baixar PDF" onClick={() => downloadServicePdf(selectedMachine, selectedServiceRecord)}>↓</button>
+                <button className="icon-button download" type="button" title="Baixar PDF" aria-label="Baixar PDF" onClick={() => downloadServicePdf(selectedMachine, selectedServiceRecord)}><PdfDownloadIcon /></button>
                 {selectedServiceRecord.created_by === currentUserId && (
                   <button className="button primary" type="button" onClick={() => startServiceEdit(selectedServiceRecord)}>Editar atendimento</button>
                 )}
