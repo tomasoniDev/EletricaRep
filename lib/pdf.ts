@@ -10,12 +10,6 @@ type PdfPage = {
   commands: string[];
 };
 
-type PdfImage = {
-  data: Uint8Array;
-  height: number;
-  width: number;
-};
-
 const PAGE_WIDTH = 595;
 const PAGE_HEIGHT = 842;
 const MARGIN = 42;
@@ -48,16 +42,12 @@ function reportCode(machine: Machine, record: ServiceRecord) {
 
 function clean(value: unknown) {
   return String(value ?? "")
-    .replace(/[\u0000-\u001F\u007F]/g, " ")
-    .replace(/\s+/g, " ")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E\n]/g, " ")
+    .replace(/[()\\]/g, "\\$&")
+    .replace(/[ \t]+/g, " ")
     .trim();
-}
-
-function pdfText(value: unknown) {
-  const content = `\uFEFF${clean(value)}`;
-  return `<${Array.from(content)
-    .map((char) => char.charCodeAt(0).toString(16).padStart(4, "0"))
-    .join("")}>`;
 }
 
 function color(hex: string) {
@@ -104,13 +94,6 @@ function line(page: PdfPage, x1: number, y1: number, x2: number, y2: number, str
   page.commands.push("Q");
 }
 
-function image(page: PdfPage, name: string, x: number, y: number, width: number, height: number) {
-  page.commands.push("q");
-  page.commands.push(`${width} 0 0 ${height} ${x} ${y} cm`);
-  page.commands.push(`/${name} Do`);
-  page.commands.push("Q");
-}
-
 function text(page: PdfPage, value: unknown, x: number, y: number, style: TextStyle = {}) {
   const font = style.font === "bold" ? "F2" : "F1";
   const size = style.size ?? 9;
@@ -118,7 +101,7 @@ function text(page: PdfPage, value: unknown, x: number, y: number, style: TextSt
   page.commands.push(`/${font} ${size} Tf`);
   page.commands.push(`${color(style.color ?? DARK)} rg`);
   page.commands.push(`${x} ${y} Td`);
-  page.commands.push(`${pdfText(value)} Tj`);
+  page.commands.push(`(${clean(value)}) Tj`);
   page.commands.push("ET");
 }
 
@@ -140,28 +123,30 @@ function paragraphBox(page: PdfPage, title: string, value: string | null, x: num
   lines.forEach((item, index) => text(page, item, x + 10, y + height - 31 - index * 12, { size: 9 }));
 }
 
-function drawHeader(page: PdfPage, machine: Machine, record: ServiceRecord, hasLogo: boolean) {
-  if (hasLogo) {
-    image(page, "Logo", MARGIN, 766, 152, 41);
-  } else {
-    text(page, "TOMASONI", MARGIN, 778, { color: BLUE, font: "bold", size: 25 });
-  }
-  text(page, "Relatório de Atendimento Técnico", 210, 785, { color: BLUE, font: "bold", size: 16 });
-  text(page, `Nº: ${reportCode(machine, record)}`, 342, 765, { color: MUTED, size: 8 });
+function drawTomasoniWordmark(page: PdfPage) {
+  text(page, "TOMASONI", MARGIN, 776, { color: BLUE, font: "bold", size: 28 });
+  rect(page, 180, 770, 11, 8, "129A45", "129A45");
+  text(page, "BR", 182, 772, { color: "FFFFFF", font: "bold", size: 4 });
+}
+
+function drawHeader(page: PdfPage, machine: Machine, record: ServiceRecord) {
+  drawTomasoniWordmark(page);
+  text(page, "Relatorio de Atendimento Tecnico", 210, 785, { color: BLUE, font: "bold", size: 16 });
+  text(page, `No: ${reportCode(machine, record)}`, 342, 765, { color: MUTED, size: 8 });
   text(page, `Data: ${formatDate(record.service_date)}`, 430, 765, { color: MUTED, size: 8 });
   line(page, MARGIN, 738, PAGE_WIDTH - MARGIN, 738, BLUE, 2);
-  text(page, "Documento técnico gerado pelo sistema de relatórios Tomasoni", MARGIN, 719, { color: MUTED, size: 8 });
+  text(page, "Documento tecnico gerado pelo sistema de relatorios Tomasoni", MARGIN, 719, { color: MUTED, size: 8 });
 }
 
 function drawMachineData(page: PdfPage, machine: Machine, y: number) {
-  sectionTitle(page, "Dados da máquina", y);
+  sectionTitle(page, "Dados da maquina", y);
   const top = y - 42;
   const col = (PAGE_WIDTH - MARGIN * 2 - 24) / 3;
   labelValue(page, "Cliente", machine.client, MARGIN, top, col);
   labelValue(page, "Unidade / Cidade", machine.unit_city || "-", MARGIN + col + 12, top, col);
   labelValue(page, "Modelo", machine.model, MARGIN + (col + 12) * 2, top, col);
-  labelValue(page, "Código", machine.code, MARGIN, top - 39, col);
-  labelValue(page, "Número de série", machine.serial, MARGIN + col + 12, top - 39, col);
+  labelValue(page, "Codigo", machine.code, MARGIN, top - 39, col);
+  labelValue(page, "Numero de serie", machine.serial, MARGIN + col + 12, top - 39, col);
 }
 
 function drawServiceData(page: PdfPage, record: ServiceRecord, y: number) {
@@ -170,31 +155,31 @@ function drawServiceData(page: PdfPage, record: ServiceRecord, y: number) {
   const col = (PAGE_WIDTH - MARGIN * 2 - 12) / 2;
   labelValue(page, "Data do atendimento", formatDate(record.service_date), MARGIN, top, col);
   labelValue(page, "Equipamento", record.equipment, MARGIN + col + 12, top, col);
-  paragraphBox(page, "Solicitação do cliente / problema relatado", record.request, MARGIN, top - 102, PAGE_WIDTH - MARGIN * 2, 72);
-  paragraphBox(page, "Diagnóstico", record.diagnosis, MARGIN, top - 186, PAGE_WIDTH - MARGIN * 2, 72);
-  paragraphBox(page, "Serviço realizado", record.service_done, MARGIN, top - 270, PAGE_WIDTH - MARGIN * 2, 72);
-  paragraphBox(page, "Observações", record.observations || "-", MARGIN, top - 354, PAGE_WIDTH - MARGIN * 2, 72);
+  paragraphBox(page, "Solicitacao do cliente / problema relatado", record.request, MARGIN, top - 102, PAGE_WIDTH - MARGIN * 2, 72);
+  paragraphBox(page, "Diagnostico", record.diagnosis, MARGIN, top - 186, PAGE_WIDTH - MARGIN * 2, 72);
+  paragraphBox(page, "Servico realizado", record.service_done, MARGIN, top - 270, PAGE_WIDTH - MARGIN * 2, 72);
+  paragraphBox(page, "Observacoes", record.observations || "-", MARGIN, top - 354, PAGE_WIDTH - MARGIN * 2, 72);
 }
 
 function drawTechnicianData(page: PdfPage, record: ServiceRecord, y: number) {
-  sectionTitle(page, "Técnico responsável", y);
+  sectionTitle(page, "Tecnico responsavel", y);
   const top = y - 42;
   const col = (PAGE_WIDTH - MARGIN * 2 - 12) / 2;
   labelValue(page, "Nome", record.technician_name, MARGIN, top, col);
   labelValue(page, "E-mail", record.technician_email || "-", MARGIN + col + 12, top, col);
-  labelValue(page, "Confirmação", "Atendimento registrado automaticamente pelo sistema.", MARGIN, top - 42, PAGE_WIDTH - MARGIN * 2);
+  labelValue(page, "Confirmacao", "Atendimento registrado automaticamente pelo sistema.", MARGIN, top - 42, PAGE_WIDTH - MARGIN * 2);
 }
 
 function drawFooter(page: PdfPage, pageNumber: number) {
   line(page, MARGIN, 42, PAGE_WIDTH - MARGIN, 42, BLUE, 1.2);
-  text(page, "Tomasoni - Equipamentos para indústria de papelão ondulado", MARGIN, 26, { color: MUTED, size: 8 });
-  text(page, `Página ${pageNumber}`, PAGE_WIDTH - MARGIN - 45, 26, { color: MUTED, size: 8 });
+  text(page, "Tomasoni - Equipamentos para industria de papelao ondulado", MARGIN, 26, { color: MUTED, size: 8 });
+  text(page, `Pagina ${pageNumber}`, PAGE_WIDTH - MARGIN - 45, 26, { color: MUTED, size: 8 });
 }
 
-function buildReportPage(machine: Machine, record: ServiceRecord, hasLogo: boolean) {
+function buildReportPage(machine: Machine, record: ServiceRecord) {
   const page: PdfPage = { commands: [] };
   rect(page, 0, 0, PAGE_WIDTH, PAGE_HEIGHT, "FFFFFF", "FFFFFF");
-  drawHeader(page, machine, record, hasLogo);
+  drawHeader(page, machine, record);
   drawMachineData(page, machine, 685);
   drawServiceData(page, record, 568);
   drawTechnicianData(page, record, 148);
@@ -202,104 +187,38 @@ function buildReportPage(machine: Machine, record: ServiceRecord, hasLogo: boole
   return page;
 }
 
-function ascii(value: string) {
-  return new TextEncoder().encode(value);
-}
-
-function concatBytes(parts: Uint8Array[]) {
-  const total = parts.reduce((sum, part) => sum + part.length, 0);
-  const output = new Uint8Array(total);
-  let offset = 0;
-  parts.forEach((part) => {
-    output.set(part, offset);
-    offset += part.length;
-  });
-  return output;
-}
-
-function dataUrlToBytes(dataUrl: string) {
-  const base64 = dataUrl.split(",")[1] ?? "";
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return bytes;
-}
-
-function loadLogoImage() {
-  return new Promise<PdfImage | null>((resolve) => {
-    const logo = new Image();
-    logo.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = logo.naturalWidth;
-      canvas.height = logo.naturalHeight;
-      const context = canvas.getContext("2d");
-      if (!context) {
-        resolve(null);
-        return;
-      }
-      context.fillStyle = "#ffffff";
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(logo, 0, 0);
-      resolve({
-        data: dataUrlToBytes(canvas.toDataURL("image/jpeg", 0.92)),
-        height: canvas.height,
-        width: canvas.width
-      });
-    };
-    logo.onerror = () => resolve(null);
-    logo.src = "/tomasoni-logo-reference.png";
-  });
-}
-
-function buildPdf(machine: Machine, record: ServiceRecord, logo: PdfImage | null) {
-  const pages = [buildReportPage(machine, record, Boolean(logo))];
-  const objects: Uint8Array[] = [];
-  objects.push(ascii("<< /Type /Catalog /Pages 2 0 R >>"));
-  objects.push(ascii(`<< /Type /Pages /Kids [${pages.map((_, index) => `${3 + index * 2} 0 R`).join(" ")}] /Count ${pages.length} >>`));
-  const imageObjectNumber = 3 + pages.length * 2;
+function buildPdf(machine: Machine, record: ServiceRecord) {
+  const pages = [buildReportPage(machine, record)];
+  const objects: string[] = [];
+  objects.push("<< /Type /Catalog /Pages 2 0 R >>");
+  objects.push(`<< /Type /Pages /Kids [${pages.map((_, index) => `${3 + index * 2} 0 R`).join(" ")}] /Count ${pages.length} >>`);
 
   pages.forEach((page, pageIndex) => {
     const pageObject = 3 + pageIndex * 2;
     const contentObject = pageObject + 1;
-    const xObject = logo ? `/XObject << /Logo ${imageObjectNumber} 0 R >>` : "";
-    objects.push(ascii(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> /F2 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> >> ${xObject} >> /Contents ${contentObject} 0 R >>`));
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> /F2 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> >> >> /Contents ${contentObject} 0 R >>`);
     const stream = page.commands.join("\n");
-    const streamBytes = ascii(stream);
-    objects.push(ascii(`<< /Length ${streamBytes.length} >>\nstream\n${stream}\nendstream`));
+    objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
   });
 
-  if (logo) {
-    objects.push(concatBytes([
-      ascii(`<< /Type /XObject /Subtype /Image /Width ${logo.width} /Height ${logo.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${logo.data.length} >>\nstream\n`),
-      logo.data,
-      ascii("\nendstream")
-    ]));
-  }
-
-  const parts: Uint8Array[] = [ascii("%PDF-1.4\n")];
+  let pdf = "%PDF-1.4\n";
   const offsets = [0];
   objects.forEach((object, index) => {
-    offsets.push(parts.reduce((sum, part) => sum + part.length, 0));
-    parts.push(ascii(`${index + 1} 0 obj\n`));
-    parts.push(object instanceof Uint8Array ? object : ascii(object));
-    parts.push(ascii("\nendobj\n"));
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
   });
 
-  const xrefStart = parts.reduce((sum, part) => sum + part.length, 0);
-  let trailer = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  const xrefStart = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
   offsets.slice(1).forEach((offset) => {
-    trailer += `${String(offset).padStart(10, "0")} 00000 n \n`;
+    pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
   });
-  trailer += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
-  parts.push(ascii(trailer));
-
-  const pdfBytes = concatBytes(parts);
-  const pdfBuffer = pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength) as ArrayBuffer;
-  return new Blob([pdfBuffer], { type: "application/pdf" });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
+  return new Blob([pdf], { type: "application/pdf" });
 }
 
-export async function downloadServicePdf(machine: Machine, record: ServiceRecord) {
-  const blob = buildPdf(machine, record, await loadLogoImage());
+export function downloadServicePdf(machine: Machine, record: ServiceRecord) {
+  const blob = buildPdf(machine, record);
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
