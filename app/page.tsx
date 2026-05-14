@@ -579,7 +579,7 @@ export default function Home() {
                           <td>{record.request}</td>
                           <td>{record.diagnosis}</td>
                           <td>{record.service_done}</td>
-                          <td><button className="button ghost" onClick={(event) => { event.stopPropagation(); downloadServicePdf(selectedMachine, record); }}>Baixar</button></td>
+                          <td><button className="icon-button download" type="button" title="Baixar PDF" aria-label="Baixar PDF" onClick={(event) => { event.stopPropagation(); downloadServicePdf(selectedMachine, record); }}>↓</button></td>
                         </tr>
                       ))}
                     </tbody>
@@ -651,7 +651,7 @@ export default function Home() {
                 <div><span>Observações</span><p>{selectedServiceRecord.observations || "-"}</p></div>
               </div>
               <div className="modal-actions">
-                <button className="button ghost" type="button" onClick={() => downloadServicePdf(selectedMachine, selectedServiceRecord)}>Baixar PDF</button>
+                <button className="icon-button download" type="button" title="Baixar PDF" aria-label="Baixar PDF" onClick={() => downloadServicePdf(selectedMachine, selectedServiceRecord)}>↓</button>
                 {selectedServiceRecord.created_by === currentUserId && (
                   <button className="button primary" type="button" onClick={() => startServiceEdit(selectedServiceRecord)}>Editar atendimento</button>
                 )}
