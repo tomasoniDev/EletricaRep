@@ -125,11 +125,34 @@ button { cursor: pointer; }
   background: linear-gradient(90deg, rgba(18, 104, 216, 0.08), rgba(255, 255, 255, 0) 42%), var(--bg);
 }
 
-.topbar, .section-header {
+.workspace > * {
+  max-width: 1160px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 28px;
+  width: 100%;
+  margin-bottom: 18px;
+}
+
+.topbar h1 {
+  line-height: 1.12;
+  white-space: nowrap;
+}
+
+.topbar .button {
+  flex: 0 0 auto;
+}
+
+.section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  width: 100%;
   margin-bottom: 18px;
 }
 
@@ -155,6 +178,8 @@ h2 { margin: 0; font-size: 1rem; }
 }
 
 .status-band, .search-panel, .table-panel, .form-panel {
+  display: block;
+  width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -168,7 +193,17 @@ h2 { margin: 0; font-size: 1rem; }
   box-shadow: none;
 }
 
-.view { display: grid; gap: 18px; }
+.status-band strong {
+  display: block;
+  width: 100%;
+  line-height: 1.45;
+}
+
+.view {
+  display: grid;
+  width: 100%;
+  gap: 18px;
+}
 
 label {
   display: grid;
