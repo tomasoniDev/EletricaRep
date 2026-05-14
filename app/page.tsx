@@ -7,6 +7,9 @@ import { downloadServicePdf } from "@/lib/pdf";
 import type { Machine, ServiceRecord, Technician } from "@/lib/types";
 
 type View = "home" | "machine" | "service" | "technicians";
+type AuthMode = "login" | "register";
+
+const ALLOWED_EMAIL_DOMAINS = ["tomasoni.ind.br", "tomasoni.in.br"];
 
 function formatDate(value?: string | null) {
   if (!value) return "-";
@@ -26,10 +29,35 @@ function lastServiceDate(machine: Machine) {
   return dates.sort().at(-1) ?? "";
 }
 
+function isCorporateEmail(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return ALLOWED_EMAIL_DOMAINS.some((domain) => normalized.endsWith(`@${domain}`));
+}
+
+function authMessage(error: string) {
+  const normalized = error.toLowerCase();
+  if (normalized.includes("invalid login credentials")) return "E-mail ou senha inválidos.";
+  if (normalized.includes("email not confirmed")) return "Confirme seu e-mail antes de entrar.";
+  if (normalized.includes("user already registered")) return "Este e-mail já possui cadastro.";
+  if (normalized.includes("signup is disabled")) return "O cadastro de novos usuários está desativado no Supabase.";
+  if (normalized.includes("password")) return "Verifique a senha informada. Use pelo menos 6 caracteres.";
+  return "Não foi possível concluir a autenticação. Verifique os dados e tente novamente.";
+}
+
+function dataMessage(error: string) {
+  const normalized = error.toLowerCase();
+  if (normalized.includes("duplicate") || normalized.includes("unique")) return "Já existe um cadastro com estes dados.";
+  if (normalized.includes("permission") || normalized.includes("row-level security")) return "Seu usuário não tem permissão para executar esta ação.";
+  if (normalized.includes("network") || normalized.includes("fetch")) return "Falha de conexão. Verifique a internet e tente novamente.";
+  return "Não foi possível concluir a operação. Revise os dados e tente novamente.";
+}
+
 export default function Home() {
   const [sessionReady, setSessionReady] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [view, setView] = useState<View>("home");
   const [machines, setMachines] = useState<Machine[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
@@ -42,12 +70,26 @@ export default function Home() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      setIsAuthenticated(Boolean(data.session));
       setSessionReady(true);
+      const userEmail = data.session?.user.email ?? "";
+      if (data.session && !isCorporateEmail(userEmail)) {
+        void supabase.auth.signOut();
+        setIsAuthenticated(false);
+        setMessage("Acesso negado. Use um e-mail corporativo da Tomasoni.");
+        return;
+      }
+      setIsAuthenticated(Boolean(data.session));
       if (data.session) void loadData();
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      const userEmail = session?.user.email ?? "";
+      if (session && !isCorporateEmail(userEmail)) {
+        void supabase.auth.signOut();
+        setIsAuthenticated(false);
+        setMessage("Acesso negado. Use um e-mail corporativo da Tomasoni.");
+        return;
+      }
       setIsAuthenticated(Boolean(session));
       if (session) void loadData();
     });
@@ -65,7 +107,7 @@ export default function Home() {
     ]);
 
     if (machineError || technicianError) {
-      setMessage(machineError?.message || technicianError?.message || "Erro ao carregar dados.");
+      setMessage(dataMessage(machineError?.message || technicianError?.message || ""));
       return;
     }
 
@@ -75,12 +117,30 @@ export default function Home() {
 
   async function signIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.origin }
-    });
 
-    setMessage(error ? error.message : "Enviamos um link de acesso para o seu e-mail.");
+    if (!isCorporateEmail(email)) {
+      setMessage("Acesso permitido somente para e-mails corporativos da Tomasoni.");
+      return;
+    }
+
+    if (password.length < 6) {
+      setMessage("A senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+
+    if (authMode === "register") {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo: window.location.origin }
+      });
+
+      setMessage(error ? authMessage(error.message) : "Cadastro solicitado. Confirme o e-mail para liberar o acesso.");
+      return;
+    }
+
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    setMessage(error ? authMessage(error.message) : "Acesso autorizado.");
   }
 
   async function signOut() {
@@ -142,7 +202,7 @@ export default function Home() {
       : await supabase.from("machines").insert(payload).select().single();
 
     if (error || !data) {
-      setMessage(error?.message || "Erro ao salvar máquina.");
+      setMessage(dataMessage(error?.message || ""));
       return;
     }
 
@@ -173,7 +233,7 @@ export default function Home() {
       : await supabase.from("technicians").insert(payload);
 
     if (error) {
-      setMessage(error.message);
+      setMessage(dataMessage(error.message));
       return;
     }
 
@@ -209,7 +269,7 @@ export default function Home() {
 
     const { data, error } = await supabase.from("service_records").insert(payload).select().single();
     if (error || !data) {
-      setMessage(error?.message || "Erro ao salvar atendimento.");
+      setMessage(dataMessage(error?.message || ""));
       return;
     }
 
@@ -225,14 +285,14 @@ export default function Home() {
   async function deleteMachine(id: string) {
     if (!confirm("Excluir esta máquina e todo o histórico?")) return;
     const { error } = await supabase.from("machines").delete().eq("id", id);
-    setMessage(error ? error.message : "Máquina excluída.");
+    setMessage(error ? dataMessage(error.message) : "Máquina excluída.");
     await loadData();
   }
 
   async function deleteTechnician(id: string) {
     if (!confirm("Excluir este técnico?")) return;
     const { error } = await supabase.from("technicians").delete().eq("id", id);
-    setMessage(error ? error.message : "Técnico excluído.");
+    setMessage(error ? dataMessage(error.message) : "Técnico excluído.");
     await loadData();
   }
 
@@ -242,7 +302,7 @@ export default function Home() {
     return (
       <main className="login-page">
         <section className="login-card">
-          <Image src="/tomasoni-logo.png" alt="Tomasoni" width={220} height={120} priority />
+          <Image src="/tomasoni-logo.svg" alt="Tomasoni" width={230} height={70} priority />
           <h1>Configuração pendente</h1>
           <p>Preencha `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` no arquivo `.env.local` ou nas variáveis de ambiente da Vercel.</p>
         </section>
@@ -254,12 +314,26 @@ export default function Home() {
     return (
       <main className="login-page">
         <form className="login-card" onSubmit={signIn}>
-          <Image src="/tomasoni-logo.png" alt="Tomasoni" width={220} height={120} priority />
-          <h1>Relatórios de atendimento</h1>
-          <p>Entre com seu e-mail corporativo para acessar a aplicação.</p>
-          <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="nome@empresa.com.br" required />
-          <button className="button primary" type="submit">Enviar link de acesso</button>
-          <span>{message}</span>
+          <Image className="login-logo" src="/tomasoni-logo.svg" alt="Tomasoni" width={250} height={76} priority />
+          <div>
+            <p className="eyebrow">Acesso corporativo</p>
+            <h1>Relatórios de atendimento</h1>
+          </div>
+          <p>Entre com seu e-mail e senha corporativos para acessar os dados da empresa.</p>
+          <div className="auth-toggle" role="tablist" aria-label="Modo de acesso">
+            <button className={authMode === "login" ? "active" : ""} type="button" onClick={() => setAuthMode("login")}>Entrar</button>
+            <button className={authMode === "register" ? "active" : ""} type="button" onClick={() => setAuthMode("register")}>Criar acesso</button>
+          </div>
+          <label>
+            E-mail corporativo
+            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder={`nome@${ALLOWED_EMAIL_DOMAINS[0]}`} required />
+          </label>
+          <label>
+            Senha
+            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="Sua senha" required minLength={6} />
+          </label>
+          <button className="button primary" type="submit">{authMode === "login" ? "Entrar" : "Criar acesso"}</button>
+          <span className="form-message">{message}</span>
         </form>
       </main>
     );
@@ -268,7 +342,7 @@ export default function Home() {
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <div className="brand"><Image src="/tomasoni-logo.png" alt="Tomasoni" width={190} height={90} priority /></div>
+        <div className="brand"><Image src="/tomasoni-logo.svg" alt="Tomasoni" width={200} height={62} priority /></div>
         <nav className="side-nav">
           <button className={`nav-item ${view === "home" ? "active" : ""}`} onClick={() => setView("home")}>Tela inicial</button>
           <button className={`nav-item ${view === "service" ? "active" : ""}`} onClick={() => setView("service")}>Novo registro</button>

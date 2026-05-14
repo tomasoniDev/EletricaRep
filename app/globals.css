@@ -19,7 +19,7 @@ body {
   min-height: 100vh;
   background: var(--bg);
   color: var(--text);
-  font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+  font-family: Arial, Helvetica, sans-serif;
 }
 
 button, input, textarea, select { font: inherit; }
@@ -31,15 +31,29 @@ button { cursor: pointer; }
   place-items: center;
 }
 
+.login-page {
+  background:
+    linear-gradient(90deg, rgba(18, 104, 216, 0.08), rgba(255, 255, 255, 0) 42%),
+    var(--bg);
+  padding: 24px;
+}
+
 .login-card {
   display: grid;
-  gap: 16px;
-  width: min(420px, calc(100vw - 32px));
-  padding: 28px;
+  gap: 18px;
+  width: min(440px, calc(100vw - 32px));
+  padding: 30px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.login-logo {
+  justify-self: start;
+  width: min(250px, 100%);
+  height: auto;
+  object-fit: contain;
 }
 
 .app-shell {
@@ -59,10 +73,16 @@ button { cursor: pointer; }
 
 .brand {
   display: flex;
+  align-items: center;
   justify-content: center;
   min-height: 76px;
   border-bottom: 1px solid var(--line);
   padding-bottom: 18px;
+}
+
+.brand img {
+  width: min(200px, 100%);
+  height: auto;
 }
 
 .side-nav { display: grid; gap: 8px; }
@@ -112,6 +132,15 @@ button { cursor: pointer; }
 
 h1 { margin: 0; color: var(--primary); font-size: clamp(1.7rem, 3vw, 2.35rem); }
 h2 { margin: 0; font-size: 1rem; }
+
+.login-card h1 {
+  line-height: 1.14;
+}
+
+.login-card p {
+  margin: 0;
+  line-height: 1.45;
+}
 
 .status-band, .search-panel, .table-panel, .form-panel {
   border: 1px solid var(--line);
@@ -166,6 +195,36 @@ input:focus, textarea:focus, select:focus {
 
 .button.primary { background: var(--primary); color: #fff; }
 .button.ghost { border-color: var(--line); background: transparent; }
+
+.auth-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  padding: 4px;
+}
+
+.auth-toggle button {
+  min-height: 36px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.auth-toggle button.active {
+  background: #fff;
+  color: var(--primary-dark);
+  box-shadow: 0 6px 16px rgba(20, 35, 55, 0.08);
+}
+
+.form-message {
+  color: var(--muted);
+  line-height: 1.4;
+}
 
 .fields-grid {
   display: grid;
