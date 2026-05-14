@@ -511,7 +511,7 @@ export default function Home() {
           <div>
             <h1>Núcleo de Assistência</h1>
           </div>
-          <button className="button primary" onClick={() => setView("service")}>Novo atendimento</button>
+          <button className="icon-button add-action" type="button" title="Novo atendimento" aria-label="Novo atendimento" onClick={() => setView("service")}>+</button>
         </header>
 
         <section className="status-band"><strong>{message}</strong></section>
@@ -549,7 +549,7 @@ export default function Home() {
         {view === "machine" && (
           <section className="view active">
             <form className="form-panel" onSubmit={saveMachine}>
-              <div className="section-header"><h2>{editingMachineId ? "Alterar máquina" : "Cadastrar máquina"}</h2><button className="button primary">Salvar máquina</button></div>
+              <div className="section-header"><h2>{editingMachineId ? "Alterar máquina" : "Cadastrar máquina"}</h2><button className="icon-button save-action" title="Salvar máquina" aria-label="Salvar máquina">✓</button></div>
               <div className="fields-grid">
                 <label>Código<input name="code" required defaultValue={selectedMachine?.code ?? ""} /></label>
                 <label>Modelo<input name="model" required defaultValue={selectedMachine?.model ?? ""} /></label>
@@ -596,7 +596,7 @@ export default function Home() {
               <h2>{editingServiceRecord ? "Editar atendimento" : "Registrar atendimento"}</h2>
               <div className="actions-row">
                 {editingServiceRecord && <button className="button ghost" type="button" onClick={() => setEditingServiceRecord(null)}>Cancelar edição</button>}
-                <button className="button primary">{editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"}</button>
+                <button className="icon-button save-action" title={editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"} aria-label={editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"}>✓</button>
               </div>
             </div>
             <div className="fields-grid">
@@ -615,7 +615,7 @@ export default function Home() {
         {view === "technicians" && (
           <section className="view active">
             <form className="form-panel" onSubmit={saveTechnician}>
-              <div className="section-header"><h2>{editingTechnicianId ? "Alterar técnico" : "Cadastrar técnico"}</h2><button className="button primary">Salvar técnico</button></div>
+              <div className="section-header"><h2>{editingTechnicianId ? "Alterar técnico" : "Cadastrar técnico"}</h2><button className="icon-button save-action" title="Salvar técnico" aria-label="Salvar técnico">✓</button></div>
               <div className="fields-grid">
                 <label>Nome<input name="name" required /></label>
                 <label>E-mail<input name="email" type="email" /></label>
