@@ -57,6 +57,7 @@ function dataMessage(error: string) {
 export default function Home() {
   const [sessionReady, setSessionReady] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
@@ -72,6 +73,8 @@ export default function Home() {
   const [historyFilter, setHistoryFilter] = useState("");
   const [editingMachineId, setEditingMachineId] = useState("");
   const [editingTechnicianId, setEditingTechnicianId] = useState("");
+  const [selectedServiceRecord, setSelectedServiceRecord] = useState<ServiceRecord | null>(null);
+  const [editingServiceRecord, setEditingServiceRecord] = useState<ServiceRecord | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -84,6 +87,7 @@ export default function Home() {
         return;
       }
       setIsAuthenticated(Boolean(data.session));
+      setCurrentUserId(data.session?.user.id ?? "");
       if (data.session) void loadData();
     });
 
@@ -103,6 +107,7 @@ export default function Home() {
       }
 
       setIsAuthenticated(Boolean(session));
+      setCurrentUserId(session?.user.id ?? "");
       if (session) void loadData();
     });
 
@@ -235,6 +240,7 @@ export default function Home() {
   async function signOut() {
     await supabase.auth.signOut();
     setIsAuthenticated(false);
+    setCurrentUserId("");
     setMachines([]);
     setTechnicians([]);
   }
@@ -343,6 +349,11 @@ export default function Home() {
       return;
     }
 
+    if (editingServiceRecord?.created_by && editingServiceRecord.created_by !== currentUserId) {
+      setMessage("Este atendimento só pode ser alterado pelo usuário que lançou o registro.");
+      return;
+    }
+
     const payload = {
       machine_id: machine.id,
       technician_id: technician.id,
@@ -356,7 +367,16 @@ export default function Home() {
       observations: String(form.get("observations") ?? "").trim() || null
     };
 
-    const { data, error } = await supabase.from("service_records").insert(payload).select().single();
+    const { data, error } = editingServiceRecord
+      ? await supabase
+          .from("service_records")
+          .update(payload)
+          .eq("id", editingServiceRecord.id)
+          .eq("created_by", currentUserId)
+          .select()
+          .single()
+      : await supabase.from("service_records").insert({ ...payload, created_by: currentUserId }).select().single();
+
     if (error || !data) {
       setMessage(dataMessage(error?.message || ""));
       return;
@@ -364,11 +384,25 @@ export default function Home() {
 
     const record = data as ServiceRecord;
     setSelectedMachineId(machine.id);
-    setMessage("Atendimento salvo. O PDF foi gerado para download.");
+    setMessage(editingServiceRecord ? "Atendimento atualizado com sucesso." : "Atendimento salvo. O PDF foi gerado para download.");
+    setEditingServiceRecord(null);
+    setSelectedServiceRecord(null);
     event.currentTarget.reset();
     await loadData();
-    downloadServicePdf(machine, record);
+    if (!editingServiceRecord) downloadServicePdf(machine, record);
     setView("machine");
+  }
+
+  function startServiceEdit(record: ServiceRecord) {
+    if (record.created_by !== currentUserId) {
+      setMessage("Este atendimento só pode ser alterado pelo usuário que lançou o registro.");
+      return;
+    }
+
+    setSelectedMachineId(record.machine_id);
+    setSelectedServiceRecord(null);
+    setEditingServiceRecord(record);
+    setView("service");
   }
 
   async function deleteMachine(id: string) {
@@ -474,7 +508,6 @@ export default function Home() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <p className="eyebrow">Aplicação corporativa</p>
             <h1>Relatórios de atendimento</h1>
           </div>
           <button className="button primary" onClick={() => setView("service")}>Novo atendimento</button>
@@ -536,14 +569,14 @@ export default function Home() {
                     <thead><tr><th>Data</th><th>Equipamento</th><th>Técnico</th><th>Solicitação</th><th>Diagnóstico</th><th>Serviço</th><th>PDF</th></tr></thead>
                     <tbody>
                       {filteredHistory.map((record) => (
-                        <tr key={record.id}>
+                        <tr key={record.id} className="clickable-row" onClick={() => setSelectedServiceRecord(record)}>
                           <td>{formatDate(record.service_date)}</td>
                           <td>{record.equipment || "-"}</td>
                           <td>{record.technician_name}</td>
                           <td>{record.request}</td>
                           <td>{record.diagnosis}</td>
                           <td>{record.service_done}</td>
-                          <td><button className="button ghost" onClick={() => downloadServicePdf(selectedMachine, record)}>Baixar</button></td>
+                          <td><button className="button ghost" onClick={(event) => { event.stopPropagation(); downloadServicePdf(selectedMachine, record); }}>Baixar</button></td>
                         </tr>
                       ))}
                     </tbody>
@@ -556,16 +589,22 @@ export default function Home() {
 
         {view === "service" && (
           <form className="form-panel" onSubmit={saveService}>
-            <div className="section-header"><h2>Registrar atendimento</h2><button className="button primary">Salvar e gerar PDF</button></div>
+            <div className="section-header">
+              <h2>{editingServiceRecord ? "Editar atendimento" : "Registrar atendimento"}</h2>
+              <div className="actions-row">
+                {editingServiceRecord && <button className="button ghost" type="button" onClick={() => setEditingServiceRecord(null)}>Cancelar edição</button>}
+                <button className="button primary">{editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"}</button>
+              </div>
+            </div>
             <div className="fields-grid">
-              <label>Máquina<select name="machine_id" required defaultValue={selectedMachine?.id}>{machines.map((machine) => <option key={machine.id} value={machine.id}>{machine.code} - {machine.model}</option>)}</select></label>
-              <label>Equipamento<input name="equipment" placeholder="CLP, IHM, servo, inversor" /></label>
-              <label>Técnico responsável<select name="technician_id" required>{technicians.map((technician) => <option key={technician.id} value={technician.id}>{technician.name}</option>)}</select></label>
-              <label>Data<input name="service_date" type="date" required defaultValue={new Date().toISOString().slice(0, 10)} /></label>
-              <label className="wide">Solicitação do cliente / problema relatado<textarea name="request" rows={3} required /></label>
-              <label className="wide">Diagnóstico<textarea name="diagnosis" rows={3} required /></label>
-              <label className="wide">Serviço realizado<textarea name="service_done" rows={3} required /></label>
-              <label className="wide">Observações<textarea name="observations" rows={3} /></label>
+              <label>Máquina<select name="machine_id" required defaultValue={editingServiceRecord?.machine_id ?? selectedMachine?.id}>{machines.map((machine) => <option key={machine.id} value={machine.id}>{machine.code} - {machine.model}</option>)}</select></label>
+              <label>Equipamento<input name="equipment" placeholder="CLP, IHM, servo, inversor" defaultValue={editingServiceRecord?.equipment ?? ""} /></label>
+              <label>Técnico responsável<select name="technician_id" required defaultValue={editingServiceRecord?.technician_id ?? ""}>{technicians.map((technician) => <option key={technician.id} value={technician.id}>{technician.name}</option>)}</select></label>
+              <label>Data<input name="service_date" type="date" required defaultValue={editingServiceRecord?.service_date ?? new Date().toISOString().slice(0, 10)} /></label>
+              <label className="wide">Solicitação do cliente / problema relatado<textarea name="request" rows={3} required defaultValue={editingServiceRecord?.request ?? ""} /></label>
+              <label className="wide">Diagnóstico<textarea name="diagnosis" rows={3} required defaultValue={editingServiceRecord?.diagnosis ?? ""} /></label>
+              <label className="wide">Serviço realizado<textarea name="service_done" rows={3} required defaultValue={editingServiceRecord?.service_done ?? ""} /></label>
+              <label className="wide">Observações<textarea name="observations" rows={3} defaultValue={editingServiceRecord?.observations ?? ""} /></label>
             </div>
           </form>
         )}
@@ -588,6 +627,34 @@ export default function Home() {
               </div>
             </section>
           </section>
+        )}
+
+        {selectedServiceRecord && selectedMachine && (
+          <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="service-modal-title">
+            <section className="modal-card">
+              <div className="section-header">
+                <div>
+                  <p className="eyebrow">{formatDate(selectedServiceRecord.service_date)}</p>
+                  <h2 id="service-modal-title">Atendimento - {selectedMachine.code}</h2>
+                </div>
+                <button className="button ghost" type="button" onClick={() => setSelectedServiceRecord(null)}>Fechar</button>
+              </div>
+              <div className="record-details">
+                <div><span>Equipamento</span><strong>{selectedServiceRecord.equipment || "-"}</strong></div>
+                <div><span>Técnico</span><strong>{selectedServiceRecord.technician_name}</strong></div>
+                <div><span>Solicitação do cliente / problema relatado</span><p>{selectedServiceRecord.request}</p></div>
+                <div><span>Diagnóstico</span><p>{selectedServiceRecord.diagnosis}</p></div>
+                <div><span>Serviço realizado</span><p>{selectedServiceRecord.service_done}</p></div>
+                <div><span>Observações</span><p>{selectedServiceRecord.observations || "-"}</p></div>
+              </div>
+              <div className="modal-actions">
+                <button className="button ghost" type="button" onClick={() => downloadServicePdf(selectedMachine, selectedServiceRecord)}>Baixar PDF</button>
+                {selectedServiceRecord.created_by === currentUserId && (
+                  <button className="button primary" type="button" onClick={() => startServiceEdit(selectedServiceRecord)}>Editar atendimento</button>
+                )}
+              </div>
+            </section>
+          </div>
         )}
       </section>
     </main>
