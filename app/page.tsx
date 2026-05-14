@@ -509,7 +509,7 @@ export default function Home() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <h1>Relatórios de atendimento</h1>
+            <h1>Núcleo de Assistência</h1>
           </div>
           <button className="button primary" onClick={() => setView("service")}>Novo atendimento</button>
         </header>
