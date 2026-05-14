@@ -7,7 +7,7 @@ import { downloadServicePdf } from "@/lib/pdf";
 import type { Machine, ServiceRecord, Technician } from "@/lib/types";
 
 type View = "home" | "machine" | "service" | "technicians";
-type AuthMode = "login" | "register";
+type AuthMode = "login" | "register" | "reset";
 
 const ALLOWED_EMAIL_DOMAINS = ["tomasoni.ind.br", "tomasoni.in.br"];
 
@@ -57,6 +57,8 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [recoveryPassword, setRecoveryPassword] = useState("");
+  const [isRecoveringPassword, setIsRecoveringPassword] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [view, setView] = useState<View>("home");
   const [machines, setMachines] = useState<Machine[]>([]);
@@ -82,7 +84,7 @@ export default function Home() {
       if (data.session) void loadData();
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       const userEmail = session?.user.email ?? "";
       if (session && !isCorporateEmail(userEmail)) {
         void supabase.auth.signOut();
@@ -90,6 +92,13 @@ export default function Home() {
         setMessage("Acesso negado. Use um e-mail corporativo da Tomasoni.");
         return;
       }
+
+      if (event === "PASSWORD_RECOVERY") {
+        setIsRecoveringPassword(true);
+        setMessage("Digite uma nova senha para concluir a redefinição.");
+        return;
+      }
+
       setIsAuthenticated(Boolean(session));
       if (session) void loadData();
     });
@@ -123,6 +132,19 @@ export default function Home() {
       return;
     }
 
+    if (authMode === "reset") {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin
+      });
+
+      setMessage(
+        error
+          ? authMessage(error.message)
+          : "Se este e-mail possuir cadastro, enviaremos um link para redefinir a senha."
+      );
+      return;
+    }
+
     if (password.length < 6) {
       setMessage("A senha deve ter pelo menos 6 caracteres.");
       return;
@@ -135,12 +157,37 @@ export default function Home() {
         options: { emailRedirectTo: window.location.origin }
       });
 
-      setMessage(error ? authMessage(error.message) : "Cadastro solicitado. Confirme o e-mail para liberar o acesso.");
+      setMessage(
+        error
+          ? authMessage(error.message)
+          : "Cadastro solicitado. Se o e-mail ainda não existir, enviaremos a confirmação para liberar o acesso."
+      );
       return;
     }
 
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setMessage(error ? authMessage(error.message) : "Acesso autorizado.");
+  }
+
+  async function updateRecoveredPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (recoveryPassword.length < 6) {
+      setMessage("A nova senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+
+    const { error } = await supabase.auth.updateUser({ password: recoveryPassword });
+    if (error) {
+      setMessage(authMessage(error.message));
+      return;
+    }
+
+    setRecoveryPassword("");
+    setIsRecoveringPassword(false);
+    setIsAuthenticated(true);
+    setMessage("Senha atualizada com sucesso. Acesso autorizado.");
+    await loadData();
   }
 
   async function signOut() {
@@ -310,6 +357,27 @@ export default function Home() {
     );
   }
 
+  if (isRecoveringPassword) {
+    return (
+      <main className="login-page">
+        <form className="login-card" onSubmit={updateRecoveredPassword}>
+          <Image className="login-logo" src="/tomasoni-logo.svg" alt="Tomasoni" width={250} height={76} priority />
+          <div>
+            <p className="eyebrow">Redefinição de senha</p>
+            <h1>Crie uma nova senha</h1>
+          </div>
+          <p>Informe uma nova senha para concluir o acesso corporativo.</p>
+          <label>
+            Nova senha
+            <input value={recoveryPassword} onChange={(event) => setRecoveryPassword(event.target.value)} type="password" placeholder="Nova senha" required minLength={6} />
+          </label>
+          <button className="button primary" type="submit">Atualizar senha</button>
+          <span className="form-message">{message}</span>
+        </form>
+      </main>
+    );
+  }
+
   if (!isAuthenticated) {
     return (
       <main className="login-page">
@@ -323,16 +391,19 @@ export default function Home() {
           <div className="auth-toggle" role="tablist" aria-label="Modo de acesso">
             <button className={authMode === "login" ? "active" : ""} type="button" onClick={() => setAuthMode("login")}>Entrar</button>
             <button className={authMode === "register" ? "active" : ""} type="button" onClick={() => setAuthMode("register")}>Criar acesso</button>
+            <button className={authMode === "reset" ? "active" : ""} type="button" onClick={() => setAuthMode("reset")}>Redefinir senha</button>
           </div>
           <label>
             E-mail corporativo
             <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder={`nome@${ALLOWED_EMAIL_DOMAINS[0]}`} required />
           </label>
-          <label>
-            Senha
-            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="Sua senha" required minLength={6} />
-          </label>
-          <button className="button primary" type="submit">{authMode === "login" ? "Entrar" : "Criar acesso"}</button>
+          {authMode !== "reset" && (
+            <label>
+              Senha
+              <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="Sua senha" required minLength={6} />
+            </label>
+          )}
+          <button className="button primary" type="submit">{authMode === "login" ? "Entrar" : authMode === "register" ? "Criar acesso" : "Enviar link de redefinição"}</button>
           <span className="form-message">{message}</span>
         </form>
       </main>

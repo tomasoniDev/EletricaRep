@@ -198,19 +198,16 @@ input:focus, textarea:focus, select:focus {
 
 .auth-toggle {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 6px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface-2);
-  padding: 4px;
+  border-radius: 8px;
 }
 
 .auth-toggle button {
-  min-height: 36px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
   color: var(--muted);
   font-weight: 800;
 }
