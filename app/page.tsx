@@ -10,6 +10,7 @@ type View = "home" | "machine" | "service" | "technicians";
 type AuthMode = "login" | "register" | "reset";
 
 const ALLOWED_EMAIL_DOMAINS = ["tomasoni.ind.br", "tomasoni.in.br"];
+const DEFAULT_MESSAGE = "Consulte uma máquina pelo código ou selecione uma linha da tabela.";
 
 function formatDate(value?: string | null) {
   if (!value) return "-";
@@ -68,7 +69,7 @@ export default function Home() {
   const [machines, setMachines] = useState<Machine[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [selectedMachineId, setSelectedMachineId] = useState("");
-  const [message, setMessage] = useState("Consulte uma máquina pelo código ou selecione uma linha da tabela.");
+  const [message, setMessage] = useState(DEFAULT_MESSAGE);
   const [machineFilter, setMachineFilter] = useState("");
   const [historyFilter, setHistoryFilter] = useState("");
   const [editingMachineId, setEditingMachineId] = useState("");
@@ -449,7 +450,7 @@ export default function Home() {
             <input value={recoveryPassword} onChange={(event) => setRecoveryPassword(event.target.value)} type="password" placeholder="Nova senha" required minLength={6} />
           </label>
           <button className="button primary" type="submit">Atualizar senha</button>
-          <span className="form-message">{message}</span>
+          {message !== DEFAULT_MESSAGE && <span className="form-message">{message}</span>}
         </form>
       </main>
     );
@@ -486,7 +487,7 @@ export default function Home() {
             {!isResetMode && <button type="button" onClick={() => setAuthMode("reset")}>Esqueceu a senha?</button>}
             {!isLoginMode && <button type="button" onClick={() => setAuthMode("login")}>Voltar ao login</button>}
           </div>
-          <span className="form-message">{message}</span>
+          {message !== DEFAULT_MESSAGE && <span className="form-message">{message}</span>}
         </form>
       </main>
     );

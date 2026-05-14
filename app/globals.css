@@ -50,7 +50,7 @@ button { cursor: pointer; }
 }
 
 .login-logo {
-  justify-self: start;
+  justify-self: center;
   width: min(300px, 100%);
   height: auto;
   object-fit: contain;
