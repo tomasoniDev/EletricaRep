@@ -38,7 +38,7 @@ function authMessage(error: string) {
   const normalized = error.toLowerCase();
   if (normalized.includes("invalid login credentials")) return "E-mail ou senha inválidos.";
   if (normalized.includes("email not confirmed")) return "Confirme seu e-mail antes de entrar.";
-  if (normalized.includes("user already registered")) return "Este e-mail já possui cadastro.";
+  if (normalized.includes("user already registered")) return "Usuário já cadastrado.";
   if (normalized.includes("signup is disabled")) return "O cadastro de novos usuários está desativado no Supabase.";
   if (normalized.includes("password")) return "Verifique a senha informada. Use pelo menos 6 caracteres.";
   return "Não foi possível concluir a autenticação. Verifique os dados e tente novamente.";
@@ -57,6 +57,7 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [recoveryPassword, setRecoveryPassword] = useState("");
   const [isRecoveringPassword, setIsRecoveringPassword] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
@@ -151,11 +152,21 @@ export default function Home() {
     }
 
     if (authMode === "register") {
-      const { error } = await supabase.auth.signUp({
-        email,
+      if (password !== passwordConfirmation) {
+        setMessage("As senhas informadas não conferem.");
+        return;
+      }
+
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim().toLowerCase(),
         password,
         options: { emailRedirectTo: window.location.origin }
       });
+
+      if (!error && data.user?.identities?.length === 0) {
+        setMessage("Usuário já cadastrado.");
+        return;
+      }
 
       setMessage(
         error
@@ -349,7 +360,7 @@ export default function Home() {
     return (
       <main className="login-page">
         <section className="login-card">
-          <Image src="/tomasoni-logo.svg" alt="Tomasoni" width={230} height={70} priority />
+          <Image src="/tomasoni-logo-reference.png" alt="Tomasoni" width={300} height={80} priority />
           <h1>Configuração pendente</h1>
           <p>Preencha `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` no arquivo `.env.local` ou nas variáveis de ambiente da Vercel.</p>
         </section>
@@ -361,7 +372,7 @@ export default function Home() {
     return (
       <main className="login-page">
         <form className="login-card" onSubmit={updateRecoveredPassword}>
-          <Image className="login-logo" src="/tomasoni-logo.svg" alt="Tomasoni" width={250} height={76} priority />
+          <Image className="login-logo" src="/tomasoni-logo-reference.png" alt="Tomasoni" width={300} height={80} priority />
           <div>
             <p className="eyebrow">Redefinição de senha</p>
             <h1>Crie uma nova senha</h1>
@@ -382,7 +393,7 @@ export default function Home() {
     return (
       <main className="login-page">
         <form className="login-card" onSubmit={signIn}>
-          <Image className="login-logo" src="/tomasoni-logo.svg" alt="Tomasoni" width={250} height={76} priority />
+          <Image className="login-logo" src="/tomasoni-logo-reference.png" alt="Tomasoni" width={300} height={80} priority />
           <div>
             <p className="eyebrow">Acesso corporativo</p>
             <h1>Relatórios de atendimento</h1>
@@ -403,6 +414,12 @@ export default function Home() {
               <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="Sua senha" required minLength={6} />
             </label>
           )}
+          {authMode === "register" && (
+            <label>
+              Confirmar senha
+              <input value={passwordConfirmation} onChange={(event) => setPasswordConfirmation(event.target.value)} type="password" placeholder="Confirme sua senha" required minLength={6} />
+            </label>
+          )}
           <button className="button primary" type="submit">{authMode === "login" ? "Entrar" : authMode === "register" ? "Criar acesso" : "Enviar link de redefinição"}</button>
           <span className="form-message">{message}</span>
         </form>
@@ -413,14 +430,14 @@ export default function Home() {
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <div className="brand"><Image src="/tomasoni-logo.svg" alt="Tomasoni" width={200} height={62} priority /></div>
+        <div className="brand"><Image src="/tomasoni-logo-reference.png" alt="Tomasoni" width={220} height={59} priority /></div>
         <nav className="side-nav">
           <button className={`nav-item ${view === "home" ? "active" : ""}`} onClick={() => setView("home")}>Tela inicial</button>
           <button className={`nav-item ${view === "service" ? "active" : ""}`} onClick={() => setView("service")}>Novo registro</button>
           <button className={`nav-item ${view === "machine" ? "active" : ""}`} onClick={() => setView("machine")}>Cadastro</button>
           <button className={`nav-item ${view === "technicians" ? "active" : ""}`} onClick={() => setView("technicians")}>Técnicos</button>
         </nav>
-        <button className="button ghost" onClick={signOut}>Sair</button>
+        <button className="button ghost logout-button" onClick={signOut}>Sair</button>
       </aside>
 
       <section className="workspace">
