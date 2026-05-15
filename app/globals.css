@@ -365,6 +365,10 @@ input:focus, textarea:focus, select:focus {
 
 .auth-links button:hover { color: var(--primary-dark); }
 
+.auth-secondary-action {
+  justify-self: center;
+}
+
 .fields-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -7,7 +7,6 @@ import { downloadServicePdf } from "@/lib/pdf";
 import type { Machine, ServiceRecord, Technician } from "@/lib/types";
 
 type View = "home" | "machine" | "service" | "technicians";
-type AuthMode = "login" | "register" | "reset";
 type SortDirection = "asc" | "desc";
 type MachineSortKey = "code" | "model" | "client" | "unit_city" | "serial" | "software_version" | "last_service";
 type HistorySortKey = "service_date" | "equipment" | "technician_name" | "request" | "diagnosis" | "service_done";
@@ -15,6 +14,8 @@ type TechnicianSortKey = "name" | "email";
 
 const ALLOWED_EMAIL_DOMAINS = ["tomasoni.ind.br", "tomasoni.in.br"];
 const DEFAULT_MESSAGE = "Consulte uma máquina pelo código ou selecione uma linha da tabela.";
+const AUTH_CONFIRMED_AT_KEY = "tomasoni-servicecore-auth-confirmed-at";
+const AUTH_CONFIRMATION_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function formatDate(value?: string | null) {
   if (!value) return "-";
@@ -56,15 +57,28 @@ function isCorporateEmail(value: string) {
   return ALLOWED_EMAIL_DOMAINS.some((domain) => normalized.endsWith(`@${domain}`));
 }
 
+function hasFreshAuthConfirmation() {
+  const confirmedAt = Number(window.localStorage.getItem(AUTH_CONFIRMED_AT_KEY) ?? 0);
+  return Boolean(confirmedAt) && Date.now() - confirmedAt < AUTH_CONFIRMATION_INTERVAL_MS;
+}
+
+function storeAuthConfirmation() {
+  window.localStorage.setItem(AUTH_CONFIRMED_AT_KEY, String(Date.now()));
+}
+
+function clearAuthConfirmation() {
+  window.localStorage.removeItem(AUTH_CONFIRMED_AT_KEY);
+}
+
 function authMessage(error: string) {
   const normalized = error.toLowerCase();
-  if (normalized.includes("invalid login credentials")) return "E-mail ou senha inválidos.";
+  if (normalized.includes("invalid login credentials")) return "Código inválido ou expirado.";
   if (normalized.includes("email not confirmed")) return "Confirme seu e-mail antes de entrar.";
   if (normalized.includes("user already registered")) return "Usuário já cadastrado.";
   if (normalized.includes("signup is disabled")) return "O cadastro de novos usuários está desativado no Supabase.";
   if (normalized.includes("email rate limit") || normalized.includes("over_email_send_rate_limit")) return "Limite temporário de envio de e-mails atingido. Aguarde alguns minutos e tente novamente.";
   if (normalized.includes("for security purposes")) return "Aguarde alguns segundos antes de solicitar um novo envio.";
-  if (normalized.includes("password")) return "Verifique a senha informada. Use pelo menos 6 caracteres.";
+  if (normalized.includes("otp") || normalized.includes("token")) return "Código inválido ou expirado. Solicite um novo código e tente novamente.";
   return "Não foi possível concluir a autenticação. Verifique os dados e tente novamente.";
 }
 
@@ -110,11 +124,8 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUserId, setCurrentUserId] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [passwordConfirmation, setPasswordConfirmation] = useState("");
-  const [recoveryPassword, setRecoveryPassword] = useState("");
-  const [isRecoveringPassword, setIsRecoveringPassword] = useState(false);
-  const [authMode, setAuthMode] = useState<AuthMode>("login");
+  const [otpCode, setOtpCode] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
   const [view, setView] = useState<View>("home");
   const [machines, setMachines] = useState<Machine[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
@@ -136,10 +147,21 @@ export default function Home() {
       const userEmail = data.session?.user.email ?? "";
       if (data.session && !isCorporateEmail(userEmail)) {
         void supabase.auth.signOut();
+        clearAuthConfirmation();
         setIsAuthenticated(false);
         setMessage("Acesso negado. Use um e-mail corporativo da Tomasoni.");
         return;
       }
+
+      if (data.session && !hasFreshAuthConfirmation()) {
+        void supabase.auth.signOut();
+        clearAuthConfirmation();
+        setIsAuthenticated(false);
+        setCurrentUserId("");
+        setMessage("Por segurança, confirme seu acesso novamente com o código enviado ao e-mail.");
+        return;
+      }
+
       setIsAuthenticated(Boolean(data.session));
       setCurrentUserId(data.session?.user.id ?? "");
       if (data.session) void loadData();
@@ -149,14 +171,9 @@ export default function Home() {
       const userEmail = session?.user.email ?? "";
       if (session && !isCorporateEmail(userEmail)) {
         void supabase.auth.signOut();
+        clearAuthConfirmation();
         setIsAuthenticated(false);
         setMessage("Acesso negado. Use um e-mail corporativo da Tomasoni.");
-        return;
-      }
-
-      if (event === "PASSWORD_RECOVERY") {
-        setIsRecoveringPassword(true);
-        setMessage("Digite uma nova senha para concluir a redefinição.");
         return;
       }
 
@@ -167,6 +184,18 @@ export default function Home() {
 
     return () => listener.subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const interval = window.setInterval(() => {
+      if (hasFreshAuthConfirmation()) return;
+      setMessage("Por segurança, confirme seu acesso novamente com o código enviado ao e-mail.");
+      void signOut();
+    }, 60 * 1000);
+
+    return () => window.clearInterval(interval);
+  }, [isAuthenticated]);
 
   async function loadData() {
     const [{ data: machineRows, error: machineError }, { data: technicianRows, error: technicianError }] = await Promise.all([
@@ -195,104 +224,55 @@ export default function Home() {
       return;
     }
 
-    if (authMode === "reset") {
-      const { data: emailExists, error: lookupError } = await supabase.rpc("auth_email_exists", {
-        input_email: normalizedEmail
-      });
-
-      if (lookupError) {
-        setMessage(dataMessage(lookupError.message));
-        return;
-      }
-
-      if (!emailExists) {
-        setMessage("E-mail não cadastrado.");
-        return;
-      }
-
-      const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-        redirectTo: window.location.origin
-      });
-
-      setMessage(
-        error
-          ? authMessage(error.message)
-          : "Se este e-mail possuir cadastro, enviaremos um link para redefinir a senha."
-      );
-      return;
-    }
-
-    if (password.length < 6) {
-      setMessage("A senha deve ter pelo menos 6 caracteres.");
-      return;
-    }
-
-    if (authMode === "register") {
-      if (password !== passwordConfirmation) {
-        setMessage("As senhas informadas não conferem.");
-        return;
-      }
-
-      const { data: emailExists, error: lookupError } = await supabase.rpc("auth_email_exists", {
-        input_email: normalizedEmail
-      });
-
-      if (lookupError) {
-        setMessage(dataMessage(lookupError.message));
-        return;
-      }
-
-      if (emailExists) {
-        setMessage("Usuário já cadastrado.");
-        return;
-      }
-
-      const { data, error } = await supabase.auth.signUp({
+    if (!otpSent) {
+      const { error } = await supabase.auth.signInWithOtp({
         email: normalizedEmail,
-        password,
-        options: { emailRedirectTo: window.location.origin }
+        options: {
+          shouldCreateUser: true,
+          emailRedirectTo: window.location.origin
+        }
       });
 
-      if (!error && data.user?.identities?.length === 0) {
-        setMessage("Usuário já cadastrado.");
+      if (error) {
+        setMessage(authMessage(error.message));
         return;
       }
 
-      setMessage(
-        error
-          ? authMessage(error.message)
-          : "Cadastro solicitado. Se o e-mail ainda não existir, enviaremos a confirmação para liberar o acesso."
-      );
+      setEmail(normalizedEmail);
+      setOtpSent(true);
+      setMessage("Enviamos um código de acesso para o seu e-mail corporativo.");
       return;
     }
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setMessage(error ? authMessage(error.message) : "Acesso autorizado.");
-  }
-
-  async function updateRecoveredPassword(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (recoveryPassword.length < 6) {
-      setMessage("A nova senha deve ter pelo menos 6 caracteres.");
+    const sanitizedCode = otpCode.trim();
+    if (!sanitizedCode) {
+      setMessage("Informe o código recebido por e-mail.");
       return;
     }
 
-    const { error } = await supabase.auth.updateUser({ password: recoveryPassword });
-    if (error) {
-      setMessage(authMessage(error.message));
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: normalizedEmail,
+      token: sanitizedCode,
+      type: "email"
+    });
+
+    if (error || !data.session) {
+      setMessage(authMessage(error?.message || ""));
       return;
     }
 
-    setRecoveryPassword("");
-    setIsRecoveringPassword(false);
+    storeAuthConfirmation();
+    setOtpCode("");
+    setOtpSent(false);
     setIsAuthenticated(true);
-    setMessage("Senha atualizada com sucesso. Acesso autorizado.");
+    setCurrentUserId(data.session.user.id);
+    setMessage("Acesso autorizado.");
     await loadData();
   }
 
   async function signOut() {
     await supabase.auth.signOut();
+    clearAuthConfirmation();
     setIsAuthenticated(false);
     setCurrentUserId("");
     setMachines([]);
@@ -527,58 +507,23 @@ export default function Home() {
     );
   }
 
-  if (isRecoveringPassword) {
-    return (
-      <main className="login-page">
-        <form className="login-card" onSubmit={updateRecoveredPassword}>
-          <Image className="login-logo" src="/tomasoni-logo-reference.png" alt="Tomasoni" width={300} height={80} priority />
-          <div>
-            <p className="eyebrow">Redefinição de senha</p>
-            <h1>Crie uma nova senha</h1>
-          </div>
-          <p>Informe uma nova senha para concluir o acesso corporativo.</p>
-          <label>
-            Nova senha
-            <input value={recoveryPassword} onChange={(event) => setRecoveryPassword(event.target.value)} type="password" placeholder="Nova senha" required minLength={6} />
-          </label>
-          <button className="button primary" type="submit">Atualizar senha</button>
-          {message !== DEFAULT_MESSAGE && <span className="form-message">{message}</span>}
-        </form>
-      </main>
-    );
-  }
-
   if (!isAuthenticated) {
-    const isLoginMode = authMode === "login";
-    const isRegisterMode = authMode === "register";
-    const isResetMode = authMode === "reset";
-
     return (
       <main className="login-page">
         <form className="login-card" onSubmit={signIn}>
           <Image className="login-logo" src="/tomasoni-logo-reference.png" alt="Tomasoni" width={300} height={80} priority />
           <label>
             E-mail corporativo
-            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder={`nome@${ALLOWED_EMAIL_DOMAINS[0]}`} required />
+            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder={`nome@${ALLOWED_EMAIL_DOMAINS[0]}`} required disabled={otpSent} />
           </label>
-          {!isResetMode && (
+          {otpSent && (
             <label>
-              Senha
-              <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="Sua senha" required minLength={6} />
+              Código de acesso
+              <input value={otpCode} onChange={(event) => setOtpCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" placeholder="Digite o código recebido" required />
             </label>
           )}
-          {isRegisterMode && (
-            <label>
-              Confirmar senha
-              <input value={passwordConfirmation} onChange={(event) => setPasswordConfirmation(event.target.value)} type="password" placeholder="Confirme sua senha" required minLength={6} />
-            </label>
-          )}
-          <button className="button primary" type="submit">{isLoginMode ? "Entrar" : isRegisterMode ? "Criar acesso" : "Enviar link de redefinição"}</button>
-          <div className="auth-links">
-            {!isRegisterMode && <button type="button" onClick={() => setAuthMode("register")}>Criar acesso</button>}
-            {!isResetMode && <button type="button" onClick={() => setAuthMode("reset")}>Esqueceu a senha?</button>}
-            {!isLoginMode && <button type="button" onClick={() => setAuthMode("login")}>Voltar ao login</button>}
-          </div>
+          <button className="button primary" type="submit">{otpSent ? "Confirmar código" : "Enviar código de acesso"}</button>
+          {otpSent && <button className="link-button auth-secondary-action" type="button" onClick={() => { setOtpSent(false); setOtpCode(""); setMessage(DEFAULT_MESSAGE); }}>Alterar e-mail</button>}
           {message !== DEFAULT_MESSAGE && <span className="form-message">{message}</span>}
         </form>
       </main>
