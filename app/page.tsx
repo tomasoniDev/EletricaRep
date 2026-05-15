@@ -73,13 +73,15 @@ function clearAuthConfirmation() {
 function authMessage(error: string) {
   const normalized = error.toLowerCase();
   if (normalized.includes("invalid login credentials")) return "Código inválido ou expirado.";
+  if (normalized.includes("failed to fetch") || normalized.includes("network")) return "Falha de conexão. Verifique a internet e tente novamente.";
   if (normalized.includes("email not confirmed")) return "Confirme seu e-mail antes de entrar.";
   if (normalized.includes("user already registered")) return "Usuário já cadastrado.";
   if (normalized.includes("signup is disabled")) return "O cadastro de novos usuários está desativado no Supabase.";
-  if (normalized.includes("email rate limit") || normalized.includes("over_email_send_rate_limit")) return "Limite temporário de envio de e-mails atingido. Aguarde alguns minutos e tente novamente.";
+  if (normalized.includes("rate limit") || normalized.includes("over_email_send_rate_limit") || normalized.includes("too many requests")) return "Limite temporário de envio de e-mails atingido. Aguarde alguns minutos e tente novamente.";
+  if (normalized.includes("smtp") || normalized.includes("email provider") || normalized.includes("send email")) return `Falha no envio do e-mail pelo provedor SMTP. Detalhe: ${error}`;
   if (normalized.includes("for security purposes")) return "Aguarde alguns segundos antes de solicitar um novo envio.";
   if (normalized.includes("otp") || normalized.includes("token")) return "Código inválido ou expirado. Solicite um novo código e tente novamente.";
-  return "Não foi possível concluir a autenticação. Verifique os dados e tente novamente.";
+  return `Não foi possível concluir a autenticação. Detalhe: ${error || "erro não informado pelo Supabase."}`;
 }
 
 function dataMessage(error: string) {
@@ -126,6 +128,7 @@ export default function Home() {
   const [email, setEmail] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [otpSent, setOtpSent] = useState(false);
+  const [authLoading, setAuthLoading] = useState(false);
   const [view, setView] = useState<View>("home");
   const [machines, setMachines] = useState<Machine[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
@@ -217,12 +220,16 @@ export default function Home() {
 
   async function signIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (authLoading) return;
     const normalizedEmail = email.trim().toLowerCase();
 
     if (!isCorporateEmail(normalizedEmail)) {
       setMessage("Acesso permitido somente para e-mails corporativos da Tomasoni.");
       return;
     }
+
+    setAuthLoading(true);
+    setMessage(DEFAULT_MESSAGE);
 
     if (!otpSent) {
       const { error } = await supabase.auth.signInWithOtp({
@@ -234,18 +241,21 @@ export default function Home() {
 
       if (error) {
         setMessage(authMessage(error.message));
+        setAuthLoading(false);
         return;
       }
 
       setEmail(normalizedEmail);
       setOtpSent(true);
       setMessage("Enviamos um código de acesso para o seu e-mail corporativo.");
+      setAuthLoading(false);
       return;
     }
 
     const sanitizedCode = otpCode.trim();
     if (!sanitizedCode) {
       setMessage("Informe o código recebido por e-mail.");
+      setAuthLoading(false);
       return;
     }
 
@@ -257,6 +267,7 @@ export default function Home() {
 
     if (error || !data.session) {
       setMessage(authMessage(error?.message || ""));
+      setAuthLoading(false);
       return;
     }
 
@@ -267,6 +278,7 @@ export default function Home() {
     setCurrentUserId(data.session.user.id);
     setMessage("Acesso autorizado.");
     await loadData();
+    setAuthLoading(false);
   }
 
   async function signOut() {
@@ -521,8 +533,8 @@ export default function Home() {
               <input value={otpCode} onChange={(event) => setOtpCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" placeholder="Digite o código recebido" required />
             </label>
           )}
-          <button className="button primary" type="submit">{otpSent ? "Confirmar código" : "Enviar código de acesso"}</button>
-          {otpSent && <button className="link-button auth-secondary-action" type="button" onClick={() => { setOtpSent(false); setOtpCode(""); setMessage(DEFAULT_MESSAGE); }}>Alterar e-mail</button>}
+          <button className="button primary" type="submit" disabled={authLoading}>{authLoading ? "Enviando..." : otpSent ? "Confirmar código" : "Enviar código de acesso"}</button>
+          {otpSent && <button className="link-button auth-secondary-action" type="button" disabled={authLoading} onClick={() => { setOtpSent(false); setOtpCode(""); setMessage(DEFAULT_MESSAGE); }}>Alterar e-mail</button>}
           {message !== DEFAULT_MESSAGE && <span className="form-message">{message}</span>}
         </form>
       </main>
