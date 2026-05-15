@@ -404,6 +404,28 @@ th {
   text-transform: uppercase;
 }
 
+.sort-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  text-transform: inherit;
+}
+
+.sort-header span {
+  color: var(--primary);
+  font-size: 0.78rem;
+}
+
+.sort-header:hover {
+  color: var(--primary-dark);
+}
+
 tbody tr:hover { background: #eef5ff; }
 
 .clickable-row { cursor: pointer; }

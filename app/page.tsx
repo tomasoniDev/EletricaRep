@@ -8,6 +8,10 @@ import type { Machine, ServiceRecord, Technician } from "@/lib/types";
 
 type View = "home" | "machine" | "service" | "technicians";
 type AuthMode = "login" | "register" | "reset";
+type SortDirection = "asc" | "desc";
+type MachineSortKey = "code" | "model" | "client" | "unit_city" | "serial" | "software_version" | "last_service";
+type HistorySortKey = "service_date" | "equipment" | "technician_name" | "request" | "diagnosis" | "service_done";
+type TechnicianSortKey = "name" | "email";
 
 const ALLOWED_EMAIL_DOMAINS = ["tomasoni.ind.br", "tomasoni.in.br"];
 const DEFAULT_MESSAGE = "Consulte uma máquina pelo código ou selecione uma linha da tabela.";
@@ -28,6 +32,23 @@ function parseEmails(value: string) {
 function lastServiceDate(machine: Machine) {
   const dates = machine.service_records?.map((record) => record.service_date).filter(Boolean) ?? [];
   return dates.sort().at(-1) ?? "";
+}
+
+function compareText(first?: string | null, second?: string | null) {
+  return (first ?? "").localeCompare(second ?? "", "pt-BR", { numeric: true, sensitivity: "base" });
+}
+
+function compareDate(first?: string | null, second?: string | null) {
+  return (first ?? "").localeCompare(second ?? "");
+}
+
+function nextDirection(isSameColumn: boolean, currentDirection: SortDirection) {
+  return isSameColumn && currentDirection === "asc" ? "desc" : "asc";
+}
+
+function sortMark(isActive: boolean, direction: SortDirection) {
+  if (!isActive) return "↕";
+  return direction === "asc" ? "↑" : "↓";
 }
 
 function isCorporateEmail(value: string) {
@@ -101,6 +122,9 @@ export default function Home() {
   const [message, setMessage] = useState(DEFAULT_MESSAGE);
   const [machineFilter, setMachineFilter] = useState("");
   const [historyFilter, setHistoryFilter] = useState("");
+  const [machineSort, setMachineSort] = useState<{ key: MachineSortKey; direction: SortDirection }>({ key: "last_service", direction: "desc" });
+  const [historySort, setHistorySort] = useState<{ key: HistorySortKey; direction: SortDirection }>({ key: "service_date", direction: "desc" });
+  const [technicianSort, setTechnicianSort] = useState<{ key: TechnicianSortKey; direction: SortDirection }>({ key: "name", direction: "asc" });
   const [editingMachineId, setEditingMachineId] = useState("");
   const [editingTechnicianId, setEditingTechnicianId] = useState("");
   const [selectedServiceRecord, setSelectedServiceRecord] = useState<ServiceRecord | null>(null);
@@ -280,35 +304,74 @@ export default function Home() {
   const filteredMachines = useMemo(() => {
     const term = machineFilter.trim().toLowerCase();
     return [...machines]
-      .sort((a, b) => {
-        const first = lastServiceDate(a);
-        const second = lastServiceDate(b);
-        if (!first && second) return 1;
-        if (first && !second) return -1;
-        return second.localeCompare(first);
-      })
       .filter((machine) => {
         if (!term) return true;
         return [machine.code, machine.model, machine.client, machine.unit_city, machine.serial, machine.software_version, machine.access_method]
           .join(" ")
           .toLowerCase()
           .includes(term);
+      })
+      .sort((a, b) => {
+        const direction = machineSort.direction === "asc" ? 1 : -1;
+        let result = 0;
+
+        if (machineSort.key === "last_service") result = compareDate(lastServiceDate(a), lastServiceDate(b));
+        if (machineSort.key === "code") result = compareText(a.code, b.code);
+        if (machineSort.key === "model") result = compareText(a.model, b.model);
+        if (machineSort.key === "client") result = compareText(a.client, b.client);
+        if (machineSort.key === "unit_city") result = compareText(a.unit_city, b.unit_city);
+        if (machineSort.key === "serial") result = compareText(a.serial, b.serial);
+        if (machineSort.key === "software_version") result = compareText(a.software_version, b.software_version);
+
+        return result * direction;
       });
-  }, [machineFilter, machines]);
+  }, [machineFilter, machineSort, machines]);
 
   const filteredHistory = useMemo(() => {
     const term = historyFilter.trim().toLowerCase();
     const records = selectedMachine?.service_records ?? [];
     return [...records]
-      .sort((a, b) => b.service_date.localeCompare(a.service_date))
       .filter((record) => {
         if (!term) return true;
         return [record.technician_name, record.equipment, record.request, record.diagnosis, record.service_done, record.observations]
           .join(" ")
           .toLowerCase()
           .includes(term);
+      })
+      .sort((a, b) => {
+        const direction = historySort.direction === "asc" ? 1 : -1;
+        let result = 0;
+
+        if (historySort.key === "service_date") result = compareDate(a.service_date, b.service_date);
+        if (historySort.key === "equipment") result = compareText(a.equipment, b.equipment);
+        if (historySort.key === "technician_name") result = compareText(a.technician_name, b.technician_name);
+        if (historySort.key === "request") result = compareText(a.request, b.request);
+        if (historySort.key === "diagnosis") result = compareText(a.diagnosis, b.diagnosis);
+        if (historySort.key === "service_done") result = compareText(a.service_done, b.service_done);
+
+        return result * direction;
       });
-  }, [historyFilter, selectedMachine]);
+  }, [historyFilter, historySort, selectedMachine]);
+
+  const sortedTechnicians = useMemo(() => {
+    return [...technicians].sort((a, b) => {
+      const direction = technicianSort.direction === "asc" ? 1 : -1;
+      const result = technicianSort.key === "name" ? compareText(a.name, b.name) : compareText(a.email, b.email);
+      return result * direction;
+    });
+  }, [technicianSort, technicians]);
+
+  function toggleMachineSort(key: MachineSortKey) {
+    setMachineSort((current) => ({ key, direction: nextDirection(current.key === key, current.direction) }));
+  }
+
+  function toggleHistorySort(key: HistorySortKey) {
+    setHistorySort((current) => ({ key, direction: nextDirection(current.key === key, current.direction) }));
+  }
+
+  function toggleTechnicianSort(key: TechnicianSortKey) {
+    setTechnicianSort((current) => ({ key, direction: nextDirection(current.key === key, current.direction) }));
+  }
 
   async function saveMachine(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -554,7 +617,16 @@ export default function Home() {
               <div className="section-header"><h2>Máquinas cadastradas</h2><span>{filteredMachines.length} registros</span></div>
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>Código</th><th>Modelo</th><th>Cliente</th><th>Unidade / Cidade</th><th>Série</th><th>Software</th><th>Último atendimento</th><th>Ações</th></tr></thead>
+                  <thead><tr>
+                    <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("code")}>Código <span>{sortMark(machineSort.key === "code", machineSort.direction)}</span></button></th>
+                    <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("model")}>Modelo <span>{sortMark(machineSort.key === "model", machineSort.direction)}</span></button></th>
+                    <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("client")}>Cliente <span>{sortMark(machineSort.key === "client", machineSort.direction)}</span></button></th>
+                    <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("unit_city")}>Unidade / Cidade <span>{sortMark(machineSort.key === "unit_city", machineSort.direction)}</span></button></th>
+                    <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("serial")}>Série <span>{sortMark(machineSort.key === "serial", machineSort.direction)}</span></button></th>
+                    <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("software_version")}>Software <span>{sortMark(machineSort.key === "software_version", machineSort.direction)}</span></button></th>
+                    <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("last_service")}>Último atendimento <span>{sortMark(machineSort.key === "last_service", machineSort.direction)}</span></button></th>
+                    <th>Ações</th>
+                  </tr></thead>
                   <tbody>
                     {filteredMachines.map((machine) => (
                       <tr key={machine.id}>
@@ -598,7 +670,15 @@ export default function Home() {
                 <label>Filtrar histórico<input value={historyFilter} onChange={(event) => setHistoryFilter(event.target.value)} /></label>
                 <div className="table-wrap">
                   <table>
-                    <thead><tr><th>Data</th><th>Equipamento</th><th>Técnico</th><th>Solicitação</th><th>Diagnóstico</th><th>Serviço</th><th>PDF</th></tr></thead>
+                    <thead><tr>
+                      <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("service_date")}>Data <span>{sortMark(historySort.key === "service_date", historySort.direction)}</span></button></th>
+                      <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("equipment")}>Equipamento <span>{sortMark(historySort.key === "equipment", historySort.direction)}</span></button></th>
+                      <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("technician_name")}>Técnico <span>{sortMark(historySort.key === "technician_name", historySort.direction)}</span></button></th>
+                      <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("request")}>Solicitação <span>{sortMark(historySort.key === "request", historySort.direction)}</span></button></th>
+                      <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("diagnosis")}>Diagnóstico <span>{sortMark(historySort.key === "diagnosis", historySort.direction)}</span></button></th>
+                      <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("service_done")}>Serviço <span>{sortMark(historySort.key === "service_done", historySort.direction)}</span></button></th>
+                      <th>PDF</th>
+                    </tr></thead>
                     <tbody>
                       {filteredHistory.map((record) => (
                         <tr key={record.id} className="clickable-row" onClick={() => setSelectedServiceRecord(record)}>
@@ -653,8 +733,12 @@ export default function Home() {
             <section className="table-panel">
               <div className="table-wrap">
                 <table className="compact-table">
-                  <thead><tr><th>Nome</th><th>E-mail</th><th>Ações</th></tr></thead>
-                  <tbody>{technicians.map((technician) => <tr key={technician.id}><td>{technician.name}</td><td>{technician.email || "-"}</td><td><button className="icon-button danger" type="button" title="Excluir técnico" aria-label={`Excluir técnico ${technician.name}`} onClick={() => deleteTechnician(technician.id)}>×</button></td></tr>)}</tbody>
+                  <thead><tr>
+                    <th><button className="sort-header" type="button" onClick={() => toggleTechnicianSort("name")}>Nome <span>{sortMark(technicianSort.key === "name", technicianSort.direction)}</span></button></th>
+                    <th><button className="sort-header" type="button" onClick={() => toggleTechnicianSort("email")}>E-mail <span>{sortMark(technicianSort.key === "email", technicianSort.direction)}</span></button></th>
+                    <th>Ações</th>
+                  </tr></thead>
+                  <tbody>{sortedTechnicians.map((technician) => <tr key={technician.id}><td>{technician.name}</td><td>{technician.email || "-"}</td><td><button className="icon-button danger" type="button" title="Excluir técnico" aria-label={`Excluir técnico ${technician.name}`} onClick={() => deleteTechnician(technician.id)}>×</button></td></tr>)}</tbody>
                 </table>
               </div>
             </section>
