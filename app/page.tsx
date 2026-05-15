@@ -70,18 +70,36 @@ function clearAuthConfirmation() {
   window.localStorage.removeItem(AUTH_CONFIRMED_AT_KEY);
 }
 
-function authMessage(error: string) {
-  const normalized = error.toLowerCase();
+function describeAuthError(error: unknown) {
+  if (!error) return "erro não informado pelo Supabase.";
+  if (typeof error === "string") return error || "erro não informado pelo Supabase.";
+  if (error instanceof Error) {
+    return [error.name, error.message].filter(Boolean).join(": ") || "erro não informado pelo Supabase.";
+  }
+
+  try {
+    const entries = Object.entries(error as Record<string, unknown>)
+      .filter(([, value]) => value !== undefined && value !== null && value !== "")
+      .map(([key, value]) => `${key}: ${typeof value === "object" ? JSON.stringify(value) : String(value)}`);
+    return entries.length ? entries.join(" | ") : JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
+function authMessage(error: unknown) {
+  const detail = describeAuthError(error);
+  const normalized = detail.toLowerCase();
   if (normalized.includes("invalid login credentials")) return "Código inválido ou expirado.";
   if (normalized.includes("failed to fetch") || normalized.includes("network")) return "Falha de conexão. Verifique a internet e tente novamente.";
   if (normalized.includes("email not confirmed")) return "Confirme seu e-mail antes de entrar.";
   if (normalized.includes("user already registered")) return "Usuário já cadastrado.";
   if (normalized.includes("signup is disabled")) return "O cadastro de novos usuários está desativado no Supabase.";
   if (normalized.includes("rate limit") || normalized.includes("over_email_send_rate_limit") || normalized.includes("too many requests")) return "Limite temporário de envio de e-mails atingido. Aguarde alguns minutos e tente novamente.";
-  if (normalized.includes("smtp") || normalized.includes("email provider") || normalized.includes("send email")) return `Falha no envio do e-mail pelo provedor SMTP. Detalhe: ${error}`;
+  if (normalized.includes("smtp") || normalized.includes("email provider") || normalized.includes("send email")) return `Falha no envio do e-mail pelo provedor SMTP. Detalhe: ${detail}`;
   if (normalized.includes("for security purposes")) return "Aguarde alguns segundos antes de solicitar um novo envio.";
   if (normalized.includes("otp") || normalized.includes("token")) return "Código inválido ou expirado. Solicite um novo código e tente novamente.";
-  return `Não foi possível concluir a autenticação. Detalhe: ${error || "erro não informado pelo Supabase."}`;
+  return `Não foi possível concluir a autenticação. Detalhe: ${detail}`;
 }
 
 function dataMessage(error: string) {
@@ -240,7 +258,8 @@ export default function Home() {
       });
 
       if (error) {
-        setMessage(authMessage(error.message));
+        console.error("Erro ao enviar código de acesso", error);
+        setMessage(authMessage(error));
         setAuthLoading(false);
         return;
       }
@@ -266,7 +285,8 @@ export default function Home() {
     });
 
     if (error || !data.session) {
-      setMessage(authMessage(error?.message || ""));
+      console.error("Erro ao validar código de acesso", error);
+      setMessage(authMessage(error));
       setAuthLoading(false);
       return;
     }
