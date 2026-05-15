@@ -154,16 +154,6 @@ export default function Home() {
       }
 
       if (data.session && !hasFreshAuthConfirmation()) {
-        const urlHasAuthCallback = window.location.hash.includes("access_token") || window.location.search.includes("code=");
-        if (urlHasAuthCallback) {
-          storeAuthConfirmation();
-          setIsAuthenticated(true);
-          setCurrentUserId(data.session.user.id);
-          setMessage("Acesso autorizado.");
-          void loadData();
-          return;
-        }
-
         void supabase.auth.signOut();
         clearAuthConfirmation();
         setIsAuthenticated(false);
@@ -185,10 +175,6 @@ export default function Home() {
         setIsAuthenticated(false);
         setMessage("Acesso negado. Use um e-mail corporativo da Tomasoni.");
         return;
-      }
-
-      if (event === "SIGNED_IN" && session) {
-        storeAuthConfirmation();
       }
 
       setIsAuthenticated(Boolean(session));
@@ -242,8 +228,7 @@ export default function Home() {
       const { error } = await supabase.auth.signInWithOtp({
         email: normalizedEmail,
         options: {
-          shouldCreateUser: true,
-          emailRedirectTo: window.location.origin
+          shouldCreateUser: true
         }
       });
 
