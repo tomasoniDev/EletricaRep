@@ -24,6 +24,13 @@ function formatDate(value?: string | null) {
   return `${day}/${month}/${year}`;
 }
 
+function formatMonthYear(value?: string | null) {
+  if (!value) return "-";
+  const [year, month] = value.split("-");
+  if (!year || !month) return value;
+  return `${month}/${year}`;
+}
+
 function parseEmails(value: string) {
   return value
     .split(/[;,\n]/)
@@ -109,6 +116,14 @@ function dataMessage(error: string) {
   if (normalized.includes("permission") || normalized.includes("row-level security")) return "Seu usuário não tem permissão para executar esta ação.";
   if (normalized.includes("network") || normalized.includes("fetch")) return "Falha de conexão. Verifique a internet e tente novamente.";
   return "Não foi possível concluir a operação. Revise os dados e tente novamente.";
+}
+
+function screenLegend(view: View, registryTab: RegistryTab, selectedMachine?: Machine) {
+  if (view === "home") return "Consulte uma máquina pelo código ou selecione uma linha da tabela.";
+  if (view === "machineDetail") return selectedMachine ? `Dados cadastrais e histórico da máquina ${selectedMachine.code}.` : "Dados cadastrais e histórico da máquina.";
+  if (view === "service") return "Registre um novo atendimento técnico e gere o relatório em PDF.";
+  if (registryTab === "machines") return "Cadastre, altere ou exclua máquinas e e-mails vinculados ao cliente.";
+  return "Cadastre e gerencie os técnicos disponíveis para lançamento dos atendimentos.";
 }
 
 function PlusIcon() {
@@ -321,7 +336,7 @@ export default function Home() {
     return [...machines]
       .filter((machine) => {
         if (!term) return true;
-        return [machine.code, machine.model, machine.client, machine.unit_city, machine.serial, machine.software_version, machine.access_method]
+        return [machine.code, machine.model, machine.client, machine.unit_city, machine.serial, machine.manufacture_month, machine.software_version, machine.access_method]
           .join(" ")
           .toLowerCase()
           .includes(term);
@@ -401,6 +416,7 @@ export default function Home() {
       client: String(form.get("client") ?? "").trim(),
       unit_city: String(form.get("unit_city") ?? "").trim() || null,
       serial: String(form.get("serial") ?? "").trim() || null,
+      manufacture_month: String(form.get("manufacture_month") ?? "").trim() || null,
       software_version: String(form.get("software_version") ?? "").trim() || null,
       access_method: String(form.get("access_method") ?? "").trim() || null
     };
@@ -629,7 +645,10 @@ export default function Home() {
           <button className="icon-button add-action" type="button" title="Novo atendimento" aria-label="Novo atendimento" onClick={() => setView("service")}><PlusIcon /></button>
         </header>
 
-        <section className="status-band"><strong>{message}</strong></section>
+        <section className="status-band">
+          <strong>{screenLegend(view, registryTab, selectedMachine)}</strong>
+          {message !== DEFAULT_MESSAGE && <span>{message}</span>}
+        </section>
 
         {view === "home" && (
           <section className="view active">
@@ -681,6 +700,7 @@ export default function Home() {
                 <div><span>Cliente</span><strong>{selectedMachine.client}</strong></div>
                 <div><span>Unidade / Cidade</span><strong>{selectedMachine.unit_city || "-"}</strong></div>
                 <div><span>Número de série</span><strong>{selectedMachine.serial || "-"}</strong></div>
+                <div><span>Fabricação</span><strong>{formatMonthYear(selectedMachine.manufacture_month)}</strong></div>
                 <div><span>Versão do software</span><strong>{selectedMachine.software_version || "-"}</strong></div>
                 <div><span>Forma de acesso</span><strong>{selectedMachine.access_method || "-"}</strong></div>
                 <div><span>E-mails do cliente</span><strong>{selectedMachine.machine_emails?.map((item) => item.email).join("; ") || "-"}</strong></div>
@@ -770,6 +790,7 @@ export default function Home() {
                     <label>Cliente<input name="client" required defaultValue={editingMachine?.client ?? ""} /></label>
                     <label>Unidade / Cidade<input name="unit_city" defaultValue={editingMachine?.unit_city ?? ""} /></label>
                     <label>Número de série<input name="serial" defaultValue={editingMachine?.serial ?? ""} /></label>
+                    <label>Fabricação<input name="manufacture_month" type="month" defaultValue={editingMachine?.manufacture_month ?? ""} /></label>
                     <label>Versão do software<input name="software_version" defaultValue={editingMachine?.software_version ?? ""} /></label>
                     <label>Forma de acesso<input name="access_method" defaultValue={editingMachine?.access_method ?? ""} /></label>
                     <label className="wide">E-mails do cliente<textarea name="emails" rows={3} defaultValue={editingMachine?.machine_emails?.map((item) => item.email).join("; ") ?? ""} /></label>
@@ -780,13 +801,14 @@ export default function Home() {
                   <div className="section-header"><h2>Máquinas cadastradas</h2><span>{registryMachines.length} registros</span></div>
                   <div className="table-wrap">
                     <table>
-                      <thead><tr><th>Código</th><th>Modelo</th><th>Cliente</th><th>Série</th><th>Software</th><th>Ações</th></tr></thead>
+                      <thead><tr><th>Código</th><th>Modelo</th><th>Cliente</th><th>Série</th><th>Fabricação</th><th>Software</th><th>Ações</th></tr></thead>
                       <tbody>{registryMachines.map((machine) => (
                         <tr key={machine.id}>
                           <td>{machine.code}</td>
                           <td>{machine.model}</td>
                           <td>{machine.client}</td>
                           <td>{machine.serial || "-"}</td>
+                          <td>{formatMonthYear(machine.manufacture_month)}</td>
                           <td>{machine.software_version || "-"}</td>
                           <td>
                             <button className="icon-button edit" type="button" title="Alterar máquina" aria-label={`Alterar máquina ${machine.code}`} onClick={() => setEditingMachineId(machine.id)}>✎</button>

@@ -205,6 +205,13 @@ h2 { margin: 0; font-size: 1rem; }
   white-space: normal;
 }
 
+.status-band span {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
 .view {
   display: grid;
   width: min(1160px, 100%);

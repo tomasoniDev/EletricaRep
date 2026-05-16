@@ -5,6 +5,7 @@ export type Machine = {
   client: string;
   unit_city: string | null;
   serial: string | null;
+  manufacture_month: string | null;
   software_version: string | null;
   access_method: string | null;
   created_at: string;

@@ -16,6 +16,13 @@ function formatDate(value?: string | null) {
   return `${day}/${month}/${year}`;
 }
 
+function formatMonthYear(value?: string | null) {
+  if (!value) return "-";
+  const [year, month] = value.split("-");
+  if (!year || !month) return value;
+  return `${month}/${year}`;
+}
+
 function reportCode(machine: Machine, record: ServiceRecord) {
   const [year, month, day] = record.service_date.split("-");
   const prefix = `RAT-${year.slice(2)}${month}${day}`;
@@ -125,6 +132,7 @@ function drawMachineData(doc: jsPDF, machine: Machine) {
   labelValue(doc, "Modelo", machine.model, MARGIN + (col + 12) * 2, 234, col);
   labelValue(doc, "Código", machine.code, MARGIN, 273, col);
   labelValue(doc, "Número de série", machine.serial, MARGIN + col + 12, 273, col);
+  labelValue(doc, "Fabricação", formatMonthYear(machine.manufacture_month), MARGIN + (col + 12) * 2, 273, col);
 }
 
 function drawServiceData(doc: jsPDF, record: ServiceRecord) {
