@@ -6,7 +6,8 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { downloadServicePdf } from "@/lib/pdf";
 import type { Machine, ServiceRecord, Technician } from "@/lib/types";
 
-type View = "home" | "machine" | "service" | "technicians";
+type View = "home" | "machineDetail" | "service" | "registry";
+type RegistryTab = "machines" | "technicians";
 type SortDirection = "asc" | "desc";
 type MachineSortKey = "code" | "model" | "client" | "unit_city" | "serial" | "software_version" | "last_service";
 type HistorySortKey = "service_date" | "equipment" | "technician_name" | "request" | "diagnosis" | "service_done";
@@ -148,6 +149,7 @@ export default function Home() {
   const [otpSent, setOtpSent] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [view, setView] = useState<View>("home");
+  const [registryTab, setRegistryTab] = useState<RegistryTab>("machines");
   const [machines, setMachines] = useState<Machine[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [selectedMachineId, setSelectedMachineId] = useState("");
@@ -310,7 +312,9 @@ export default function Home() {
     setTechnicians([]);
   }
 
-  const selectedMachine = machines.find((machine) => machine.id === selectedMachineId) ?? machines[0];
+  const selectedMachine = machines.find((machine) => machine.id === selectedMachineId);
+  const serviceMachine = selectedMachine ?? machines[0];
+  const editingMachine = machines.find((machine) => machine.id === editingMachineId);
 
   const filteredMachines = useMemo(() => {
     const term = machineFilter.trim().toLowerCase();
@@ -337,6 +341,10 @@ export default function Home() {
         return result * direction;
       });
   }, [machineFilter, machineSort, machines]);
+
+  const registryMachines = useMemo(() => {
+    return [...machines].sort((a, b) => compareText(a.code, b.code));
+  }, [machines]);
 
   const filteredHistory = useMemo(() => {
     const term = historyFilter.trim().toLowerCase();
@@ -417,7 +425,8 @@ export default function Home() {
     setMessage(`Máquina ${payload.code} salva com sucesso.`);
     event.currentTarget.reset();
     await loadData();
-    setView("home");
+    setRegistryTab("machines");
+    setView("registry");
   }
 
   async function saveTechnician(event: FormEvent<HTMLFormElement>) {
@@ -495,7 +504,7 @@ export default function Home() {
     event.currentTarget.reset();
     await loadData();
     if (!editingServiceRecord) downloadServicePdf(machine, record);
-    setView("machine");
+    setView("machineDetail");
   }
 
   function startServiceEdit(record: ServiceRecord) {
@@ -568,8 +577,7 @@ export default function Home() {
         <nav className="side-nav">
           <button className={`nav-item ${view === "home" ? "active" : ""}`} onClick={() => setView("home")}>Tela inicial</button>
           <button className={`nav-item ${view === "service" ? "active" : ""}`} onClick={() => setView("service")}>Novo registro</button>
-          <button className={`nav-item ${view === "machine" ? "active" : ""}`} onClick={() => setView("machine")}>Cadastro</button>
-          <button className={`nav-item ${view === "technicians" ? "active" : ""}`} onClick={() => setView("technicians")}>Técnicos</button>
+          <button className={`nav-item ${view === "registry" ? "active" : ""}`} onClick={() => setView("registry")}>Cadastro</button>
         </nav>
         <button className="button ghost logout-button" onClick={signOut}>Sair</button>
       </aside>
@@ -601,19 +609,17 @@ export default function Home() {
                     <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("serial")}>Série <span>{sortMark(machineSort.key === "serial", machineSort.direction)}</span></button></th>
                     <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("software_version")}>Software <span>{sortMark(machineSort.key === "software_version", machineSort.direction)}</span></button></th>
                     <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("last_service")}>Último atendimento <span>{sortMark(machineSort.key === "last_service", machineSort.direction)}</span></button></th>
-                    <th>Ações</th>
                   </tr></thead>
                   <tbody>
                     {filteredMachines.map((machine) => (
                       <tr key={machine.id}>
-                        <td><button className="link-button" onClick={() => { setSelectedMachineId(machine.id); setView("machine"); }}>{machine.code}</button></td>
+                        <td><button className="link-button" onClick={() => { setSelectedMachineId(machine.id); setHistoryFilter(""); setView("machineDetail"); }}>{machine.code}</button></td>
                         <td>{machine.model}</td>
                         <td>{machine.client}</td>
                         <td>{machine.unit_city || "-"}</td>
                         <td>{machine.serial || "-"}</td>
                         <td>{machine.software_version || "-"}</td>
                         <td>{formatDate(lastServiceDate(machine))}</td>
-                        <td><button className="icon-button danger" type="button" title="Excluir máquina" aria-label={`Excluir máquina ${machine.code}`} onClick={() => deleteMachine(machine.id)}>×</button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -623,55 +629,55 @@ export default function Home() {
           </section>
         )}
 
-        {view === "machine" && (
+        {view === "machineDetail" && selectedMachine && (
           <section className="view active">
-            <form className="form-panel" onSubmit={saveMachine}>
-              <div className="section-header"><h2>{editingMachineId ? "Alterar máquina" : "Cadastrar máquina"}</h2><button className="icon-button save-action" title="Salvar máquina" aria-label="Salvar máquina"><SaveIcon /></button></div>
-              <div className="fields-grid">
-                <label>Código<input name="code" required defaultValue={selectedMachine?.code ?? ""} /></label>
-                <label>Modelo<input name="model" required defaultValue={selectedMachine?.model ?? ""} /></label>
-                <label>Cliente<input name="client" required defaultValue={selectedMachine?.client ?? ""} /></label>
-                <label>Unidade / Cidade<input name="unit_city" defaultValue={selectedMachine?.unit_city ?? ""} /></label>
-                <label>Número de série<input name="serial" defaultValue={selectedMachine?.serial ?? ""} /></label>
-                <label>Versão do software<input name="software_version" defaultValue={selectedMachine?.software_version ?? ""} /></label>
-                <label>Forma de acesso<input name="access_method" defaultValue={selectedMachine?.access_method ?? ""} /></label>
-                <label className="wide">E-mails do cliente<textarea name="emails" rows={3} defaultValue={selectedMachine?.machine_emails?.map((item) => item.email).join("; ") ?? ""} /></label>
+            <section className="table-panel">
+              <div className="section-header">
+                <h2>Dados da máquina</h2>
+                <button className="button ghost" type="button" onClick={() => setView("home")}>Voltar</button>
               </div>
-              {selectedMachine && <button type="button" className="icon-button edit" title="Alterar cadastro atual" aria-label="Alterar cadastro atual" onClick={() => setEditingMachineId(selectedMachine.id)}>✎</button>}
-            </form>
+              <div className="details-grid">
+                <div><span>Código</span><strong>{selectedMachine.code}</strong></div>
+                <div><span>Modelo</span><strong>{selectedMachine.model}</strong></div>
+                <div><span>Cliente</span><strong>{selectedMachine.client}</strong></div>
+                <div><span>Unidade / Cidade</span><strong>{selectedMachine.unit_city || "-"}</strong></div>
+                <div><span>Número de série</span><strong>{selectedMachine.serial || "-"}</strong></div>
+                <div><span>Versão do software</span><strong>{selectedMachine.software_version || "-"}</strong></div>
+                <div><span>Forma de acesso</span><strong>{selectedMachine.access_method || "-"}</strong></div>
+                <div><span>E-mails do cliente</span><strong>{selectedMachine.machine_emails?.map((item) => item.email).join("; ") || "-"}</strong></div>
+              </div>
+            </section>
 
-            {selectedMachine && (
-              <section className="table-panel">
-                <div className="section-header"><h2>Histórico de {selectedMachine.code}</h2><span>{filteredHistory.length} registros</span></div>
-                <label>Filtrar histórico<input value={historyFilter} onChange={(event) => setHistoryFilter(event.target.value)} /></label>
-                <div className="table-wrap">
-                  <table>
-                    <thead><tr>
-                      <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("service_date")}>Data <span>{sortMark(historySort.key === "service_date", historySort.direction)}</span></button></th>
-                      <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("equipment")}>Equipamento <span>{sortMark(historySort.key === "equipment", historySort.direction)}</span></button></th>
-                      <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("technician_name")}>Técnico <span>{sortMark(historySort.key === "technician_name", historySort.direction)}</span></button></th>
-                      <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("request")}>Solicitação <span>{sortMark(historySort.key === "request", historySort.direction)}</span></button></th>
-                      <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("diagnosis")}>Diagnóstico <span>{sortMark(historySort.key === "diagnosis", historySort.direction)}</span></button></th>
-                      <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("service_done")}>Serviço <span>{sortMark(historySort.key === "service_done", historySort.direction)}</span></button></th>
-                      <th>PDF</th>
-                    </tr></thead>
-                    <tbody>
-                      {filteredHistory.map((record) => (
-                        <tr key={record.id} className="clickable-row" onClick={() => setSelectedServiceRecord(record)}>
-                          <td>{formatDate(record.service_date)}</td>
-                          <td>{record.equipment || "-"}</td>
-                          <td>{record.technician_name}</td>
-                          <td>{record.request}</td>
-                          <td>{record.diagnosis}</td>
-                          <td>{record.service_done}</td>
-                          <td><button className="icon-button download" type="button" title="Baixar PDF" aria-label="Baixar PDF" onClick={(event) => { event.stopPropagation(); downloadServicePdf(selectedMachine, record); }}><PdfDownloadIcon /></button></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            )}
+            <section className="table-panel">
+              <div className="section-header"><h2>Histórico de {selectedMachine.code}</h2><span>{filteredHistory.length} registros</span></div>
+              <label>Filtrar histórico<input value={historyFilter} onChange={(event) => setHistoryFilter(event.target.value)} /></label>
+              <div className="table-wrap">
+                <table>
+                  <thead><tr>
+                    <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("service_date")}>Data <span>{sortMark(historySort.key === "service_date", historySort.direction)}</span></button></th>
+                    <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("equipment")}>Equipamento <span>{sortMark(historySort.key === "equipment", historySort.direction)}</span></button></th>
+                    <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("technician_name")}>Técnico <span>{sortMark(historySort.key === "technician_name", historySort.direction)}</span></button></th>
+                    <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("request")}>Solicitação <span>{sortMark(historySort.key === "request", historySort.direction)}</span></button></th>
+                    <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("diagnosis")}>Diagnóstico <span>{sortMark(historySort.key === "diagnosis", historySort.direction)}</span></button></th>
+                    <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("service_done")}>Serviço <span>{sortMark(historySort.key === "service_done", historySort.direction)}</span></button></th>
+                    <th>PDF</th>
+                  </tr></thead>
+                  <tbody>
+                    {filteredHistory.map((record) => (
+                      <tr key={record.id} className="clickable-row" onClick={() => setSelectedServiceRecord(record)}>
+                        <td>{formatDate(record.service_date)}</td>
+                        <td>{record.equipment || "-"}</td>
+                        <td>{record.technician_name}</td>
+                        <td>{record.request}</td>
+                        <td>{record.diagnosis}</td>
+                        <td>{record.service_done}</td>
+                        <td><button className="icon-button download" type="button" title="Baixar PDF" aria-label="Baixar PDF" onClick={(event) => { event.stopPropagation(); downloadServicePdf(selectedMachine, record); }}><PdfDownloadIcon /></button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
           </section>
         )}
 
@@ -685,7 +691,7 @@ export default function Home() {
               </div>
             </div>
             <div className="fields-grid">
-              <label>Máquina<select name="machine_id" required defaultValue={editingServiceRecord?.machine_id ?? selectedMachine?.id}>{machines.map((machine) => <option key={machine.id} value={machine.id}>{machine.code} - {machine.model}</option>)}</select></label>
+              <label>Máquina<select name="machine_id" required defaultValue={editingServiceRecord?.machine_id ?? serviceMachine?.id}>{machines.map((machine) => <option key={machine.id} value={machine.id}>{machine.code} - {machine.model}</option>)}</select></label>
               <label>Equipamento<input name="equipment" placeholder="CLP, IHM, servo, inversor" defaultValue={editingServiceRecord?.equipment ?? ""} /></label>
               <label>Técnico responsável<select name="technician_id" required defaultValue={editingServiceRecord?.technician_id ?? ""}>{technicians.map((technician) => <option key={technician.id} value={technician.id}>{technician.name}</option>)}</select></label>
               <label>Data<input name="service_date" type="date" required defaultValue={editingServiceRecord?.service_date ?? new Date().toISOString().slice(0, 10)} /></label>
@@ -697,27 +703,87 @@ export default function Home() {
           </form>
         )}
 
-        {view === "technicians" && (
+        {view === "registry" && (
           <section className="view active">
-            <form className="form-panel" onSubmit={saveTechnician}>
-              <div className="section-header"><h2>{editingTechnicianId ? "Alterar técnico" : "Cadastrar técnico"}</h2><button className="icon-button save-action" title="Salvar técnico" aria-label="Salvar técnico"><SaveIcon /></button></div>
-              <div className="fields-grid">
-                <label>Nome<input name="name" required /></label>
-                <label>E-mail<input name="email" type="email" /></label>
-              </div>
-            </form>
             <section className="table-panel">
-              <div className="table-wrap">
-                <table className="compact-table">
-                  <thead><tr>
-                    <th><button className="sort-header" type="button" onClick={() => toggleTechnicianSort("name")}>Nome <span>{sortMark(technicianSort.key === "name", technicianSort.direction)}</span></button></th>
-                    <th><button className="sort-header" type="button" onClick={() => toggleTechnicianSort("email")}>E-mail <span>{sortMark(technicianSort.key === "email", technicianSort.direction)}</span></button></th>
-                    <th>Ações</th>
-                  </tr></thead>
-                  <tbody>{sortedTechnicians.map((technician) => <tr key={technician.id}><td>{technician.name}</td><td>{technician.email || "-"}</td><td><button className="icon-button danger" type="button" title="Excluir técnico" aria-label={`Excluir técnico ${technician.name}`} onClick={() => deleteTechnician(technician.id)}>×</button></td></tr>)}</tbody>
-                </table>
+              <div className="section-header">
+                <h2>Cadastro</h2>
+                <div className="segmented-control" role="tablist" aria-label="Opções de cadastro">
+                  <button className={registryTab === "machines" ? "active" : ""} type="button" onClick={() => setRegistryTab("machines")}>Máquinas</button>
+                  <button className={registryTab === "technicians" ? "active" : ""} type="button" onClick={() => setRegistryTab("technicians")}>Técnicos</button>
+                </div>
               </div>
             </section>
+
+            {registryTab === "machines" && (
+              <>
+                <form key={editingMachineId || "new-machine"} className="form-panel" onSubmit={saveMachine}>
+                  <div className="section-header">
+                    <h2>{editingMachineId ? "Alterar máquina" : "Cadastrar máquina"}</h2>
+                    <div className="actions-row">
+                      {editingMachineId && <button className="button ghost" type="button" onClick={() => setEditingMachineId("")}>Cancelar</button>}
+                      <button className="icon-button save-action" title="Salvar máquina" aria-label="Salvar máquina"><SaveIcon /></button>
+                    </div>
+                  </div>
+                  <div className="fields-grid">
+                    <label>Código<input name="code" required defaultValue={editingMachine?.code ?? ""} /></label>
+                    <label>Modelo<input name="model" required defaultValue={editingMachine?.model ?? ""} /></label>
+                    <label>Cliente<input name="client" required defaultValue={editingMachine?.client ?? ""} /></label>
+                    <label>Unidade / Cidade<input name="unit_city" defaultValue={editingMachine?.unit_city ?? ""} /></label>
+                    <label>Número de série<input name="serial" defaultValue={editingMachine?.serial ?? ""} /></label>
+                    <label>Versão do software<input name="software_version" defaultValue={editingMachine?.software_version ?? ""} /></label>
+                    <label>Forma de acesso<input name="access_method" defaultValue={editingMachine?.access_method ?? ""} /></label>
+                    <label className="wide">E-mails do cliente<textarea name="emails" rows={3} defaultValue={editingMachine?.machine_emails?.map((item) => item.email).join("; ") ?? ""} /></label>
+                  </div>
+                </form>
+
+                <section className="table-panel">
+                  <div className="section-header"><h2>Máquinas cadastradas</h2><span>{registryMachines.length} registros</span></div>
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>Código</th><th>Modelo</th><th>Cliente</th><th>Série</th><th>Software</th><th>Ações</th></tr></thead>
+                      <tbody>{registryMachines.map((machine) => (
+                        <tr key={machine.id}>
+                          <td>{machine.code}</td>
+                          <td>{machine.model}</td>
+                          <td>{machine.client}</td>
+                          <td>{machine.serial || "-"}</td>
+                          <td>{machine.software_version || "-"}</td>
+                          <td>
+                            <button className="icon-button edit" type="button" title="Alterar máquina" aria-label={`Alterar máquina ${machine.code}`} onClick={() => setEditingMachineId(machine.id)}>✎</button>
+                            <button className="icon-button danger" type="button" title="Excluir máquina" aria-label={`Excluir máquina ${machine.code}`} onClick={() => deleteMachine(machine.id)}>×</button>
+                          </td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                </section>
+              </>
+            )}
+
+            {registryTab === "technicians" && (
+              <>
+                <form className="form-panel" onSubmit={saveTechnician}>
+                  <div className="section-header"><h2>{editingTechnicianId ? "Alterar técnico" : "Cadastrar técnico"}</h2><button className="icon-button save-action" title="Salvar técnico" aria-label="Salvar técnico"><SaveIcon /></button></div>
+                  <div className="fields-grid">
+                    <label>Nome<input name="name" required /></label>
+                    <label>E-mail<input name="email" type="email" /></label>
+                  </div>
+                </form>
+                <section className="table-panel">
+                  <div className="table-wrap">
+                    <table className="compact-table">
+                      <thead><tr>
+                        <th><button className="sort-header" type="button" onClick={() => toggleTechnicianSort("name")}>Nome <span>{sortMark(technicianSort.key === "name", technicianSort.direction)}</span></button></th>
+                        <th><button className="sort-header" type="button" onClick={() => toggleTechnicianSort("email")}>E-mail <span>{sortMark(technicianSort.key === "email", technicianSort.direction)}</span></button></th>
+                        <th>Ações</th>
+                      </tr></thead>
+                      <tbody>{sortedTechnicians.map((technician) => <tr key={technician.id}><td>{technician.name}</td><td>{technician.email || "-"}</td><td><button className="icon-button danger" type="button" title="Excluir técnico" aria-label={`Excluir técnico ${technician.name}`} onClick={() => deleteTechnician(technician.id)}>×</button></td></tr>)}</tbody>
+                    </table>
+                  </div>
+                </section>
+              </>
+            )}
           </section>
         )}
 
