@@ -152,7 +152,7 @@ function drawFooter(doc: jsPDF) {
   doc.text("Página 1", PAGE_WIDTH - MARGIN - 36, PAGE_HEIGHT - 29);
 }
 
-export async function downloadServicePdf(machine: Machine, record: ServiceRecord) {
+async function createServicePdf(machine: Machine, record: ServiceRecord) {
   const doc = new jsPDF({ unit: "pt", format: "a4", orientation: "portrait", compress: true });
   doc.setProperties({
     title: `${reportCode(machine, record)} - ${machine.code}`,
@@ -166,5 +166,20 @@ export async function downloadServicePdf(machine: Machine, record: ServiceRecord
   drawTechnicianData(doc, record);
   drawFooter(doc);
 
-  doc.save(`${reportCode(machine, record)}-${machine.code}.pdf`);
+  return doc;
+}
+
+export function servicePdfFileName(machine: Machine, record: ServiceRecord) {
+  return `${reportCode(machine, record)}-${machine.code}.pdf`;
+}
+
+export async function servicePdfBase64(machine: Machine, record: ServiceRecord) {
+  const doc = await createServicePdf(machine, record);
+  const dataUri = doc.output("datauristring");
+  return dataUri.split(",")[1] ?? "";
+}
+
+export async function downloadServicePdf(machine: Machine, record: ServiceRecord) {
+  const doc = await createServicePdf(machine, record);
+  doc.save(servicePdfFileName(machine, record));
 }

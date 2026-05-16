@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
-import { downloadServicePdf } from "@/lib/pdf";
+import { downloadServicePdf, servicePdfBase64, servicePdfFileName } from "@/lib/pdf";
 import type { Machine, ServiceRecord, Technician } from "@/lib/types";
 
 type View = "home" | "machineDetail" | "service" | "registry";
@@ -452,8 +452,44 @@ export default function Home() {
     await loadData();
   }
 
+  async function sendServiceEmail(machine: Machine, record: ServiceRecord) {
+    const recipients = machine.machine_emails?.map((item) => item.email).filter(Boolean) ?? [];
+    if (!recipients.length) {
+      return "Atendimento salvo e PDF gerado. Nenhum e-mail de cliente foi cadastrado para esta máquina.";
+    }
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) {
+      return "Atendimento salvo e PDF gerado, mas não foi possível enviar o e-mail: sessão não encontrada.";
+    }
+
+    const pdfBase64 = await servicePdfBase64(machine, record);
+    const response = await fetch("/api/send-service-email", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        to: recipients,
+        subject: `Relatório de atendimento - Máquina ${machine.code}`,
+        filename: servicePdfFileName(machine, record),
+        pdfBase64
+      })
+    });
+
+    const result = await response.json().catch(() => null);
+    if (!response.ok) {
+      return `Atendimento salvo e PDF gerado, mas o e-mail não foi enviado. Detalhe: ${result?.error ?? "erro não informado"}`;
+    }
+
+    return `Atendimento salvo, PDF gerado e e-mail enviado para ${recipients.join("; ")}.`;
+  }
+
   async function saveService(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const isEditingService = Boolean(editingServiceRecord);
     const form = new FormData(event.currentTarget);
     const machine = machines.find((item) => item.id === String(form.get("machine_id")));
     const technician = technicians.find((item) => item.id === String(form.get("technician_id")));
@@ -498,12 +534,15 @@ export default function Home() {
 
     const record = data as ServiceRecord;
     setSelectedMachineId(machine.id);
-    setMessage(editingServiceRecord ? "Atendimento atualizado com sucesso." : "Atendimento salvo. O PDF foi gerado para download.");
+    setMessage(isEditingService ? "Atendimento atualizado com sucesso." : "Atendimento salvo. Gerando PDF e preparando envio por e-mail.");
     setEditingServiceRecord(null);
     setSelectedServiceRecord(null);
     event.currentTarget.reset();
     await loadData();
-    if (!editingServiceRecord) downloadServicePdf(machine, record);
+    if (!isEditingService) {
+      await downloadServicePdf(machine, record);
+      setMessage(await sendServiceEmail(machine, record));
+    }
     setView("machineDetail");
   }
 
