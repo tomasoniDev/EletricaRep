@@ -121,14 +121,6 @@ function displayMachineCode(machine?: Pick<Machine, "code" | "model" | "client">
   return machine?.code?.trim() || machine?.model?.trim() || machine?.client?.trim() || "Máquina sem código";
 }
 
-function normalizeProjectFolderLink(value?: string | null) {
-  const trimmed = value?.trim() ?? "";
-  if (!trimmed) return "";
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  if (/^www\./i.test(trimmed)) return `https://${trimmed}`;
-  return "";
-}
-
 function machineFormFromMachine(machine?: Machine | null): MachineFormState {
   if (!machine) return EMPTY_MACHINE_FORM;
   return {
@@ -607,16 +599,10 @@ export default function Home() {
     setMachineComponents((current) => (current.length === 1 ? [{ ...EMPTY_COMPONENT }] : current.filter((_, itemIndex) => itemIndex !== index)));
   }
 
-  async function openProjectFolder(link: string | null) {
-    const target = normalizeProjectFolderLink(link);
-    if (target) {
-      window.open(target, "_blank", "noopener,noreferrer");
-      return;
-    }
-
+  async function copyProjectFolderLink(link: string | null) {
     if (link) {
       await navigator.clipboard?.writeText(link);
-      setMessage("O navegador bloqueia abertura direta de caminhos locais/rede. O caminho da pasta foi copiado para a área de transferência.");
+      setMessage("Link da pasta copiado para a área de transferência.");
     }
   }
 
@@ -973,7 +959,7 @@ export default function Home() {
                         <tr key={component.id}>
                           <td>{component.machine_name}</td>
                           <td>{component.electrical_project}</td>
-                          <td>{component.project_folder_link ? <button className="link-button" type="button" onClick={() => openProjectFolder(component.project_folder_link)}>Abrir pasta</button> : "-"}</td>
+                          <td>{component.project_folder_link ? <button className="link-button" type="button" onClick={() => copyProjectFolderLink(component.project_folder_link)}>Copiar link</button> : "-"}</td>
                           <td>{component.ip_range || "-"}</td>
                         </tr>
                       ))}
