@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { downloadServicePdf, servicePdfBase64, servicePdfFileName } from "@/lib/pdf";
-import type { Machine, ServiceRecord, Technician } from "@/lib/types";
+import type { Machine, MachineComponent, ServiceRecord, Technician } from "@/lib/types";
 
 type View = "home" | "machineDetail" | "service" | "registry";
 type RegistryTab = "machines" | "technicians";
@@ -12,11 +12,75 @@ type SortDirection = "asc" | "desc";
 type MachineSortKey = "code" | "model" | "client" | "unit_city" | "serial" | "software_version" | "last_service";
 type HistorySortKey = "service_date" | "equipment" | "technician_name" | "request" | "diagnosis" | "service_done";
 type TechnicianSortKey = "name" | "email";
+type RemoteAccess = "SINEMA" | "VNC" | "Sem acesso remoto";
+
+type MachineFormState = {
+  code: string;
+  mechanical_list: string;
+  serial: string;
+  model: string;
+  client: string;
+  unit_city: string;
+  manufacture_month: string;
+  software_version: string;
+  remote_access: RemoteAccess;
+  emails: string;
+  vnc_ip: string;
+  vnc_user: string;
+  vnc_password: string;
+  vnc_vm_password: string;
+  vnc_notes: string;
+  sinema_url: string;
+  sinema_user: string;
+  sinema_password: string;
+  sinema_notes: string;
+  support_contract_active: string;
+  support_contract_until: string;
+};
+
+type MachineComponentDraft = {
+  machine_name: string;
+  electrical_project: string;
+  project_folder_link: string;
+  ip_range: string;
+};
 
 const ALLOWED_EMAIL_DOMAINS = ["tomasoni.ind.br", "tomasoni.in.br"];
 const DEFAULT_MESSAGE = "Consulte uma máquina pelo código ou selecione uma linha da tabela.";
 const AUTH_CONFIRMED_AT_KEY = "tomasoni-servicecore-auth-confirmed-at";
 const AUTH_CONFIRMATION_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+const MACHINE_MODELS = ["Onduladeira", "Dryend", "ICV", "Impressora", "Cortadeira", "Outros"];
+const COMPOSITION_MODELS = ["Onduladeira", "Dryend"];
+const REMOTE_ACCESS_OPTIONS: RemoteAccess[] = ["Sem acesso remoto", "SINEMA", "VNC"];
+const EMPTY_MACHINE_FORM: MachineFormState = {
+  code: "",
+  mechanical_list: "",
+  serial: "",
+  model: "",
+  client: "",
+  unit_city: "",
+  manufacture_month: "",
+  software_version: "",
+  remote_access: "Sem acesso remoto",
+  emails: "",
+  vnc_ip: "",
+  vnc_user: "",
+  vnc_password: "",
+  vnc_vm_password: "",
+  vnc_notes: "",
+  sinema_url: "",
+  sinema_user: "",
+  sinema_password: "",
+  sinema_notes: "",
+  support_contract_active: "",
+  support_contract_until: ""
+};
+const EMPTY_COMPONENT: MachineComponentDraft = {
+  machine_name: "",
+  electrical_project: "",
+  project_folder_link: "",
+  ip_range: ""
+};
 
 function formatDate(value?: string | null) {
   if (!value) return "-";
@@ -27,8 +91,68 @@ function formatDate(value?: string | null) {
 function formatMonthYear(value?: string | null) {
   if (!value) return "-";
   const [year, month] = value.split("-");
+  if (/^\d{2}\/\d{2}$/.test(value)) return value;
   if (!year || !month) return value;
-  return `${month}/${year}`;
+  return `${month}/${year.slice(-2)}`;
+}
+
+function normalizeMonthYear(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(/^(\d{2})\/(\d{2})$/);
+  if (!match) return trimmed;
+  return `${match[1]}/${match[2]}`;
+}
+
+function machineUsesComposition(model: string) {
+  return COMPOSITION_MODELS.includes(model);
+}
+
+function machineHasRemoteAccess(remoteAccess: string) {
+  return remoteAccess !== "Sem acesso remoto";
+}
+
+function normalizeRemoteAccess(value?: string | null): RemoteAccess {
+  if (value === "SINEMA" || value === "VNC") return value;
+  return "Sem acesso remoto";
+}
+
+function machineFormFromMachine(machine?: Machine | null): MachineFormState {
+  if (!machine) return EMPTY_MACHINE_FORM;
+  return {
+    code: machine.code ?? "",
+    mechanical_list: machine.mechanical_list ?? "",
+    serial: machine.serial ?? "",
+    model: machine.model ?? "",
+    client: machine.client ?? "",
+    unit_city: machine.unit_city ?? "",
+    manufacture_month: formatMonthYear(machine.manufacture_month) === "-" ? "" : formatMonthYear(machine.manufacture_month),
+    software_version: machine.software_version ?? "",
+    remote_access: normalizeRemoteAccess(machine.remote_access ?? machine.access_method),
+    emails: machine.machine_emails?.map((item) => item.email).join("; ") ?? "",
+    vnc_ip: machine.vnc_ip ?? "",
+    vnc_user: machine.vnc_user ?? "",
+    vnc_password: machine.vnc_password ?? "",
+    vnc_vm_password: machine.vnc_vm_password ?? "",
+    vnc_notes: machine.vnc_notes ?? "",
+    sinema_url: machine.sinema_url ?? "",
+    sinema_user: machine.sinema_user ?? "",
+    sinema_password: machine.sinema_password ?? "",
+    sinema_notes: machine.sinema_notes ?? "",
+    support_contract_active: machine.support_contract_active === null || machine.support_contract_active === undefined ? "" : machine.support_contract_active ? "Sim" : "Não",
+    support_contract_until: machine.support_contract_until ?? ""
+  };
+}
+
+function componentsFromMachine(machine?: Machine | null): MachineComponentDraft[] {
+  const components = machine?.machine_components ?? [];
+  if (!components.length) return [{ ...EMPTY_COMPONENT }];
+  return components.map((component) => ({
+    machine_name: component.machine_name ?? "",
+    electrical_project: component.electrical_project ?? "",
+    project_folder_link: component.project_folder_link ?? "",
+    ip_range: component.ip_range ?? ""
+  }));
 }
 
 function parseEmails(value: string) {
@@ -178,6 +302,8 @@ export default function Home() {
   const [editingTechnicianId, setEditingTechnicianId] = useState("");
   const [selectedServiceRecord, setSelectedServiceRecord] = useState<ServiceRecord | null>(null);
   const [editingServiceRecord, setEditingServiceRecord] = useState<ServiceRecord | null>(null);
+  const [machineForm, setMachineForm] = useState<MachineFormState>(EMPTY_MACHINE_FORM);
+  const [machineComponents, setMachineComponents] = useState<MachineComponentDraft[]>([{ ...EMPTY_COMPONENT }]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -235,11 +361,22 @@ export default function Home() {
     return () => window.clearInterval(interval);
   }, [isAuthenticated]);
 
+  const selectedMachine = machines.find((machine) => machine.id === selectedMachineId);
+  const serviceMachine = selectedMachine ?? machines[0];
+  const editingMachine = machines.find((machine) => machine.id === editingMachineId);
+  const showComposition = machineUsesComposition(machineForm.model);
+  const showRemoteAccess = machineHasRemoteAccess(machineForm.remote_access);
+
+  useEffect(() => {
+    setMachineForm(machineFormFromMachine(editingMachine));
+    setMachineComponents(componentsFromMachine(editingMachine));
+  }, [editingMachineId, editingMachine]);
+
   async function loadData() {
     const [{ data: machineRows, error: machineError }, { data: technicianRows, error: technicianError }] = await Promise.all([
       supabase
         .from("machines")
-        .select("*, machine_emails(*), service_records(*)")
+        .select("*, machine_emails(*), machine_components(*), service_records(*)")
         .order("code", { ascending: true }),
       supabase.from("technicians").select("*").order("name", { ascending: true })
     ]);
@@ -327,16 +464,12 @@ export default function Home() {
     setTechnicians([]);
   }
 
-  const selectedMachine = machines.find((machine) => machine.id === selectedMachineId);
-  const serviceMachine = selectedMachine ?? machines[0];
-  const editingMachine = machines.find((machine) => machine.id === editingMachineId);
-
   const filteredMachines = useMemo(() => {
     const term = machineFilter.trim().toLowerCase();
     return [...machines]
       .filter((machine) => {
         if (!term) return true;
-        return [machine.code, machine.model, machine.client, machine.unit_city, machine.serial, machine.manufacture_month, machine.software_version, machine.access_method]
+        return [machine.code, machine.mechanical_list, machine.model, machine.client, machine.unit_city, machine.serial, machine.manufacture_month, machine.software_version, machine.remote_access, machine.access_method]
           .join(" ")
           .toLowerCase()
           .includes(term);
@@ -407,18 +540,132 @@ export default function Home() {
     setTechnicianSort((current) => ({ key, direction: nextDirection(current.key === key, current.direction) }));
   }
 
+  function updateMachineForm<K extends keyof MachineFormState>(key: K, value: MachineFormState[K]) {
+    setMachineForm((current) => {
+      const next = { ...current, [key]: value };
+
+      if (key === "model" && !machineUsesComposition(String(value))) {
+        setMachineComponents([{ ...EMPTY_COMPONENT }]);
+      }
+
+      if (key === "remote_access") {
+        if (value === "Sem acesso remoto") {
+          next.vnc_ip = "";
+          next.vnc_user = "";
+          next.vnc_password = "";
+          next.vnc_vm_password = "";
+          next.vnc_notes = "";
+          next.sinema_url = "";
+          next.sinema_user = "";
+          next.sinema_password = "";
+          next.sinema_notes = "";
+          next.support_contract_active = "";
+          next.support_contract_until = "";
+        }
+
+        if (value === "SINEMA") {
+          next.vnc_ip = "";
+          next.vnc_user = "";
+          next.vnc_password = "";
+          next.vnc_vm_password = "";
+          next.vnc_notes = "";
+        }
+
+        if (value === "VNC") {
+          next.sinema_url = "";
+          next.sinema_user = "";
+          next.sinema_password = "";
+          next.sinema_notes = "";
+        }
+      }
+
+      return next;
+    });
+  }
+
+  function updateMachineComponent(index: number, key: keyof MachineComponentDraft, value: string) {
+    setMachineComponents((current) => current.map((component, itemIndex) => (itemIndex === index ? { ...component, [key]: value } : component)));
+  }
+
+  function addMachineComponent() {
+    setMachineComponents((current) => [...current, { ...EMPTY_COMPONENT }]);
+  }
+
+  function removeMachineComponent(index: number) {
+    setMachineComponents((current) => (current.length === 1 ? [{ ...EMPTY_COMPONENT }] : current.filter((_, itemIndex) => itemIndex !== index)));
+  }
+
   async function saveMachine(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const trimmedComponents = machineComponents
+      .map((component) => ({
+        machine_name: component.machine_name.trim(),
+        electrical_project: component.electrical_project.trim(),
+        project_folder_link: component.project_folder_link.trim(),
+        ip_range: component.ip_range.trim()
+      }))
+      .filter((component) => component.machine_name || component.electrical_project || component.project_folder_link || component.ip_range);
+
+    if (!machineForm.code.trim() || !machineForm.model.trim() || !machineForm.client.trim()) {
+      setMessage("Preencha os campos obrigatórios: Código, Modelo e Cliente.");
+      return;
+    }
+
+    if (!machineForm.mechanical_list.trim() || !machineForm.serial.trim() || !machineForm.unit_city.trim() || !machineForm.manufacture_month.trim() || !machineForm.software_version.trim()) {
+      setMessage("Preencha os dados principais e técnicos obrigatórios da máquina.");
+      return;
+    }
+
+    if (showComposition) {
+      if (!trimmedComponents.length) {
+        setMessage("Inclua ao menos um item na composição da máquina.");
+        return;
+      }
+
+      const invalidComponent = trimmedComponents.some((component) => !component.machine_name || !component.electrical_project || !component.ip_range);
+      if (invalidComponent) {
+        setMessage("Na composição, preencha Máquina, Projeto elétrico e Faixa de IP para cada item.");
+        return;
+      }
+    }
+
+    if (machineForm.remote_access === "VNC" && !machineForm.vnc_ip.trim()) {
+      setMessage("Informe o IP de acesso VNC.");
+      return;
+    }
+
+    if (machineForm.remote_access === "SINEMA" && !machineForm.sinema_url.trim()) {
+      setMessage("Informe o link ou endereço SINEMA.");
+      return;
+    }
+
+    if (showRemoteAccess && !machineForm.support_contract_active) {
+      setMessage("Informe se há contrato de assistência técnica ativo.");
+      return;
+    }
+
     const payload = {
-      code: String(form.get("code") ?? "").trim().toUpperCase(),
-      model: String(form.get("model") ?? "").trim(),
-      client: String(form.get("client") ?? "").trim(),
-      unit_city: String(form.get("unit_city") ?? "").trim() || null,
-      serial: String(form.get("serial") ?? "").trim() || null,
-      manufacture_month: String(form.get("manufacture_month") ?? "").trim() || null,
-      software_version: String(form.get("software_version") ?? "").trim() || null,
-      access_method: String(form.get("access_method") ?? "").trim() || null
+      code: machineForm.code.trim().toUpperCase(),
+      model: machineForm.model.trim(),
+      client: machineForm.client.trim(),
+      unit_city: machineForm.unit_city.trim() || null,
+      serial: machineForm.serial.trim() || null,
+      manufacture_month: normalizeMonthYear(machineForm.manufacture_month),
+      mechanical_list: machineForm.mechanical_list.trim() || null,
+      software_version: machineForm.software_version.trim() || null,
+      access_method: null,
+      remote_access: machineForm.remote_access,
+      vnc_ip: machineForm.remote_access === "VNC" ? machineForm.vnc_ip.trim() || null : null,
+      vnc_user: machineForm.remote_access === "VNC" ? machineForm.vnc_user.trim() || null : null,
+      vnc_password: machineForm.remote_access === "VNC" ? machineForm.vnc_password.trim() || null : null,
+      vnc_vm_password: machineForm.remote_access === "VNC" ? machineForm.vnc_vm_password.trim() || null : null,
+      vnc_notes: machineForm.remote_access === "VNC" ? machineForm.vnc_notes.trim() || null : null,
+      sinema_url: machineForm.remote_access === "SINEMA" ? machineForm.sinema_url.trim() || null : null,
+      sinema_user: machineForm.remote_access === "SINEMA" ? machineForm.sinema_user.trim() || null : null,
+      sinema_password: machineForm.remote_access === "SINEMA" ? machineForm.sinema_password.trim() || null : null,
+      sinema_notes: machineForm.remote_access === "SINEMA" ? machineForm.sinema_notes.trim() || null : null,
+      support_contract_active: showRemoteAccess ? machineForm.support_contract_active === "Sim" : null,
+      support_contract_until: showRemoteAccess ? machineForm.support_contract_until.trim() || null : null
     };
 
     const { data, error } = editingMachineId
@@ -430,16 +677,30 @@ export default function Home() {
       return;
     }
 
-    const emails = parseEmails(String(form.get("emails") ?? ""));
+    const emails = parseEmails(machineForm.emails);
     await supabase.from("machine_emails").delete().eq("machine_id", data.id);
     if (emails.length) {
       await supabase.from("machine_emails").insert(emails.map((mail) => ({ machine_id: data.id, email: mail })));
     }
 
+    await supabase.from("machine_components").delete().eq("machine_id", data.id);
+    if (showComposition && trimmedComponents.length) {
+      await supabase.from("machine_components").insert(
+        trimmedComponents.map((component) => ({
+          machine_id: data.id,
+          machine_name: component.machine_name,
+          electrical_project: component.electrical_project,
+          project_folder_link: component.project_folder_link || null,
+          ip_range: component.ip_range || null
+        }))
+      );
+    }
+
     setEditingMachineId("");
     setSelectedMachineId(data.id);
     setMessage(`Máquina ${payload.code} salva com sucesso.`);
-    event.currentTarget.reset();
+    setMachineForm(EMPTY_MACHINE_FORM);
+    setMachineComponents([{ ...EMPTY_COMPONENT }]);
     await loadData();
     setRegistryTab("machines");
     setView("registry");
@@ -697,15 +958,68 @@ export default function Home() {
               <div className="details-grid">
                 <div><span>Código</span><strong>{selectedMachine.code}</strong></div>
                 <div><span>Modelo</span><strong>{selectedMachine.model}</strong></div>
+                <div><span>Mecânica</span><strong>{selectedMachine.mechanical_list || "-"}</strong></div>
                 <div><span>Cliente</span><strong>{selectedMachine.client}</strong></div>
-                <div><span>Unidade / Cidade</span><strong>{selectedMachine.unit_city || "-"}</strong></div>
+                <div><span>Localização</span><strong>{selectedMachine.unit_city || "-"}</strong></div>
                 <div><span>Número de série</span><strong>{selectedMachine.serial || "-"}</strong></div>
                 <div><span>Fabricação</span><strong>{formatMonthYear(selectedMachine.manufacture_month)}</strong></div>
-                <div><span>Versão do software</span><strong>{selectedMachine.software_version || "-"}</strong></div>
-                <div><span>Forma de acesso</span><strong>{selectedMachine.access_method || "-"}</strong></div>
+                <div><span>Software</span><strong>{selectedMachine.software_version || "-"}</strong></div>
+                <div><span>Acesso remoto</span><strong>{selectedMachine.remote_access || selectedMachine.access_method || "Sem acesso remoto"}</strong></div>
+                {machineHasRemoteAccess(selectedMachine.remote_access || selectedMachine.access_method || "Sem acesso remoto") && (
+                  <>
+                    <div><span>Contrato ativo</span><strong>{selectedMachine.support_contract_active ? "Sim" : "Não"}</strong></div>
+                    <div><span>Fim da vigência</span><strong>{formatDate(selectedMachine.support_contract_until)}</strong></div>
+                  </>
+                )}
                 <div><span>E-mails do cliente</span><strong>{selectedMachine.machine_emails?.map((item) => item.email).join("; ") || "-"}</strong></div>
               </div>
             </section>
+
+            {machineUsesComposition(selectedMachine.model) && (
+              <section className="table-panel">
+                <div className="section-header"><h2>Composição da máquina</h2><span>{selectedMachine.machine_components?.length ?? 0} itens</span></div>
+                <div className="table-wrap">
+                  <table className="composition-table">
+                    <thead><tr><th>Máquina</th><th>Projeto elétrico</th><th>Link da pasta</th><th>Faixa de IP</th></tr></thead>
+                    <tbody>
+                      {(selectedMachine.machine_components ?? []).map((component) => (
+                        <tr key={component.id}>
+                          <td>{component.machine_name}</td>
+                          <td>{component.electrical_project}</td>
+                          <td>{component.project_folder_link ? <a href={component.project_folder_link} target="_blank" rel="noreferrer">Abrir pasta</a> : "-"}</td>
+                          <td>{component.ip_range || "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+
+            {selectedMachine.remote_access === "VNC" && (
+              <section className="table-panel">
+                <div className="section-header"><h2>Informações de acesso VNC</h2></div>
+                <div className="details-grid">
+                  <div><span>IP de acesso</span><strong>{selectedMachine.vnc_ip || "-"}</strong></div>
+                  <div><span>Usuário</span><strong>{selectedMachine.vnc_user || "-"}</strong></div>
+                  <div><span>Senha remota</span><strong>{selectedMachine.vnc_password || "-"}</strong></div>
+                  <div><span>Senha VM local</span><strong>{selectedMachine.vnc_vm_password || "-"}</strong></div>
+                  <div><span>Observações</span><strong>{selectedMachine.vnc_notes || "-"}</strong></div>
+                </div>
+              </section>
+            )}
+
+            {selectedMachine.remote_access === "SINEMA" && (
+              <section className="table-panel">
+                <div className="section-header"><h2>Informações de acesso SINEMA</h2></div>
+                <div className="details-grid">
+                  <div><span>Link ou endereço</span><strong>{selectedMachine.sinema_url || "-"}</strong></div>
+                  <div><span>Usuário</span><strong>{selectedMachine.sinema_user || "-"}</strong></div>
+                  <div><span>Senha</span><strong>{selectedMachine.sinema_password || "-"}</strong></div>
+                  <div><span>Observações</span><strong>{selectedMachine.sinema_notes || "-"}</strong></div>
+                </div>
+              </section>
+            )}
 
             <section className="table-panel">
               <div className="section-header"><h2>Histórico de {selectedMachine.code}</h2><span>{filteredHistory.length} registros</span></div>
@@ -776,7 +1090,7 @@ export default function Home() {
 
             {registryTab === "machines" && (
               <>
-                <form key={editingMachineId || "new-machine"} className="form-panel" onSubmit={saveMachine}>
+                <form className="machine-form" onSubmit={saveMachine}>
                   <div className="section-header">
                     <h2>{editingMachineId ? "Alterar máquina" : "Cadastrar máquina"}</h2>
                     <div className="actions-row">
@@ -784,34 +1098,106 @@ export default function Home() {
                       <button className="icon-button save-action" title="Salvar máquina" aria-label="Salvar máquina"><SaveIcon /></button>
                     </div>
                   </div>
-                  <div className="fields-grid">
-                    <label>Código<input name="code" required defaultValue={editingMachine?.code ?? ""} /></label>
-                    <label>Modelo<input name="model" required defaultValue={editingMachine?.model ?? ""} /></label>
-                    <label>Cliente<input name="client" required defaultValue={editingMachine?.client ?? ""} /></label>
-                    <label>Unidade / Cidade<input name="unit_city" defaultValue={editingMachine?.unit_city ?? ""} /></label>
-                    <label>Número de série<input name="serial" defaultValue={editingMachine?.serial ?? ""} /></label>
-                    <label>Fabricação<input name="manufacture_month" type="month" defaultValue={editingMachine?.manufacture_month ?? ""} /></label>
-                    <label>Versão do software<input name="software_version" defaultValue={editingMachine?.software_version ?? ""} /></label>
-                    <label>Forma de acesso<input name="access_method" defaultValue={editingMachine?.access_method ?? ""} /></label>
-                    <label className="wide">E-mails do cliente<textarea name="emails" rows={3} defaultValue={editingMachine?.machine_emails?.map((item) => item.email).join("; ") ?? ""} /></label>
-                  </div>
+                  <section className="form-card">
+                    <h3>Dados principais</h3>
+                    <div className="fields-grid">
+                      <label>Código<input required value={machineForm.code} onChange={(event) => updateMachineForm("code", event.target.value)} placeholder="Número do projeto do software" /></label>
+                      <label>Modelo<select required value={machineForm.model} onChange={(event) => updateMachineForm("model", event.target.value)}>
+                        <option value="">Selecione</option>
+                        {MACHINE_MODELS.map((model) => <option key={model} value={model}>{model}</option>)}
+                      </select></label>
+                      <label>Cliente<input required value={machineForm.client} onChange={(event) => updateMachineForm("client", event.target.value)} placeholder="Nome da empresa" /></label>
+                      <label>Localização<input required value={machineForm.unit_city} onChange={(event) => updateMachineForm("unit_city", event.target.value)} placeholder="Cidade - Estado" /></label>
+                      <label className="wide">E-mails do cliente<textarea rows={3} value={machineForm.emails} onChange={(event) => updateMachineForm("emails", event.target.value)} placeholder="um@email.com; outro@email.com" /></label>
+                    </div>
+                  </section>
+
+                  <section className="form-card">
+                    <h3>Dados técnicos</h3>
+                    <div className="fields-grid">
+                      <label>Mecânica<input required value={machineForm.mechanical_list} onChange={(event) => updateMachineForm("mechanical_list", event.target.value)} placeholder="Lista mecânica" /></label>
+                      <label>Número de série<input required value={machineForm.serial} onChange={(event) => updateMachineForm("serial", event.target.value)} /></label>
+                      <label>Fabricação<input required value={machineForm.manufacture_month} onChange={(event) => updateMachineForm("manufacture_month", event.target.value)} placeholder="mm/aa" pattern="\d{2}/\d{2}" /></label>
+                      <label>Software<input required value={machineForm.software_version} onChange={(event) => updateMachineForm("software_version", event.target.value)} placeholder="TIA Vx, Scout..." /></label>
+                      <label>Acesso remoto<select required value={machineForm.remote_access} onChange={(event) => updateMachineForm("remote_access", event.target.value as RemoteAccess)}>
+                        {REMOTE_ACCESS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                      </select></label>
+                    </div>
+                  </section>
+
+                  {showComposition && (
+                    <section className="form-card">
+                      <div className="section-header">
+                        <h3>Composição da Máquina</h3>
+                        <button className="button ghost" type="button" onClick={addMachineComponent}>Adicionar item</button>
+                      </div>
+                      <div className="component-list">
+                        {machineComponents.map((component, index) => (
+                          <div className="component-card" key={index}>
+                            <div className="section-header">
+                              <strong>Item {index + 1}</strong>
+                              <button className="icon-button danger" type="button" title="Remover item" aria-label={`Remover item ${index + 1}`} onClick={() => removeMachineComponent(index)}>×</button>
+                            </div>
+                            <div className="fields-grid">
+                              <label>Máquina<input required value={component.machine_name} onChange={(event) => updateMachineComponent(index, "machine_name", event.target.value)} /></label>
+                              <label>Projeto elétrico<input required value={component.electrical_project} onChange={(event) => updateMachineComponent(index, "electrical_project", event.target.value)} /></label>
+                              <label>Link da pasta do projeto<input value={component.project_folder_link} onChange={(event) => updateMachineComponent(index, "project_folder_link", event.target.value)} placeholder="https://..." /></label>
+                              <label>Faixa de IP da máquina<input required value={component.ip_range} onChange={(event) => updateMachineComponent(index, "ip_range", event.target.value)} placeholder="192.168.0.0/24" /></label>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
+                  {showRemoteAccess && (
+                    <section className="form-card">
+                      <h3>{machineForm.remote_access === "VNC" ? "Informações de Acesso VNC" : "Informações de Acesso SINEMA"}</h3>
+                      {machineForm.remote_access === "VNC" && (
+                        <div className="fields-grid">
+                          <label>IP de acesso<input required value={machineForm.vnc_ip} onChange={(event) => updateMachineForm("vnc_ip", event.target.value)} /></label>
+                          <label>Usuário, se aplicável<input value={machineForm.vnc_user} onChange={(event) => updateMachineForm("vnc_user", event.target.value)} /></label>
+                          <label>Senha de acesso remoto<input type="password" value={machineForm.vnc_password} onChange={(event) => updateMachineForm("vnc_password", event.target.value)} /></label>
+                          <label>Senha da VM do PC local<input type="password" value={machineForm.vnc_vm_password} onChange={(event) => updateMachineForm("vnc_vm_password", event.target.value)} /></label>
+                          <label className="wide">Observações de acesso<textarea rows={3} value={machineForm.vnc_notes} onChange={(event) => updateMachineForm("vnc_notes", event.target.value)} /></label>
+                        </div>
+                      )}
+                      {machineForm.remote_access === "SINEMA" && (
+                        <div className="fields-grid">
+                          <label>Link ou endereço SINEMA<input required value={machineForm.sinema_url} onChange={(event) => updateMachineForm("sinema_url", event.target.value)} /></label>
+                          <label>Usuário, se aplicável<input value={machineForm.sinema_user} onChange={(event) => updateMachineForm("sinema_user", event.target.value)} /></label>
+                          <label>Senha, se aplicável<input type="password" value={machineForm.sinema_password} onChange={(event) => updateMachineForm("sinema_password", event.target.value)} /></label>
+                          <label className="wide">Observações<textarea rows={3} value={machineForm.sinema_notes} onChange={(event) => updateMachineForm("sinema_notes", event.target.value)} /></label>
+                        </div>
+                      )}
+                      <div className="fields-grid support-grid">
+                        <label>Contrato de assistência técnica ativo<select required value={machineForm.support_contract_active} onChange={(event) => updateMachineForm("support_contract_active", event.target.value)}>
+                          <option value="">Selecione</option>
+                          <option value="Sim">Sim</option>
+                          <option value="Não">Não</option>
+                        </select></label>
+                        <label>Final de vigência do contrato<input type="date" value={machineForm.support_contract_until} onChange={(event) => updateMachineForm("support_contract_until", event.target.value)} /></label>
+                      </div>
+                    </section>
+                  )}
                 </form>
 
                 <section className="table-panel">
                   <div className="section-header"><h2>Máquinas cadastradas</h2><span>{registryMachines.length} registros</span></div>
                   <div className="table-wrap">
                     <table>
-                      <thead><tr><th>Código</th><th>Modelo</th><th>Cliente</th><th>Série</th><th>Fabricação</th><th>Software</th><th>Ações</th></tr></thead>
+                      <thead><tr><th>Código</th><th>Modelo</th><th>Cliente</th><th>Localização</th><th>Série</th><th>Fabricação</th><th>Acesso</th><th>Ações</th></tr></thead>
                       <tbody>{registryMachines.map((machine) => (
                         <tr key={machine.id}>
                           <td>{machine.code}</td>
                           <td>{machine.model}</td>
                           <td>{machine.client}</td>
+                          <td>{machine.unit_city || "-"}</td>
                           <td>{machine.serial || "-"}</td>
                           <td>{formatMonthYear(machine.manufacture_month)}</td>
-                          <td>{machine.software_version || "-"}</td>
+                          <td>{machine.remote_access || machine.access_method || "Sem acesso remoto"}</td>
                           <td>
-                            <button className="icon-button edit" type="button" title="Alterar máquina" aria-label={`Alterar máquina ${machine.code}`} onClick={() => setEditingMachineId(machine.id)}>✎</button>
+                            <button className="icon-button edit" type="button" title="Alterar máquina" aria-label={`Alterar máquina ${machine.code}`} onClick={() => { setEditingMachineId(machine.id); setRegistryTab("machines"); }}>✎</button>
                             <button className="icon-button danger" type="button" title="Excluir máquina" aria-label={`Excluir máquina ${machine.code}`} onClick={() => deleteMachine(machine.id)}>×</button>
                           </td>
                         </tr>

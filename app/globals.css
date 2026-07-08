@@ -192,6 +192,64 @@ h2 { margin: 0; font-size: 1rem; }
   padding: 18px;
 }
 
+.machine-form {
+  display: grid;
+  width: min(1160px, 100%);
+  max-width: 1160px;
+  min-width: 0;
+  gap: 18px;
+}
+
+.machine-form > .section-header {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  margin-bottom: 0;
+  padding: 18px;
+}
+
+.form-card {
+  display: grid;
+  gap: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  padding: 18px;
+}
+
+.form-card h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.98rem;
+}
+
+.component-list {
+  display: grid;
+  gap: 14px;
+}
+
+.component-card {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 14px;
+}
+
+.component-card .section-header,
+.form-card .section-header {
+  margin-bottom: 0;
+}
+
+.support-grid {
+  border-top: 1px solid var(--line);
+  margin-top: 2px;
+  padding-top: 16px;
+}
+
 .status-band {
   margin-bottom: 18px;
   border-left: 5px solid var(--primary);
