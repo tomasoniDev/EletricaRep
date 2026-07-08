@@ -44,6 +44,10 @@ function valueOrDash(value?: string | null) {
   return normalized || "-";
 }
 
+function displayMachineCode(machine: Machine) {
+  return machine.code?.trim() || machine.model?.trim() || machine.client?.trim() || "maquina-sem-codigo";
+}
+
 function setText(doc: jsPDF, color = DARK, size = 9, weight: "normal" | "bold" = "normal") {
   doc.setTextColor(color);
   doc.setFont("helvetica", weight);
@@ -163,7 +167,7 @@ function drawFooter(doc: jsPDF) {
 async function createServicePdf(machine: Machine, record: ServiceRecord) {
   const doc = new jsPDF({ unit: "pt", format: "a4", orientation: "portrait", compress: true });
   doc.setProperties({
-    title: `${reportCode(machine, record)} - ${machine.code}`,
+    title: `${reportCode(machine, record)} - ${displayMachineCode(machine)}`,
     subject: "Relatório de Atendimento Técnico",
     author: "Tomasoni"
   });
@@ -178,7 +182,7 @@ async function createServicePdf(machine: Machine, record: ServiceRecord) {
 }
 
 export function servicePdfFileName(machine: Machine, record: ServiceRecord) {
-  return `${reportCode(machine, record)}-${machine.code}.pdf`;
+  return `${reportCode(machine, record)}-${displayMachineCode(machine)}.pdf`;
 }
 
 export async function servicePdfBase64(machine: Machine, record: ServiceRecord) {

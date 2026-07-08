@@ -1,8 +1,8 @@
 export type Machine = {
   id: string;
-  code: string;
-  model: string;
-  client: string;
+  code: string | null;
+  model: string | null;
+  client: string | null;
   unit_city: string | null;
   serial: string | null;
   manufacture_month: string | null;
@@ -31,8 +31,8 @@ export type Machine = {
 export type MachineComponent = {
   id: string;
   machine_id: string;
-  machine_name: string;
-  electrical_project: string;
+  machine_name: string | null;
+  electrical_project: string | null;
   project_folder_link: string | null;
   ip_range: string | null;
   created_at: string;
