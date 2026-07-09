@@ -851,13 +851,12 @@ input:focus, textarea:focus, select:focus {
 
 .card-title {
   grid-template-columns: 30px minmax(0, 1fr) auto;
-  min-height: 36px;
-  align-items: start;
+  min-height: 32px;
+  align-items: center;
 }
 
 .card-title h3 {
   margin: 0;
-  padding-top: 3px;
   font-size: 1rem;
   font-weight: 750;
   line-height: 1.2;
@@ -870,7 +869,7 @@ input:focus, textarea:focus, select:focus {
 }
 
 .card-title .soft-pill {
-  align-self: start;
+  align-self: center;
 }
 
 .spec-list {
