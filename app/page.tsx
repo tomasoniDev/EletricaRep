@@ -27,7 +27,6 @@ type MachineFormState = {
   manufacture_month: string;
   software_version: string;
   remote_access: RemoteAccess;
-  emails: string;
   vnc_ip: string;
   vnc_user: string;
   vnc_password: string;
@@ -59,7 +58,6 @@ const EMPTY_MACHINE_FORM: MachineFormState = {
   manufacture_month: "",
   software_version: "",
   remote_access: "Sem acesso remoto",
-  emails: "",
   vnc_ip: "",
   vnc_user: "",
   vnc_password: "",
@@ -135,7 +133,6 @@ function machineFormFromMachine(machine?: Machine | null): MachineFormState {
     manufacture_month: formatMonthYear(machine.manufacture_month) === "-" ? "" : formatMonthYear(machine.manufacture_month),
     software_version: machine.software_version ?? "",
     remote_access: normalizeRemoteAccess(machine.remote_access ?? machine.access_method),
-    emails: machine.machine_emails?.map((item) => item.email).join("; ") ?? "",
     vnc_ip: machine.vnc_ip ?? "",
     vnc_user: machine.vnc_user ?? "",
     vnc_password: machine.vnc_password ?? "",
@@ -256,7 +253,7 @@ function helpText(view: View, registryTab: RegistryTab) {
   if (view === "home") return "Use o filtro para localizar uma máquina por código, modelo, cliente ou localização. Clique no código da máquina para abrir os dados cadastrais e o histórico de atendimentos.";
   if (view === "machineDetail") return "Nesta tela ficam os dados técnicos da máquina, informações de acesso remoto e histórico. Clique em um atendimento para ver o registro completo ou use o menu de ações para baixar o PDF.";
   if (view === "service") return "Registre o atendimento com tipo, motivo breve e descrições completas. Em visita técnica, colete a assinatura do cliente para incluir no PDF.";
-  if (registryTab === "machines") return "Cadastre ou altere máquinas, e-mails do cliente e informações de acesso. Use o menu de ações da tabela para editar ou excluir cadastros.";
+  if (registryTab === "machines") return "Cadastre ou altere máquinas e informações de acesso. Use o menu de ações da tabela para editar ou excluir cadastros.";
   return "Cadastre os técnicos disponíveis para lançamento dos atendimentos. O nome do técnico aparece no relatório e no histórico.";
 }
 
@@ -941,12 +938,6 @@ export default function Home() {
       return;
     }
 
-    const emails = parseEmails(machineForm.emails);
-    await supabase.from("machine_emails").delete().eq("machine_id", data.id);
-    if (emails.length) {
-      await supabase.from("machine_emails").insert(emails.map((mail) => ({ machine_id: data.id, email: mail })));
-    }
-
     setEditingMachineId("");
     setSelectedMachineId(data.id);
     setMessage(`Máquina ${payload.code || "sem código"} salva com sucesso.`);
@@ -979,10 +970,9 @@ export default function Home() {
     await loadData();
   }
 
-  async function sendServiceEmail(machine: Machine, record: ServiceRecord) {
-    const recipients = machine.machine_emails?.map((item) => item.email).filter(Boolean) ?? [];
+  async function sendServiceEmail(machine: Machine, record: ServiceRecord, recipients: string[]) {
     if (!recipients.length) {
-      return "Atendimento salvo e PDF gerado. Nenhum e-mail de cliente foi cadastrado para esta máquina.";
+      return "Atendimento salvo e PDF gerado. Nenhum e-mail foi informado para envio.";
     }
 
     const { data: sessionData } = await supabase.auth.getSession();
@@ -1023,6 +1013,7 @@ export default function Home() {
     const formElement = event.currentTarget;
     const form = new FormData(event.currentTarget);
     const machine = machines.find((item) => item.id === String(form.get("machine_id")));
+    const serviceRecipients = parseEmails(String(form.get("service_recipients") ?? ""));
 
     if (!machine) {
       setMessage("Selecione uma máquina.");
@@ -1081,8 +1072,8 @@ export default function Home() {
     if (!isEditingService) {
       try {
         await downloadServicePdf(machine, record);
-        setMessage("Atendimento salvo. PDF gerado. Enviando e-mail aos responsáveis cadastrados.");
-        setMessage(await sendServiceEmail(machine, record));
+        setMessage("Atendimento salvo. PDF gerado. Enviando e-mail aos responsáveis informados.");
+        setMessage(await sendServiceEmail(machine, record, serviceRecipients));
       } catch (error) {
         const detail = error instanceof DOMException && error.name === "AbortError"
           ? "tempo limite do envio atingido"
@@ -1307,18 +1298,6 @@ export default function Home() {
               </article>
             </section>
 
-            <section className="dashboard-lower">
-              <article className="dashboard-card info-card">
-                <div className="card-title"><DetailIcon type="mail" /><h3>Informações adicionais</h3></div>
-                <div className="info-strip">
-                  <div><span>E-mail do cliente</span><strong>{selectedMachine.machine_emails?.map((item) => item.email).join("; ") || "-"}</strong></div>
-                  <div><span>Acesso remoto</span><strong>{selectedMachineAccess}</strong></div>
-                  <div><span>Contrato</span><strong>{selectedMachine.support_contract_active ? "Ativo" : "Inativo"}</strong></div>
-                  <div><span>Fim da vigência</span><strong>{formatDate(selectedMachine.support_contract_until)}</strong></div>
-                </div>
-              </article>
-            </section>
-
             <section className="dashboard-card quick-actions-card">
               <div className="card-title"><DetailIcon type="mechanical" /><h3>Ações rápidas</h3></div>
               <div className="quick-action-grid">
@@ -1384,6 +1363,7 @@ export default function Home() {
               <label>Tipo de atendimento<select name="service_type" value={serviceType} onChange={(event) => updateServiceType(event.target.value as ServiceType)}>
                 {SERVICE_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
               </select></label>
+              {!editingServiceRecord && <label className="wide">E-mails para envio<textarea name="service_recipients" rows={2} placeholder="um@email.com; outro@email.com" /></label>}
               {serviceType === "Visita técnica" && (
                 <label>Cliente / representante<input name="customer_name" placeholder="Nome de quem assinou" defaultValue={editingServiceRecord?.customer_name ?? ""} /></label>
               )}
@@ -1453,7 +1433,6 @@ export default function Home() {
                       <label>Número de série<input value={machineForm.serial} onChange={(event) => updateMachineForm("serial", event.target.value)} /></label>
                       <label>Fabricação<input value={machineForm.manufacture_month} onChange={(event) => updateMachineForm("manufacture_month", event.target.value)} placeholder="mm/aa" pattern="\d{2}/\d{2}" /></label>
                       <label>Software<input value={machineForm.software_version} onChange={(event) => updateMachineForm("software_version", event.target.value)} placeholder="TIA Vx, Scout..." /></label>
-                      <label className="wide">E-mails do cliente<textarea rows={3} value={machineForm.emails} onChange={(event) => updateMachineForm("emails", event.target.value)} placeholder="um@email.com; outro@email.com" /></label>
                     </div>
                   </section>
 
