@@ -1224,7 +1224,11 @@ export default function Home() {
           <section className="machine-dashboard view active">
             <section className="machine-hero">
               <div className="machine-visual" aria-hidden="true">
-                <span>{(selectedMachine.model || selectedMachine.code || "TM").slice(0, 2).toUpperCase()}</span>
+                <div className="machine-id-plate">
+                  <span>Tomasoni</span>
+                  <strong>{displayMachineCode(selectedMachine)}</strong>
+                  <em>{selectedMachine.model || "Máquina"}</em>
+                </div>
               </div>
               <div className="machine-hero-main">
                 <div className="machine-title-row">
@@ -1235,12 +1239,12 @@ export default function Home() {
                   <span className="code-pill">{displayMachineCode(selectedMachine)}</span>
                 </div>
                 <div className="machine-metrics">
-                  <div><DetailIcon type="client" /><span>Cliente</span><strong>{selectedMachine.client || "-"}</strong></div>
-                  <div><DetailIcon type="serial" /><span>Número de série</span><strong>{selectedMachine.serial || "-"}</strong></div>
-                  <div><DetailIcon type="calendar" /><span>Fabricação</span><strong>{formatMonthYear(selectedMachine.manufacture_month)}</strong></div>
-                  <div><DetailIcon type="location" /><span>Localização</span><strong>{selectedMachine.unit_city || "-"}</strong></div>
-                  <div><DetailIcon type="mechanical" /><span>Mecânica</span><strong>{selectedMachine.mechanical_list || "-"}</strong></div>
-                  <div><DetailIcon type="software" /><span>Software</span><strong>{selectedMachine.software_version || "-"}</strong></div>
+                  <div><DetailIcon type="client" /><p><span>Cliente</span><strong>{selectedMachine.client || "-"}</strong></p></div>
+                  <div><DetailIcon type="serial" /><p><span>Número de série</span><strong>{selectedMachine.serial || "-"}</strong></p></div>
+                  <div><DetailIcon type="calendar" /><p><span>Fabricação</span><strong>{formatMonthYear(selectedMachine.manufacture_month)}</strong></p></div>
+                  <div><DetailIcon type="location" /><p><span>Localização</span><strong>{selectedMachine.unit_city || "-"}</strong></p></div>
+                  <div><DetailIcon type="mechanical" /><p><span>Mecânica</span><strong>{selectedMachine.mechanical_list || "-"}</strong></p></div>
+                  <div><DetailIcon type="software" /><p><span>Software</span><strong>{selectedMachine.software_version || "-"}</strong></p></div>
                 </div>
               </div>
               <aside className={`contract-card ${selectedMachine.support_contract_active ? "active" : "inactive"}`}>
