@@ -3,8 +3,17 @@ import { GeistSans } from "geist/font/sans";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  applicationName: "Núcleo de Assistência",
   title: "Núcleo de Assistência Tomasoni",
-  description: "Aplicação corporativa para registros de atendimento técnico."
+  description: "Aplicação corporativa para registros de atendimento técnico.",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [
+      { url: "/favicon.png", sizes: "32x32", type: "image/png" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" }
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }]
+  }
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
