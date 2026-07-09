@@ -3,13 +3,14 @@ import type { Machine, ServiceRecord } from "./types";
 
 const PAGE_WIDTH = 595.28;
 const PAGE_HEIGHT = 841.89;
-const MARGIN = 70;
+const MARGIN = 62;
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
 const BLUE = "#1268D8";
 const DARK = "#111111";
 const MUTED = "#566170";
 const LINE = "#CAD6E6";
-const CONTENT_BOTTOM = PAGE_HEIGHT - 76;
+const SOFT_LINE = "#E6ECF5";
+const CONTENT_BOTTOM = PAGE_HEIGHT - 78;
 
 function formatDate(value?: string | null) {
   if (!value) return "-";
@@ -65,7 +66,8 @@ function labelValue(doc: jsPDF, label: string, value: string | null | undefined,
   setText(doc, MUTED, 7, "bold");
   doc.text(label.toUpperCase(), x, y);
   setText(doc, DARK, 9);
-  doc.text(valueOrDash(value), x, y + 16);
+  const lines = doc.splitTextToSize(valueOrDash(value), width).slice(0, 2);
+  doc.text(lines, x, y + 16, { lineHeightFactor: 1.25 });
   line(doc, x, y + 22, x + width, y + 22, LINE, 0.55);
 }
 
@@ -75,20 +77,18 @@ function sectionTitle(doc: jsPDF, title: string, y: number) {
   line(doc, MARGIN, y + 9, PAGE_WIDTH - MARGIN, y + 9, BLUE, 1.2);
 }
 
-function paragraphBox(doc: jsPDF, title: string, value: string | null, x: number, y: number, width: number, height: number) {
-  doc.setDrawColor(LINE);
-  doc.setLineWidth(0.75);
-  doc.roundedRect(x, y, width, height, 1.5, 1.5);
-  setText(doc, MUTED, 7, "bold");
-  doc.text(title.toUpperCase(), x + 10, y + 16);
-  setText(doc, DARK, 9);
-  const lines = doc.splitTextToSize(valueOrDash(value), width - 20).slice(0, Math.floor((height - 30) / 12));
-  doc.text(lines, x + 10, y + 34, { lineHeightFactor: 1.35 });
+function continuationHeader(doc: jsPDF) {
+  setText(doc, BLUE, 10, "bold");
+  doc.text("Relatório de Atendimento Técnico", MARGIN, 48);
+  setText(doc, MUTED, 7);
+  doc.text("continuação", PAGE_WIDTH - MARGIN, 48, { align: "right" });
+  line(doc, MARGIN, 60, PAGE_WIDTH - MARGIN, 60, BLUE, 1);
 }
 
 function addContentPage(doc: jsPDF) {
   doc.addPage("a4", "portrait");
-  return 78;
+  continuationHeader(doc);
+  return 88;
 }
 
 function ensurePageSpace(doc: jsPDF, y: number, height: number) {
@@ -97,22 +97,22 @@ function ensurePageSpace(doc: jsPDF, y: number, height: number) {
 }
 
 function flowTextSection(doc: jsPDF, title: string, value: string | null, y: number) {
-  const lines = doc.splitTextToSize(valueOrDash(value), CONTENT_WIDTH);
-  const lineHeight = 12;
-  y = ensurePageSpace(doc, y, 34);
+  const lines = doc.splitTextToSize(valueOrDash(value), CONTENT_WIDTH - 18);
+  const lineHeight = 13.2;
+  y = ensurePageSpace(doc, y, 42);
   setText(doc, MUTED, 7, "bold");
   doc.text(title.toUpperCase(), MARGIN, y);
-  y += 18;
+  line(doc, MARGIN, y + 8, PAGE_WIDTH - MARGIN, y + 8, SOFT_LINE, 0.5);
+  y += 24;
   setText(doc, DARK, 9);
 
   for (const textLine of lines) {
     y = ensurePageSpace(doc, y, lineHeight + 8);
-    doc.text(textLine, MARGIN, y);
+    doc.text(textLine, MARGIN + 8, y);
     y += lineHeight;
   }
 
-  line(doc, MARGIN, y + 7, PAGE_WIDTH - MARGIN, y + 7, LINE, 0.55);
-  return y + 26;
+  return y + 20;
 }
 
 function imageToDataUrl(path: string) {
@@ -170,14 +170,14 @@ function drawMachineData(doc: jsPDF, machine: Machine) {
 }
 
 function drawServiceData(doc: jsPDF, record: ServiceRecord) {
-  sectionTitle(doc, "Dados do atendimento", 337);
+  sectionTitle(doc, "Dados do atendimento", 330);
   const col = (CONTENT_WIDTH - 24) / 3;
-  labelValue(doc, "Data do atendimento", formatDate(record.service_date), MARGIN, 368, col);
-  labelValue(doc, "Tipo de atendimento", record.service_type ?? "Acesso remoto", MARGIN + col + 12, 368, col);
-  labelValue(doc, "Equipamento", record.equipment, MARGIN + (col + 12) * 2, 368, col);
-  labelValue(doc, "Motivo breve", record.issue_summary, MARGIN, 407, CONTENT_WIDTH);
+  labelValue(doc, "Data do atendimento", formatDate(record.service_date), MARGIN, 361, col);
+  labelValue(doc, "Tipo de atendimento", record.service_type ?? "Acesso remoto", MARGIN + col + 12, 361, col);
+  labelValue(doc, "Equipamento", record.equipment, MARGIN + (col + 12) * 2, 361, col);
+  labelValue(doc, "Motivo breve", record.issue_summary, MARGIN, 400, CONTENT_WIDTH);
 
-  let y = 464;
+  let y = 455;
   y = flowTextSection(doc, "Solicitação do cliente / problema relatado", record.request, y);
   y = flowTextSection(doc, "Diagnóstico", record.diagnosis, y);
   y = flowTextSection(doc, "Serviço realizado", record.service_done, y);
@@ -209,32 +209,33 @@ function drawAllFooters(doc: jsPDF) {
   }
 }
 
-function drawSignaturePage(doc: jsPDF, record: ServiceRecord) {
-  doc.addPage("a4", "portrait");
-  sectionTitle(doc, "Assinatura do cliente", 90);
+function drawSignatureData(doc: jsPDF, record: ServiceRecord, y: number) {
+  y = ensurePageSpace(doc, y, 190);
+  sectionTitle(doc, "Assinatura do cliente", y);
   const col = (CONTENT_WIDTH - 12) / 2;
-  labelValue(doc, "Tipo de atendimento", record.service_type ?? "Visita técnica", MARGIN, 122, col);
-  labelValue(doc, "Cliente / representante", record.customer_name, MARGIN + col + 12, 122, col);
+  labelValue(doc, "Tipo de atendimento", record.service_type ?? "Visita técnica", MARGIN, y + 31, col);
+  labelValue(doc, "Cliente / representante", record.customer_name, MARGIN + col + 12, y + 31, col);
 
   if (record.customer_signature) {
     const signatureWidth = 260;
     const signatureHeight = 72;
     const signatureX = MARGIN + (CONTENT_WIDTH - signatureWidth) / 2;
-    const signatureY = 196;
+    const signatureY = y + 86;
     doc.addImage(record.customer_signature, "PNG", signatureX, signatureY, signatureWidth, signatureHeight);
     line(doc, signatureX, signatureY + signatureHeight + 12, signatureX + signatureWidth, signatureY + signatureHeight + 12, MUTED, 0.55);
     setText(doc, MUTED, 7, "bold");
     doc.text("ASSINATURA DO CLIENTE / REPRESENTANTE", signatureX + signatureWidth / 2, signatureY + signatureHeight + 28, { align: "center" });
     setText(doc, DARK, 8);
     doc.text(valueOrDash(record.customer_name), signatureX + signatureWidth / 2, signatureY + signatureHeight + 43, { align: "center" });
+    return signatureY + signatureHeight + 58;
   } else {
     const signatureWidth = 260;
     const signatureX = MARGIN + (CONTENT_WIDTH - signatureWidth) / 2;
-    line(doc, signatureX, 280, signatureX + signatureWidth, 280, MUTED, 0.55);
+    line(doc, signatureX, y + 150, signatureX + signatureWidth, y + 150, MUTED, 0.55);
     setText(doc, MUTED, 7, "bold");
-    doc.text("ASSINATURA DO CLIENTE / REPRESENTANTE", signatureX + signatureWidth / 2, 296, { align: "center" });
+    doc.text("ASSINATURA DO CLIENTE / REPRESENTANTE", signatureX + signatureWidth / 2, y + 166, { align: "center" });
+    return y + 184;
   }
-
 }
 
 async function createServicePdf(machine: Machine, record: ServiceRecord) {
@@ -248,8 +249,8 @@ async function createServicePdf(machine: Machine, record: ServiceRecord) {
   await drawHeader(doc, machine, record);
   drawMachineData(doc, machine);
   const nextY = drawServiceData(doc, record);
-  drawTechnicianData(doc, record, nextY);
-  if (record.service_type === "Visita técnica") drawSignaturePage(doc, record);
+  const technicianY = drawTechnicianData(doc, record, nextY);
+  if (record.service_type === "Visita técnica") drawSignatureData(doc, record, technicianY + 16);
   drawAllFooters(doc);
 
   return doc;
