@@ -173,12 +173,22 @@ function drawSignaturePage(doc: jsPDF, record: ServiceRecord) {
   labelValue(doc, "Cliente / representante", record.customer_name, MARGIN + col + 12, 122, col);
 
   if (record.customer_signature) {
-    doc.setDrawColor(LINE);
-    doc.setLineWidth(0.75);
-    doc.roundedRect(MARGIN, 176, CONTENT_WIDTH, 170, 1.5, 1.5);
-    doc.addImage(record.customer_signature, "PNG", MARGIN + 18, 194, CONTENT_WIDTH - 36, 130);
+    const signatureWidth = 260;
+    const signatureHeight = 72;
+    const signatureX = MARGIN + (CONTENT_WIDTH - signatureWidth) / 2;
+    const signatureY = 196;
+    doc.addImage(record.customer_signature, "PNG", signatureX, signatureY, signatureWidth, signatureHeight);
+    line(doc, signatureX, signatureY + signatureHeight + 12, signatureX + signatureWidth, signatureY + signatureHeight + 12, MUTED, 0.55);
+    setText(doc, MUTED, 7, "bold");
+    doc.text("ASSINATURA DO CLIENTE / REPRESENTANTE", signatureX + signatureWidth / 2, signatureY + signatureHeight + 28, { align: "center" });
+    setText(doc, DARK, 8);
+    doc.text(valueOrDash(record.customer_name), signatureX + signatureWidth / 2, signatureY + signatureHeight + 43, { align: "center" });
   } else {
-    paragraphBox(doc, "Assinatura", "Assinatura não registrada.", MARGIN, 176, CONTENT_WIDTH, 90);
+    const signatureWidth = 260;
+    const signatureX = MARGIN + (CONTENT_WIDTH - signatureWidth) / 2;
+    line(doc, signatureX, 280, signatureX + signatureWidth, 280, MUTED, 0.55);
+    setText(doc, MUTED, 7, "bold");
+    doc.text("ASSINATURA DO CLIENTE / REPRESENTANTE", signatureX + signatureWidth / 2, 296, { align: "center" });
   }
 
   line(doc, MARGIN, PAGE_HEIGHT - 45, PAGE_WIDTH - MARGIN, PAGE_HEIGHT - 45, BLUE, 1.2);
