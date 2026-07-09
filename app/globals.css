@@ -1025,6 +1025,10 @@ input:focus, textarea:focus, select:focus {
   margin-bottom: 0;
 }
 
+.full-history-card {
+  scroll-margin-top: 24px;
+}
+
 .table-wrap {
   overflow-x: auto;
   overflow-y: visible;

@@ -785,6 +785,13 @@ export default function Home() {
     setView("service");
   }
 
+  function showFullHistory() {
+    setHistoryFilter("");
+    window.requestAnimationFrame(() => {
+      document.getElementById("full-machine-history")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
   const filteredMachines = useMemo(() => {
     const term = machineFilter.trim().toLowerCase();
     return [...machines]
@@ -1287,7 +1294,7 @@ export default function Home() {
               </article>
 
               <article className="dashboard-card history-card">
-                <div className="card-title"><DetailIcon type="history" /><h3>Histórico de Atendimentos</h3><button className="button ghost" type="button" onClick={() => setHistoryFilter("")}>Ver todos</button></div>
+                <div className="card-title"><DetailIcon type="history" /><h3>Histórico de Atendimentos</h3><button className="button ghost" type="button" onClick={showFullHistory}>Ver todos</button></div>
                 <div className="history-list">
                   {selectedMachineRecentHistory.length ? selectedMachineRecentHistory.map((record) => (
                     <button key={record.id} type="button" onClick={() => setSelectedServiceRecord(record)}>
@@ -1321,7 +1328,7 @@ export default function Home() {
               </div>
             </section>
 
-            <section className="dashboard-card full-history-card">
+            <section className="dashboard-card full-history-card" id="full-machine-history">
               <div className="section-header"><h2>Histórico completo de {displayMachineCode(selectedMachine)}</h2><span>{filteredHistory.length} registros</span></div>
               <label>Filtrar histórico<input value={historyFilter} onChange={(event) => setHistoryFilter(event.target.value)} /></label>
               <div className="table-wrap">
