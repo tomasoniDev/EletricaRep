@@ -244,10 +244,16 @@ function helpText(view: View, registryTab: RegistryTab) {
   return "Cadastre os técnicos disponíveis para lançamento dos atendimentos. O nome do técnico aparece no relatório e no histórico.";
 }
 
+function displayUserName(value: string) {
+  const localPart = value.trim().split("@")[0];
+  return localPart ? localPart.replace(/\./g, " ") : "Usuário";
+}
+
 function initialsFromEmail(value: string) {
-  const normalized = value.trim();
-  if (!normalized) return "US";
-  return normalized.slice(0, 2).toUpperCase();
+  const parts = displayUserName(value).split(/\s+/).filter(Boolean);
+  if (!parts.length) return "US";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts.at(-1)?.[0] ?? ""}`.toUpperCase();
 }
 
 function PlusIcon() {
@@ -599,6 +605,11 @@ export default function Home() {
 
   function toggleTheme() {
     setTheme((current) => current === "dark" ? "light" : "dark");
+  }
+
+  function editUser() {
+    setUserMenuOpen(false);
+    setMessage("Edição de usuário ainda não configurada.");
   }
 
   function signaturePoint(event: PointerEvent<HTMLCanvasElement>) {
@@ -1006,7 +1017,7 @@ export default function Home() {
     return (
       <main className="login-page">
         <section className="login-card">
-          <Image src="/tomasoni-logo-reference.png" alt="Tomasoni" width={300} height={80} priority />
+          <Image src="/tomasoni-logo-transparent.png" alt="Tomasoni" width={300} height={80} priority />
           <h1>Configuração pendente</h1>
           <p>Preencha `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` no arquivo `.env.local` ou nas variáveis de ambiente da Vercel.</p>
         </section>
@@ -1018,7 +1029,7 @@ export default function Home() {
     return (
       <main className="login-page">
         <form className="login-card" onSubmit={signIn}>
-          <Image className="login-logo" src="/tomasoni-logo-reference.png" alt="Tomasoni" width={300} height={80} priority />
+          <Image className="login-logo" src="/tomasoni-logo-transparent.png" alt="Tomasoni" width={300} height={80} priority />
           <label>
             E-mail corporativo
             <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder={`nome@${ALLOWED_EMAIL_DOMAINS[0]}`} required disabled={otpSent} />
@@ -1040,7 +1051,7 @@ export default function Home() {
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <div className="brand"><Image src="/tomasoni-logo-reference.png" alt="Tomasoni" width={220} height={59} priority /></div>
+        <div className="brand"><Image src="/tomasoni-logo-transparent.png" alt="Tomasoni" width={220} height={59} priority /></div>
         <nav className="side-nav">
           <button className={`nav-item ${view === "home" ? "active" : ""}`} onClick={() => setView("home")}>Tela inicial</button>
           <button className={`nav-item ${view === "service" ? "active" : ""}`} onClick={startNewService}>Novo registro</button>
@@ -1050,15 +1061,14 @@ export default function Home() {
           <button className="user-menu-trigger" type="button" onClick={() => setUserMenuOpen((open) => !open)} aria-expanded={userMenuOpen}>
             <span className="avatar">{initialsFromEmail(currentUserEmail)}</span>
             <span className="user-meta">
-              <strong>{currentUserEmail.split("@")[0] || "Usuário"}</strong>
+              <strong>{displayUserName(currentUserEmail)}</strong>
               <small>{currentUserEmail || "Sessão ativa"}</small>
             </span>
             <MoreIcon />
           </button>
           {userMenuOpen && (
             <div className="user-menu-content">
-              <button type="button" onClick={toggleTheme}>{theme === "dark" ? <SunIcon /> : <MoonIcon />} {theme === "dark" ? "Modo claro" : "Modo escuro"}</button>
-              <button type="button" onClick={() => { setHelpOpen(true); setUserMenuOpen(false); }}><HelpIcon /> Ajuda da tela</button>
+              <button type="button" onClick={editUser}><EditIcon /> Editar Usuário</button>
               <button type="button" onClick={signOut}><LogOutIcon /> Sair</button>
             </div>
           )}
