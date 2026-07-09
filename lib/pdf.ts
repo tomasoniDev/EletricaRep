@@ -9,6 +9,7 @@ const BLUE = "#1268D8";
 const DARK = "#111111";
 const MUTED = "#566170";
 const LINE = "#CAD6E6";
+const CONTENT_BOTTOM = PAGE_HEIGHT - 76;
 
 function formatDate(value?: string | null) {
   if (!value) return "-";
@@ -85,6 +86,35 @@ function paragraphBox(doc: jsPDF, title: string, value: string | null, x: number
   doc.text(lines, x + 10, y + 34, { lineHeightFactor: 1.35 });
 }
 
+function addContentPage(doc: jsPDF) {
+  doc.addPage("a4", "portrait");
+  return 78;
+}
+
+function ensurePageSpace(doc: jsPDF, y: number, height: number) {
+  if (y + height <= CONTENT_BOTTOM) return y;
+  return addContentPage(doc);
+}
+
+function flowTextSection(doc: jsPDF, title: string, value: string | null, y: number) {
+  const lines = doc.splitTextToSize(valueOrDash(value), CONTENT_WIDTH);
+  const lineHeight = 12;
+  y = ensurePageSpace(doc, y, 34);
+  setText(doc, MUTED, 7, "bold");
+  doc.text(title.toUpperCase(), MARGIN, y);
+  y += 18;
+  setText(doc, DARK, 9);
+
+  for (const textLine of lines) {
+    y = ensurePageSpace(doc, y, lineHeight + 8);
+    doc.text(textLine, MARGIN, y);
+    y += lineHeight;
+  }
+
+  line(doc, MARGIN, y + 7, PAGE_WIDTH - MARGIN, y + 7, LINE, 0.55);
+  return y + 26;
+}
+
 function imageToDataUrl(path: string) {
   return new Promise<string | null>((resolve) => {
     const image = new Image();
@@ -145,24 +175,38 @@ function drawServiceData(doc: jsPDF, record: ServiceRecord) {
   labelValue(doc, "Data do atendimento", formatDate(record.service_date), MARGIN, 368, col);
   labelValue(doc, "Tipo de atendimento", record.service_type ?? "Acesso remoto", MARGIN + col + 12, 368, col);
   labelValue(doc, "Equipamento", record.equipment, MARGIN + (col + 12) * 2, 368, col);
-  paragraphBox(doc, "Solicitação do cliente / problema relatado", record.request, MARGIN, 415, CONTENT_WIDTH, 58);
-  paragraphBox(doc, "Diagnóstico", record.diagnosis, MARGIN, 486, CONTENT_WIDTH, 58);
-  paragraphBox(doc, "Serviço realizado", record.service_done, MARGIN, 557, CONTENT_WIDTH, 58);
-  paragraphBox(doc, "Observações", record.observations, MARGIN, 628, CONTENT_WIDTH, 58);
+  labelValue(doc, "Motivo breve", record.issue_summary, MARGIN, 407, CONTENT_WIDTH);
+
+  let y = 464;
+  y = flowTextSection(doc, "Solicitação do cliente / problema relatado", record.request, y);
+  y = flowTextSection(doc, "Diagnóstico", record.diagnosis, y);
+  y = flowTextSection(doc, "Serviço realizado", record.service_done, y);
+  y = flowTextSection(doc, "Observações", record.observations, y);
+  return y;
 }
 
-function drawTechnicianData(doc: jsPDF, record: ServiceRecord) {
-  sectionTitle(doc, "Técnico responsável", 714);
+function drawTechnicianData(doc: jsPDF, record: ServiceRecord, y: number) {
+  y = ensurePageSpace(doc, y, 70);
+  sectionTitle(doc, "Técnico responsável", y);
   const col = (CONTENT_WIDTH - 12) / 2;
-  labelValue(doc, "Nome", record.technician_name, MARGIN, 745, col);
-  labelValue(doc, "E-mail", record.technician_email, MARGIN + col + 12, 745, col);
+  labelValue(doc, "Nome", record.technician_name, MARGIN, y + 31, col);
+  labelValue(doc, "E-mail", record.technician_email, MARGIN + col + 12, y + 31, col);
+  return y + 68;
 }
 
-function drawFooter(doc: jsPDF) {
+function drawFooter(doc: jsPDF, pageNumber: number, totalPages: number) {
   line(doc, MARGIN, PAGE_HEIGHT - 45, PAGE_WIDTH - MARGIN, PAGE_HEIGHT - 45, BLUE, 1.2);
   setText(doc, MUTED, 7);
   doc.text("Tomasoni - Equipamentos para indústria de papelão ondulado", MARGIN, PAGE_HEIGHT - 29);
-  doc.text("Página 1", PAGE_WIDTH - MARGIN - 36, PAGE_HEIGHT - 29);
+  doc.text(`Página ${pageNumber} de ${totalPages}`, PAGE_WIDTH - MARGIN - 58, PAGE_HEIGHT - 29);
+}
+
+function drawAllFooters(doc: jsPDF) {
+  const totalPages = doc.getNumberOfPages();
+  for (let page = 1; page <= totalPages; page += 1) {
+    doc.setPage(page);
+    drawFooter(doc, page, totalPages);
+  }
 }
 
 function drawSignaturePage(doc: jsPDF, record: ServiceRecord) {
@@ -191,10 +235,6 @@ function drawSignaturePage(doc: jsPDF, record: ServiceRecord) {
     doc.text("ASSINATURA DO CLIENTE / REPRESENTANTE", signatureX + signatureWidth / 2, 296, { align: "center" });
   }
 
-  line(doc, MARGIN, PAGE_HEIGHT - 45, PAGE_WIDTH - MARGIN, PAGE_HEIGHT - 45, BLUE, 1.2);
-  setText(doc, MUTED, 7);
-  doc.text("Tomasoni - Equipamentos para indústria de papelão ondulado", MARGIN, PAGE_HEIGHT - 29);
-  doc.text("Página 2", PAGE_WIDTH - MARGIN - 36, PAGE_HEIGHT - 29);
 }
 
 async function createServicePdf(machine: Machine, record: ServiceRecord) {
@@ -207,10 +247,10 @@ async function createServicePdf(machine: Machine, record: ServiceRecord) {
 
   await drawHeader(doc, machine, record);
   drawMachineData(doc, machine);
-  drawServiceData(doc, record);
-  drawTechnicianData(doc, record);
-  drawFooter(doc);
+  const nextY = drawServiceData(doc, record);
+  drawTechnicianData(doc, record, nextY);
   if (record.service_type === "Visita técnica") drawSignaturePage(doc, record);
+  drawAllFooters(doc);
 
   return doc;
 }

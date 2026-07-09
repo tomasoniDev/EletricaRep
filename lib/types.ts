@@ -63,6 +63,7 @@ export type ServiceRecord = {
   service_type: "Acesso remoto" | "Visita técnica" | null;
   service_date: string;
   equipment: string | null;
+  issue_summary: string | null;
   request: string;
   diagnosis: string;
   service_done: string;

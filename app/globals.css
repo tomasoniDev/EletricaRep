@@ -560,6 +560,26 @@ table {
 .home-table th:nth-child(5),
 .home-table td:nth-child(5) { width: 24%; }
 
+.history-table {
+  min-width: 760px;
+  table-layout: fixed;
+}
+
+.history-table th:nth-child(1),
+.history-table td:nth-child(1) { width: 16%; }
+
+.history-table th:nth-child(2),
+.history-table td:nth-child(2) { width: 20%; }
+
+.history-table th:nth-child(3),
+.history-table td:nth-child(3) { width: 20%; }
+
+.history-table th:nth-child(4),
+.history-table td:nth-child(4) { width: 36%; }
+
+.history-table th:nth-child(5),
+.history-table td:nth-child(5) { width: 8%; }
+
 .compact-table { min-width: 520px; }
 
 th, td {

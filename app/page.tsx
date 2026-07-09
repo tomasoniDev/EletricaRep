@@ -10,7 +10,7 @@ type View = "home" | "machineDetail" | "service" | "registry";
 type RegistryTab = "machines" | "technicians";
 type SortDirection = "asc" | "desc";
 type MachineSortKey = "code" | "model" | "client" | "unit_city" | "serial" | "software_version" | "last_service";
-type HistorySortKey = "service_date" | "equipment" | "technician_name" | "request" | "diagnosis" | "service_done";
+type HistorySortKey = "service_date" | "equipment" | "technician_name" | "issue_summary";
 type TechnicianSortKey = "name" | "email";
 type RemoteAccess = "SINEMA" | "VNC" | "Sem acesso remoto";
 type ServiceType = "Acesso remoto" | "Visita técnica";
@@ -583,7 +583,7 @@ export default function Home() {
     return [...records]
       .filter((record) => {
         if (!term) return true;
-        return [record.service_type, record.technician_name, record.equipment, record.request, record.diagnosis, record.service_done, record.observations, record.customer_name]
+        return [record.service_type, record.technician_name, record.equipment, record.issue_summary, record.request, record.diagnosis, record.service_done, record.observations, record.customer_name]
           .join(" ")
           .toLowerCase()
           .includes(term);
@@ -595,9 +595,7 @@ export default function Home() {
         if (historySort.key === "service_date") result = compareDate(a.service_date, b.service_date);
         if (historySort.key === "equipment") result = compareText(a.equipment, b.equipment);
         if (historySort.key === "technician_name") result = compareText(a.technician_name, b.technician_name);
-        if (historySort.key === "request") result = compareText(a.request, b.request);
-        if (historySort.key === "diagnosis") result = compareText(a.diagnosis, b.diagnosis);
-        if (historySort.key === "service_done") result = compareText(a.service_done, b.service_done);
+        if (historySort.key === "issue_summary") result = compareText(a.issue_summary, b.issue_summary);
 
         return result * direction;
       });
@@ -801,6 +799,7 @@ export default function Home() {
       service_type: selectedServiceType,
       service_date: String(form.get("service_date") ?? ""),
       equipment: String(form.get("equipment") ?? "").trim() || null,
+      issue_summary: String(form.get("issue_summary") ?? "").trim() || null,
       request: String(form.get("request") ?? "").trim(),
       diagnosis: String(form.get("diagnosis") ?? "").trim(),
       service_done: String(form.get("service_done") ?? "").trim(),
@@ -1027,14 +1026,12 @@ export default function Home() {
               <div className="section-header"><h2>Histórico de {displayMachineCode(selectedMachine)}</h2><span>{filteredHistory.length} registros</span></div>
               <label>Filtrar histórico<input value={historyFilter} onChange={(event) => setHistoryFilter(event.target.value)} /></label>
               <div className="table-wrap">
-                <table>
+                <table className="history-table">
                   <thead><tr>
                     <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("service_date")}>Data <span>{sortMark(historySort.key === "service_date", historySort.direction)}</span></button></th>
                     <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("equipment")}>Equipamento <span>{sortMark(historySort.key === "equipment", historySort.direction)}</span></button></th>
                     <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("technician_name")}>Técnico <span>{sortMark(historySort.key === "technician_name", historySort.direction)}</span></button></th>
-                    <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("request")}>Solicitação <span>{sortMark(historySort.key === "request", historySort.direction)}</span></button></th>
-                    <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("diagnosis")}>Diagnóstico <span>{sortMark(historySort.key === "diagnosis", historySort.direction)}</span></button></th>
-                    <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("service_done")}>Serviço <span>{sortMark(historySort.key === "service_done", historySort.direction)}</span></button></th>
+                    <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("issue_summary")}>Motivo breve <span>{sortMark(historySort.key === "issue_summary", historySort.direction)}</span></button></th>
                     <th>PDF</th>
                   </tr></thead>
                   <tbody>
@@ -1043,9 +1040,7 @@ export default function Home() {
                         <td>{formatDate(record.service_date)}</td>
                         <td>{record.equipment || "-"}</td>
                         <td>{record.technician_name}</td>
-                        <td>{record.request}</td>
-                        <td>{record.diagnosis}</td>
-                        <td>{record.service_done}</td>
+                        <td>{record.issue_summary || "-"}</td>
                         <td><button className="icon-button download" type="button" title="Baixar PDF" aria-label="Baixar PDF" onClick={(event) => { event.stopPropagation(); downloadServicePdf(selectedMachine, record); }}><PdfDownloadIcon /></button></td>
                       </tr>
                     ))}
@@ -1076,6 +1071,7 @@ export default function Home() {
               {serviceType === "Visita técnica" && (
                 <label>Cliente / representante<input name="customer_name" placeholder="Nome de quem assinou" defaultValue={editingServiceRecord?.customer_name ?? ""} /></label>
               )}
+              <label className="wide">Motivo breve<input name="issue_summary" placeholder="Ex.: Falha no acionamento X" defaultValue={editingServiceRecord?.issue_summary ?? ""} /></label>
               <label className="wide">Solicitação do cliente / problema relatado<textarea name="request" rows={3} required defaultValue={editingServiceRecord?.request ?? ""} /></label>
               <label className="wide">Diagnóstico<textarea name="diagnosis" rows={3} required defaultValue={editingServiceRecord?.diagnosis ?? ""} /></label>
               <label className="wide">Serviço realizado<textarea name="service_done" rows={3} required defaultValue={editingServiceRecord?.service_done ?? ""} /></label>
@@ -1248,6 +1244,7 @@ export default function Home() {
                 <div><span>Tipo de atendimento</span><strong>{normalizeServiceType(selectedServiceRecord.service_type)}</strong></div>
                 <div><span>Equipamento</span><strong>{selectedServiceRecord.equipment || "-"}</strong></div>
                 <div><span>Técnico</span><strong>{selectedServiceRecord.technician_name}</strong></div>
+                <div><span>Motivo breve</span><strong>{selectedServiceRecord.issue_summary || "-"}</strong></div>
                 {normalizeServiceType(selectedServiceRecord.service_type) === "Visita técnica" && (
                   <>
                     <div><span>Cliente / representante</span><strong>{selectedServiceRecord.customer_name || "-"}</strong></div>
