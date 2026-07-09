@@ -640,6 +640,8 @@ export default function Home() {
     }
 
     const pdfBase64 = await servicePdfBase64(machine, record);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 20000);
     const response = await fetch("/api/send-service-email", {
       method: "POST",
       headers: {
@@ -651,8 +653,9 @@ export default function Home() {
         subject: `Relatório de atendimento - Máquina ${displayMachineCode(machine)}`,
         filename: servicePdfFileName(machine, record),
         pdfBase64
-      })
-    });
+      }),
+      signal: controller.signal
+    }).finally(() => window.clearTimeout(timeout));
 
     const result = await response.json().catch(() => null);
     if (!response.ok) {
@@ -665,6 +668,7 @@ export default function Home() {
   async function saveService(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const isEditingService = Boolean(editingServiceRecord);
+    const formElement = event.currentTarget;
     const form = new FormData(event.currentTarget);
     const machine = machines.find((item) => item.id === String(form.get("machine_id")));
     const technician = technicians.find((item) => item.id === String(form.get("technician_id")));
@@ -712,13 +716,24 @@ export default function Home() {
     setMessage(isEditingService ? "Atendimento atualizado com sucesso." : "Atendimento salvo. Gerando PDF e preparando envio por e-mail.");
     setEditingServiceRecord(null);
     setSelectedServiceRecord(null);
-    event.currentTarget.reset();
+    formElement.reset();
     await loadData();
-    if (!isEditingService) {
-      await downloadServicePdf(machine, record);
-      setMessage(await sendServiceEmail(machine, record));
-    }
     setView("machineDetail");
+
+    if (!isEditingService) {
+      try {
+        await downloadServicePdf(machine, record);
+        setMessage("Atendimento salvo. PDF gerado. Enviando e-mail aos responsáveis cadastrados.");
+        setMessage(await sendServiceEmail(machine, record));
+      } catch (error) {
+        const detail = error instanceof DOMException && error.name === "AbortError"
+          ? "tempo limite do envio atingido"
+          : error instanceof Error
+            ? error.message
+            : "erro não informado";
+        setMessage(`Atendimento salvo e PDF gerado, mas o e-mail não foi confirmado. Detalhe: ${detail}.`);
+      }
+    }
   }
 
   function startServiceEdit(record: ServiceRecord) {
