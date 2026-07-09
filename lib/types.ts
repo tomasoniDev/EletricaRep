@@ -54,6 +54,14 @@ export type Technician = {
   updated_at: string;
 };
 
+export type Profile = {
+  user_id: string;
+  email: string;
+  display_name: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ServiceRecord = {
   id: string;
   machine_id: string;

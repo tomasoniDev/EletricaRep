@@ -4,7 +4,7 @@ import { FormEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "r
 import Image from "next/image";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { downloadServicePdf, servicePdfBase64, servicePdfFileName } from "@/lib/pdf";
-import type { Machine, ServiceRecord, Technician } from "@/lib/types";
+import type { Machine, Profile, ServiceRecord, Technician } from "@/lib/types";
 
 type View = "home" | "machineDetail" | "service" | "registry";
 type RegistryTab = "machines" | "technicians";
@@ -358,6 +358,9 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUserId, setCurrentUserId] = useState("");
   const [currentUserEmail, setCurrentUserEmail] = useState("");
+  const [currentUserName, setCurrentUserName] = useState("");
+  const [profileName, setProfileName] = useState("");
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [otpSent, setOtpSent] = useState(false);
@@ -421,7 +424,10 @@ export default function Home() {
       setIsAuthenticated(Boolean(data.session));
       setCurrentUserId(data.session?.user.id ?? "");
       setCurrentUserEmail(data.session?.user.email ?? "");
-      if (data.session) void loadData();
+      if (data.session) {
+        void loadProfile(data.session.user.id, data.session.user.email ?? "");
+        void loadData();
+      }
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
@@ -437,7 +443,10 @@ export default function Home() {
       setIsAuthenticated(Boolean(session));
       setCurrentUserId(session?.user.id ?? "");
       setCurrentUserEmail(session?.user.email ?? "");
-      if (session) void loadData();
+      if (session) {
+        void loadProfile(session.user.id, session.user.email ?? "");
+        void loadData();
+      }
     });
 
     return () => listener.subscription.unsubscribe();
@@ -509,22 +518,51 @@ export default function Home() {
     image.src = customerSignature;
   }, [customerSignature, serviceType, view]);
 
-  async function loadData() {
-    const [{ data: machineRows, error: machineError }, { data: technicianRows, error: technicianError }] = await Promise.all([
-      supabase
-        .from("machines")
-        .select("*, machine_emails(*), service_records(*)")
-        .order("code", { ascending: true }),
-      supabase.from("technicians").select("*").order("name", { ascending: true })
-    ]);
+  async function loadProfile(userId: string, userEmail: string) {
+    const fallbackName = displayUserName(userEmail);
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle();
 
-    if (machineError || technicianError) {
-      setMessage(dataMessage(machineError?.message || technicianError?.message || ""));
+    if (error) {
+      setCurrentUserName(fallbackName);
+      return;
+    }
+
+    if (data) {
+      const profile = data as Profile;
+      setCurrentUserName(profile.display_name || fallbackName);
+      return;
+    }
+
+    const { data: insertedProfile, error: insertError } = await supabase
+      .from("profiles")
+      .upsert({ user_id: userId, email: userEmail, display_name: fallbackName }, { onConflict: "user_id" })
+      .select()
+      .single();
+
+    if (insertError || !insertedProfile) {
+      setCurrentUserName(fallbackName);
+      return;
+    }
+
+    setCurrentUserName((insertedProfile as Profile).display_name || fallbackName);
+  }
+
+  async function loadData() {
+    const { data: machineRows, error: machineError } = await supabase
+      .from("machines")
+      .select("*, machine_emails(*), service_records(*)")
+      .order("code", { ascending: true });
+
+    if (machineError) {
+      setMessage(dataMessage(machineError.message || ""));
       return;
     }
 
     setMachines((machineRows ?? []) as Machine[]);
-    setTechnicians((technicianRows ?? []) as Technician[]);
   }
 
   async function signIn(event: FormEvent<HTMLFormElement>) {
@@ -588,6 +626,7 @@ export default function Home() {
     setIsAuthenticated(true);
     setCurrentUserId(data.session.user.id);
     setCurrentUserEmail(data.session.user.email ?? normalizedEmail);
+    await loadProfile(data.session.user.id, data.session.user.email ?? normalizedEmail);
     setMessage("Acesso autorizado.");
     await loadData();
     setAuthLoading(false);
@@ -599,6 +638,7 @@ export default function Home() {
     setIsAuthenticated(false);
     setCurrentUserId("");
     setCurrentUserEmail("");
+    setCurrentUserName("");
     setMachines([]);
     setTechnicians([]);
   }
@@ -609,7 +649,30 @@ export default function Home() {
 
   function editUser() {
     setUserMenuOpen(false);
-    setMessage("Edição de usuário ainda não configurada.");
+    setProfileName(currentUserName || displayUserName(currentUserEmail));
+    setProfileModalOpen(true);
+  }
+
+  async function saveUserProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const displayName = profileName.trim() || displayUserName(currentUserEmail);
+
+    const { error } = await supabase
+      .from("profiles")
+      .upsert({
+        user_id: currentUserId,
+        email: currentUserEmail,
+        display_name: displayName
+      }, { onConflict: "user_id" });
+
+    if (error) {
+      setMessage(dataMessage(error.message));
+      return;
+    }
+
+    setCurrentUserName(displayName);
+    setProfileModalOpen(false);
+    setMessage("Usuário atualizado com sucesso.");
   }
 
   function signaturePoint(event: PointerEvent<HTMLCanvasElement>) {
@@ -914,10 +977,9 @@ export default function Home() {
     const formElement = event.currentTarget;
     const form = new FormData(event.currentTarget);
     const machine = machines.find((item) => item.id === String(form.get("machine_id")));
-    const technician = technicians.find((item) => item.id === String(form.get("technician_id")));
 
-    if (!machine || !technician) {
-      setMessage("Selecione uma máquina e um técnico.");
+    if (!machine) {
+      setMessage("Selecione uma máquina.");
       return;
     }
 
@@ -927,11 +989,12 @@ export default function Home() {
     }
 
     const selectedServiceType = normalizeServiceType(String(form.get("service_type") ?? serviceType));
+    const loggedTechnicianName = currentUserName || displayUserName(currentUserEmail);
     const payload = {
       machine_id: machine.id,
-      technician_id: technician.id,
-      technician_name: technician.name,
-      technician_email: technician.email,
+      technician_id: null,
+      technician_name: loggedTechnicianName,
+      technician_email: currentUserEmail || null,
       service_type: selectedServiceType,
       service_date: String(form.get("service_date") ?? ""),
       equipment: String(form.get("equipment") ?? "").trim() || null,
@@ -1055,13 +1118,13 @@ export default function Home() {
         <nav className="side-nav">
           <button className={`nav-item ${view === "home" ? "active" : ""}`} onClick={() => setView("home")}>Tela inicial</button>
           <button className={`nav-item ${view === "service" ? "active" : ""}`} onClick={startNewService}>Novo registro</button>
-          <button className={`nav-item ${view === "registry" ? "active" : ""}`} onClick={() => setView("registry")}>Cadastro</button>
+          <button className={`nav-item ${view === "registry" ? "active" : ""}`} onClick={() => { setRegistryTab("machines"); setView("registry"); }}>Cadastro</button>
         </nav>
         <div className="user-menu">
           <button className="user-menu-trigger" type="button" onClick={() => setUserMenuOpen((open) => !open)} aria-expanded={userMenuOpen}>
             <span className="avatar">{initialsFromEmail(currentUserEmail)}</span>
             <span className="user-meta">
-              <strong>{displayUserName(currentUserEmail)}</strong>
+              <strong>{currentUserName || displayUserName(currentUserEmail)}</strong>
               <small>{currentUserEmail || "Sessão ativa"}</small>
             </span>
             <MoreIcon />
@@ -1228,7 +1291,7 @@ export default function Home() {
             <div className="fields-grid">
               <label>Máquina<select name="machine_id" required defaultValue={editingServiceRecord?.machine_id ?? serviceMachine?.id}>{machines.map((machine) => <option key={machine.id} value={machine.id}>{displayMachineCode(machine)}</option>)}</select></label>
               <label>Equipamento<input name="equipment" placeholder="CLP, IHM, servo, inversor" defaultValue={editingServiceRecord?.equipment ?? ""} /></label>
-              <label>Técnico responsável<select name="technician_id" required defaultValue={editingServiceRecord?.technician_id ?? ""}>{technicians.map((technician) => <option key={technician.id} value={technician.id}>{technician.name}</option>)}</select></label>
+              <label>Técnico responsável<input value={currentUserName || displayUserName(currentUserEmail)} readOnly /></label>
               <label>Data<input name="service_date" type="date" required defaultValue={editingServiceRecord?.service_date ?? new Date().toISOString().slice(0, 10)} /></label>
               <label>Tipo de atendimento<select name="service_type" value={serviceType} onChange={(event) => updateServiceType(event.target.value as ServiceType)}>
                 {SERVICE_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
@@ -1277,10 +1340,6 @@ export default function Home() {
             <section className="table-panel">
               <div className="section-header">
                 <h2>Cadastro</h2>
-                <div className="segmented-control" role="tablist" aria-label="Opções de cadastro">
-                  <button className={registryTab === "machines" ? "active" : ""} type="button" onClick={() => setRegistryTab("machines")}>Máquinas</button>
-                  <button className={registryTab === "technicians" ? "active" : ""} type="button" onClick={() => setRegistryTab("technicians")}>Técnicos</button>
-                </div>
               </div>
             </section>
 
@@ -1455,6 +1514,28 @@ export default function Home() {
                 )}
               </div>
             </section>
+          </div>
+        )}
+
+        {profileModalOpen && (
+          <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title" onClick={() => setProfileModalOpen(false)}>
+            <form className="modal-card profile-card" onSubmit={saveUserProfile} onClick={(event) => event.stopPropagation()}>
+              <div className="section-header">
+                <div>
+                  <p className="eyebrow">Usuário</p>
+                  <h2 id="profile-modal-title">Editar Usuário</h2>
+                </div>
+                <button className="button ghost" type="button" onClick={() => setProfileModalOpen(false)}>Fechar</button>
+              </div>
+              <div className="fields-grid">
+                <label className="wide">Nome exibido<input value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder={displayUserName(currentUserEmail)} autoFocus /></label>
+                <label className="wide">E-mail corporativo<input value={currentUserEmail} readOnly /></label>
+              </div>
+              <div className="modal-actions">
+                <button className="button ghost" type="button" onClick={() => setProfileModalOpen(false)}>Cancelar</button>
+                <button className="button primary" type="submit">Salvar</button>
+              </div>
+            </form>
           </div>
         )}
 
