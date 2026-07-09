@@ -574,7 +574,7 @@ export default function Home() {
       vnc_notes: machineForm.remote_access === "VNC" ? machineForm.vnc_notes.trim() || null : null,
       sinema_url: machineForm.remote_access === "SINEMA" ? machineForm.sinema_url.trim() || null : null,
       sinema_user: machineForm.remote_access === "SINEMA" ? machineForm.sinema_user.trim() || null : null,
-      sinema_password: machineForm.remote_access === "SINEMA" ? machineForm.sinema_password.trim() || null : null,
+      sinema_password: null,
       sinema_notes: machineForm.remote_access === "SINEMA" ? machineForm.sinema_notes.trim() || null : null,
       support_contract_active: showRemoteAccess ? machineForm.support_contract_active === "Sim" : null,
       support_contract_until: showRemoteAccess ? machineForm.support_contract_until.trim() || null : null
@@ -891,9 +891,8 @@ export default function Home() {
               <section className="table-panel">
                 <div className="section-header"><h2>Informações de acesso SINEMA</h2></div>
                 <div className="details-grid">
-                  <div><span>Link ou endereço</span><strong>{selectedMachine.sinema_url || "-"}</strong></div>
-                  <div><span>Usuário</span><strong>{selectedMachine.sinema_user || "-"}</strong></div>
-                  <div><span>Senha</span><strong>{selectedMachine.sinema_password || "-"}</strong></div>
+                  <div><span>Device Name</span><strong>{selectedMachine.sinema_url || "-"}</strong></div>
+                  <div><span>Subnet Name</span><strong>{selectedMachine.sinema_user || "-"}</strong></div>
                   <div><span>Observações</span><strong>{selectedMachine.sinema_notes || "-"}</strong></div>
                 </div>
               </section>
@@ -1013,9 +1012,8 @@ export default function Home() {
                       )}
                       {machineForm.remote_access === "SINEMA" && (
                         <div className="fields-grid">
-                          <label>Link ou endereço SINEMA<input value={machineForm.sinema_url} onChange={(event) => updateMachineForm("sinema_url", event.target.value)} /></label>
-                          <label>Usuário, se aplicável<input value={machineForm.sinema_user} onChange={(event) => updateMachineForm("sinema_user", event.target.value)} /></label>
-                          <label>Senha, se aplicável<input type="text" value={machineForm.sinema_password} onChange={(event) => updateMachineForm("sinema_password", event.target.value)} /></label>
+                          <label>Device Name<input value={machineForm.sinema_url} onChange={(event) => updateMachineForm("sinema_url", event.target.value)} /></label>
+                          <label>Subnet Name<input value={machineForm.sinema_user} onChange={(event) => updateMachineForm("sinema_user", event.target.value)} /></label>
                           <label className="wide">Observações<textarea rows={3} value={machineForm.sinema_notes} onChange={(event) => updateMachineForm("sinema_notes", event.target.value)} /></label>
                         </div>
                       )}
