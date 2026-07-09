@@ -981,9 +981,9 @@ export default function Home() {
                 <div className="section-header"><h2>Informações de acesso VNC</h2></div>
                 <div className="details-grid">
                   <div><span>IP de acesso</span><strong>{selectedMachine.vnc_ip || "-"}</strong></div>
-                  <div><span>Usuário</span><strong>{selectedMachine.vnc_user || "-"}</strong></div>
-                  <div><span>Senha remota</span><strong>{selectedMachine.vnc_password || "-"}</strong></div>
-                  <div><span>Senha VM local</span><strong>{selectedMachine.vnc_vm_password || "-"}</strong></div>
+                  <div><span>Senha</span><strong>{selectedMachine.vnc_password || "-"}</strong></div>
+                  <div><span>Usuário VM</span><strong>{selectedMachine.vnc_user || "-"}</strong></div>
+                  <div><span>Senha VM</span><strong>{selectedMachine.vnc_vm_password || "-"}</strong></div>
                   <div><span>Observações</span><strong>{selectedMachine.vnc_notes || "-"}</strong></div>
                 </div>
               </section>
@@ -1136,9 +1136,9 @@ export default function Home() {
                       {machineForm.remote_access === "VNC" && (
                         <div className="fields-grid">
                           <label>IP de acesso<input value={machineForm.vnc_ip} onChange={(event) => updateMachineForm("vnc_ip", event.target.value)} /></label>
-                          <label>Usuário, se aplicável<input value={machineForm.vnc_user} onChange={(event) => updateMachineForm("vnc_user", event.target.value)} /></label>
-                          <label>Senha de acesso remoto<input type="text" value={machineForm.vnc_password} onChange={(event) => updateMachineForm("vnc_password", event.target.value)} /></label>
-                          <label>Senha da VM do PC local<input type="text" value={machineForm.vnc_vm_password} onChange={(event) => updateMachineForm("vnc_vm_password", event.target.value)} /></label>
+                          <label>Senha<input type="text" value={machineForm.vnc_password} onChange={(event) => updateMachineForm("vnc_password", event.target.value)} /></label>
+                          <label>Usuário VM<input value={machineForm.vnc_user} onChange={(event) => updateMachineForm("vnc_user", event.target.value)} /></label>
+                          <label>Senha VM<input type="text" value={machineForm.vnc_vm_password} onChange={(event) => updateMachineForm("vnc_vm_password", event.target.value)} /></label>
                           <label className="wide">Observações de acesso<textarea rows={3} value={machineForm.vnc_notes} onChange={(event) => updateMachineForm("vnc_notes", event.target.value)} /></label>
                         </div>
                       )}
