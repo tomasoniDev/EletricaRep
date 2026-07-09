@@ -141,9 +141,10 @@ function drawMachineData(doc: jsPDF, machine: Machine) {
 
 function drawServiceData(doc: jsPDF, record: ServiceRecord) {
   sectionTitle(doc, "Dados do atendimento", 337);
-  const col = (CONTENT_WIDTH - 12) / 2;
+  const col = (CONTENT_WIDTH - 24) / 3;
   labelValue(doc, "Data do atendimento", formatDate(record.service_date), MARGIN, 368, col);
-  labelValue(doc, "Equipamento", record.equipment, MARGIN + col + 12, 368, col);
+  labelValue(doc, "Tipo de atendimento", record.service_type ?? "Acesso remoto", MARGIN + col + 12, 368, col);
+  labelValue(doc, "Equipamento", record.equipment, MARGIN + (col + 12) * 2, 368, col);
   paragraphBox(doc, "Solicitação do cliente / problema relatado", record.request, MARGIN, 415, CONTENT_WIDTH, 58);
   paragraphBox(doc, "Diagnóstico", record.diagnosis, MARGIN, 486, CONTENT_WIDTH, 58);
   paragraphBox(doc, "Serviço realizado", record.service_done, MARGIN, 557, CONTENT_WIDTH, 58);
@@ -164,6 +165,28 @@ function drawFooter(doc: jsPDF) {
   doc.text("Página 1", PAGE_WIDTH - MARGIN - 36, PAGE_HEIGHT - 29);
 }
 
+function drawSignaturePage(doc: jsPDF, record: ServiceRecord) {
+  doc.addPage("a4", "portrait");
+  sectionTitle(doc, "Assinatura do cliente", 90);
+  const col = (CONTENT_WIDTH - 12) / 2;
+  labelValue(doc, "Tipo de atendimento", record.service_type ?? "Visita técnica", MARGIN, 122, col);
+  labelValue(doc, "Cliente / representante", record.customer_name, MARGIN + col + 12, 122, col);
+
+  if (record.customer_signature) {
+    doc.setDrawColor(LINE);
+    doc.setLineWidth(0.75);
+    doc.roundedRect(MARGIN, 176, CONTENT_WIDTH, 170, 1.5, 1.5);
+    doc.addImage(record.customer_signature, "PNG", MARGIN + 18, 194, CONTENT_WIDTH - 36, 130);
+  } else {
+    paragraphBox(doc, "Assinatura", "Assinatura não registrada.", MARGIN, 176, CONTENT_WIDTH, 90);
+  }
+
+  line(doc, MARGIN, PAGE_HEIGHT - 45, PAGE_WIDTH - MARGIN, PAGE_HEIGHT - 45, BLUE, 1.2);
+  setText(doc, MUTED, 7);
+  doc.text("Tomasoni - Equipamentos para indústria de papelão ondulado", MARGIN, PAGE_HEIGHT - 29);
+  doc.text("Página 2", PAGE_WIDTH - MARGIN - 36, PAGE_HEIGHT - 29);
+}
+
 async function createServicePdf(machine: Machine, record: ServiceRecord) {
   const doc = new jsPDF({ unit: "pt", format: "a4", orientation: "portrait", compress: true });
   doc.setProperties({
@@ -177,6 +200,7 @@ async function createServicePdf(machine: Machine, record: ServiceRecord) {
   drawServiceData(doc, record);
   drawTechnicianData(doc, record);
   drawFooter(doc);
+  if (record.service_type === "Visita técnica") drawSignaturePage(doc, record);
 
   return doc;
 }

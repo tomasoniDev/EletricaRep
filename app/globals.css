@@ -467,6 +467,40 @@ input:focus, textarea:focus, select:focus {
 
 .wide { grid-column: 1 / -1; }
 
+.signature-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 14px;
+}
+
+.signature-panel .section-header {
+  margin-bottom: 0;
+}
+
+.signature-panel h3,
+.signature-panel p {
+  margin: 0;
+}
+
+.signature-panel p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.signature-canvas {
+  width: 100%;
+  height: 180px;
+  border: 1px solid #c9d4d0;
+  border-radius: 6px;
+  background: #fff;
+  touch-action: none;
+}
+
 .details-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -630,6 +664,20 @@ tbody tr:hover { background: #eef5ff; }
 .record-details p {
   margin: 0;
   line-height: 1.5;
+}
+
+.signature-detail {
+  grid-column: 1 / -1;
+}
+
+.signature-detail img {
+  display: block;
+  width: min(420px, 100%);
+  min-height: 110px;
+  object-fit: contain;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
 }
 
 .modal-actions {

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { downloadServicePdf, servicePdfBase64, servicePdfFileName } from "@/lib/pdf";
@@ -13,6 +13,7 @@ type MachineSortKey = "code" | "model" | "client" | "unit_city" | "serial" | "so
 type HistorySortKey = "service_date" | "equipment" | "technician_name" | "request" | "diagnosis" | "service_done";
 type TechnicianSortKey = "name" | "email";
 type RemoteAccess = "SINEMA" | "VNC" | "Sem acesso remoto";
+type ServiceType = "Acesso remoto" | "Visita técnica";
 
 type MachineFormState = {
   code: string;
@@ -44,6 +45,7 @@ const DEFAULT_MESSAGE = "Consulte uma máquina pelo código ou selecione uma lin
 const AUTH_CONFIRMED_AT_KEY = "tomasoni-servicecore-auth-confirmed-at";
 const AUTH_CONFIRMATION_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 const REMOTE_ACCESS_OPTIONS: RemoteAccess[] = ["Sem acesso remoto", "SINEMA", "VNC"];
+const SERVICE_TYPE_OPTIONS: ServiceType[] = ["Acesso remoto", "Visita técnica"];
 const EMPTY_MACHINE_FORM: MachineFormState = {
   code: "",
   mechanical_list: "",
@@ -98,6 +100,11 @@ function machineHasRemoteAccess(remoteAccess: string) {
 function normalizeRemoteAccess(value?: string | null): RemoteAccess {
   if (value === "SINEMA" || value === "VNC") return value;
   return "Sem acesso remoto";
+}
+
+function normalizeServiceType(value?: string | null): ServiceType {
+  if (value === "Visita técnica") return "Visita técnica";
+  return "Acesso remoto";
 }
 
 function displayMachineCode(machine?: Pick<Machine, "code" | "model" | "client"> | null) {
@@ -257,6 +264,7 @@ function PdfDownloadIcon() {
 }
 
 export default function Home() {
+  const signatureCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUserId, setCurrentUserId] = useState("");
@@ -280,6 +288,9 @@ export default function Home() {
   const [selectedServiceRecord, setSelectedServiceRecord] = useState<ServiceRecord | null>(null);
   const [editingServiceRecord, setEditingServiceRecord] = useState<ServiceRecord | null>(null);
   const [machineForm, setMachineForm] = useState<MachineFormState>(EMPTY_MACHINE_FORM);
+  const [serviceType, setServiceType] = useState<ServiceType>("Acesso remoto");
+  const [customerSignature, setCustomerSignature] = useState("");
+  const [isSigning, setIsSigning] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -345,6 +356,33 @@ export default function Home() {
   useEffect(() => {
     setMachineForm(machineFormFromMachine(editingMachine));
   }, [editingMachineId, editingMachine]);
+
+  useEffect(() => {
+    const nextServiceType = normalizeServiceType(editingServiceRecord?.service_type);
+    setServiceType(nextServiceType);
+    setCustomerSignature(nextServiceType === "Visita técnica" ? editingServiceRecord?.customer_signature ?? "" : "");
+  }, [editingServiceRecord]);
+
+  useEffect(() => {
+    const canvas = signatureCanvasRef.current;
+    if (!canvas || serviceType !== "Visita técnica") return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (!customerSignature) return;
+    const image = new window.Image();
+    image.onload = () => {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    };
+    image.src = customerSignature;
+  }, [customerSignature, serviceType, view]);
 
   async function loadData() {
     const [{ data: machineRows, error: machineError }, { data: technicianRows, error: technicianError }] = await Promise.all([
@@ -438,6 +476,77 @@ export default function Home() {
     setTechnicians([]);
   }
 
+  function signaturePoint(event: PointerEvent<HTMLCanvasElement>) {
+    const canvas = signatureCanvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * canvas.width,
+      y: ((event.clientY - rect.top) / rect.height) * canvas.height
+    };
+  }
+
+  function startSignature(event: PointerEvent<HTMLCanvasElement>) {
+    if (serviceType !== "Visita técnica") return;
+    const canvas = signatureCanvasRef.current;
+    const point = signaturePoint(event);
+    const context = canvas?.getContext("2d");
+    if (!canvas || !point || !context) return;
+
+    canvas.setPointerCapture(event.pointerId);
+    context.strokeStyle = "#111111";
+    context.lineWidth = 2.6;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.beginPath();
+    context.moveTo(point.x, point.y);
+    setIsSigning(true);
+  }
+
+  function drawSignature(event: PointerEvent<HTMLCanvasElement>) {
+    if (!isSigning || serviceType !== "Visita técnica") return;
+    const canvas = signatureCanvasRef.current;
+    const point = signaturePoint(event);
+    const context = canvas?.getContext("2d");
+    if (!canvas || !point || !context) return;
+
+    context.lineTo(point.x, point.y);
+    context.stroke();
+  }
+
+  function finishSignature(event?: PointerEvent<HTMLCanvasElement>) {
+    if (!isSigning) return;
+    const canvas = signatureCanvasRef.current;
+    if (!canvas) return;
+    if (event && canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    setIsSigning(false);
+    setCustomerSignature(canvas.toDataURL("image/png"));
+  }
+
+  function clearSignature() {
+    const canvas = signatureCanvasRef.current;
+    const context = canvas?.getContext("2d");
+    if (canvas && context) {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    setCustomerSignature("");
+    setIsSigning(false);
+  }
+
+  function updateServiceType(value: ServiceType) {
+    setServiceType(value);
+    if (value !== "Visita técnica") clearSignature();
+  }
+
+  function startNewService() {
+    setEditingServiceRecord(null);
+    setSelectedServiceRecord(null);
+    updateServiceType("Acesso remoto");
+    setView("service");
+  }
+
   const filteredMachines = useMemo(() => {
     const term = machineFilter.trim().toLowerCase();
     return [...machines]
@@ -474,7 +583,7 @@ export default function Home() {
     return [...records]
       .filter((record) => {
         if (!term) return true;
-        return [record.technician_name, record.equipment, record.request, record.diagnosis, record.service_done, record.observations]
+        return [record.service_type, record.technician_name, record.equipment, record.request, record.diagnosis, record.service_done, record.observations, record.customer_name]
           .join(" ")
           .toLowerCase()
           .includes(term);
@@ -683,17 +792,21 @@ export default function Home() {
       return;
     }
 
+    const selectedServiceType = normalizeServiceType(String(form.get("service_type") ?? serviceType));
     const payload = {
       machine_id: machine.id,
       technician_id: technician.id,
       technician_name: technician.name,
       technician_email: technician.email,
+      service_type: selectedServiceType,
       service_date: String(form.get("service_date") ?? ""),
       equipment: String(form.get("equipment") ?? "").trim() || null,
       request: String(form.get("request") ?? "").trim(),
       diagnosis: String(form.get("diagnosis") ?? "").trim(),
       service_done: String(form.get("service_done") ?? "").trim(),
-      observations: String(form.get("observations") ?? "").trim() || null
+      observations: String(form.get("observations") ?? "").trim() || null,
+      customer_name: selectedServiceType === "Visita técnica" ? String(form.get("customer_name") ?? "").trim() || null : null,
+      customer_signature: selectedServiceType === "Visita técnica" ? customerSignature || null : null
     };
 
     const { data, error } = editingServiceRecord
@@ -717,6 +830,7 @@ export default function Home() {
     setEditingServiceRecord(null);
     setSelectedServiceRecord(null);
     formElement.reset();
+    updateServiceType("Acesso remoto");
     await loadData();
     setView("machineDetail");
 
@@ -805,7 +919,7 @@ export default function Home() {
         <div className="brand"><Image src="/tomasoni-logo-reference.png" alt="Tomasoni" width={220} height={59} priority /></div>
         <nav className="side-nav">
           <button className={`nav-item ${view === "home" ? "active" : ""}`} onClick={() => setView("home")}>Tela inicial</button>
-          <button className={`nav-item ${view === "service" ? "active" : ""}`} onClick={() => setView("service")}>Novo registro</button>
+          <button className={`nav-item ${view === "service" ? "active" : ""}`} onClick={startNewService}>Novo registro</button>
           <button className={`nav-item ${view === "registry" ? "active" : ""}`} onClick={() => setView("registry")}>Cadastro</button>
         </nav>
         <button className="button ghost logout-button" onClick={signOut}>Sair</button>
@@ -816,7 +930,7 @@ export default function Home() {
           <div>
             <h1>Núcleo de Assistência</h1>
           </div>
-          <button className="icon-button add-action" type="button" title="Novo atendimento" aria-label="Novo atendimento" onClick={() => setView("service")}><PlusIcon /></button>
+          <button className="icon-button add-action" type="button" title="Novo atendimento" aria-label="Novo atendimento" onClick={startNewService}><PlusIcon /></button>
         </header>
 
         <section className="status-band">
@@ -947,7 +1061,7 @@ export default function Home() {
             <div className="section-header">
               <h2>{editingServiceRecord ? "Editar atendimento" : "Registrar atendimento"}</h2>
               <div className="actions-row">
-                {editingServiceRecord && <button className="button ghost" type="button" onClick={() => setEditingServiceRecord(null)}>Cancelar edição</button>}
+                {editingServiceRecord && <button className="button ghost" type="button" onClick={startNewService}>Cancelar edição</button>}
                 <button className="icon-button save-action" title={editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"} aria-label={editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"}><SaveIcon /></button>
               </div>
             </div>
@@ -956,10 +1070,38 @@ export default function Home() {
               <label>Equipamento<input name="equipment" placeholder="CLP, IHM, servo, inversor" defaultValue={editingServiceRecord?.equipment ?? ""} /></label>
               <label>Técnico responsável<select name="technician_id" required defaultValue={editingServiceRecord?.technician_id ?? ""}>{technicians.map((technician) => <option key={technician.id} value={technician.id}>{technician.name}</option>)}</select></label>
               <label>Data<input name="service_date" type="date" required defaultValue={editingServiceRecord?.service_date ?? new Date().toISOString().slice(0, 10)} /></label>
+              <label>Tipo de atendimento<select name="service_type" value={serviceType} onChange={(event) => updateServiceType(event.target.value as ServiceType)}>
+                {SERVICE_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select></label>
+              {serviceType === "Visita técnica" && (
+                <label>Cliente / representante<input name="customer_name" placeholder="Nome de quem assinou" defaultValue={editingServiceRecord?.customer_name ?? ""} /></label>
+              )}
               <label className="wide">Solicitação do cliente / problema relatado<textarea name="request" rows={3} required defaultValue={editingServiceRecord?.request ?? ""} /></label>
               <label className="wide">Diagnóstico<textarea name="diagnosis" rows={3} required defaultValue={editingServiceRecord?.diagnosis ?? ""} /></label>
               <label className="wide">Serviço realizado<textarea name="service_done" rows={3} required defaultValue={editingServiceRecord?.service_done ?? ""} /></label>
               <label className="wide">Observações<textarea name="observations" rows={3} defaultValue={editingServiceRecord?.observations ?? ""} /></label>
+              {serviceType === "Visita técnica" && (
+                <section className="signature-panel wide">
+                  <div className="section-header">
+                    <div>
+                      <h3>Assinatura do cliente</h3>
+                      <p>Assine com mouse, touchpad ou tela touch.</p>
+                    </div>
+                    <button className="button ghost" type="button" onClick={clearSignature}>Limpar assinatura</button>
+                  </div>
+                  <canvas
+                    ref={signatureCanvasRef}
+                    className="signature-canvas"
+                    width={900}
+                    height={220}
+                    aria-label="Campo para assinatura do cliente"
+                    onPointerDown={startSignature}
+                    onPointerMove={drawSignature}
+                    onPointerUp={finishSignature}
+                    onPointerCancel={finishSignature}
+                  />
+                </section>
+              )}
             </div>
           </form>
         )}
@@ -1103,8 +1245,15 @@ export default function Home() {
                 <button className="button ghost" type="button" onClick={() => setSelectedServiceRecord(null)}>Fechar</button>
               </div>
               <div className="record-details">
+                <div><span>Tipo de atendimento</span><strong>{normalizeServiceType(selectedServiceRecord.service_type)}</strong></div>
                 <div><span>Equipamento</span><strong>{selectedServiceRecord.equipment || "-"}</strong></div>
                 <div><span>Técnico</span><strong>{selectedServiceRecord.technician_name}</strong></div>
+                {normalizeServiceType(selectedServiceRecord.service_type) === "Visita técnica" && (
+                  <>
+                    <div><span>Cliente / representante</span><strong>{selectedServiceRecord.customer_name || "-"}</strong></div>
+                    <div className="signature-detail"><span>Assinatura do cliente</span>{selectedServiceRecord.customer_signature ? <img src={selectedServiceRecord.customer_signature} alt="Assinatura do cliente" /> : <strong>-</strong>}</div>
+                  </>
+                )}
                 <div><span>Solicitação do cliente / problema relatado</span><p>{selectedServiceRecord.request}</p></div>
                 <div><span>Diagnóstico</span><p>{selectedServiceRecord.diagnosis}</p></div>
                 <div><span>Serviço realizado</span><p>{selectedServiceRecord.service_done}</p></div>

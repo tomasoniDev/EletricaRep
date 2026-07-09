@@ -60,12 +60,15 @@ export type ServiceRecord = {
   technician_id: string | null;
   technician_name: string;
   technician_email: string | null;
+  service_type: "Acesso remoto" | "Visita técnica" | null;
   service_date: string;
   equipment: string | null;
   request: string;
   diagnosis: string;
   service_done: string;
   observations: string | null;
+  customer_name: string | null;
+  customer_signature: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
