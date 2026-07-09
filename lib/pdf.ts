@@ -97,17 +97,18 @@ function ensurePageSpace(doc: jsPDF, y: number, height: number) {
 }
 
 function flowTextSection(doc: jsPDF, title: string, value: string | null, y: number) {
-  const lines = doc.splitTextToSize(valueOrDash(value), CONTENT_WIDTH - 18);
   const lineHeight = 13.2;
   y = ensurePageSpace(doc, y, 42);
   setText(doc, MUTED, 7, "bold");
   doc.text(title.toUpperCase(), MARGIN, y);
   line(doc, MARGIN, y + 8, PAGE_WIDTH - MARGIN, y + 8, SOFT_LINE, 0.5);
   y += 24;
-  setText(doc, DARK, 9);
+  setText(doc, DARK, 8.8);
+  const lines = doc.splitTextToSize(valueOrDash(value), CONTENT_WIDTH - 18);
 
   for (const textLine of lines) {
     y = ensurePageSpace(doc, y, lineHeight + 8);
+    setText(doc, DARK, 8.8);
     doc.text(textLine, MARGIN + 8, y);
     y += lineHeight;
   }
