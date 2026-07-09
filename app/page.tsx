@@ -245,7 +245,7 @@ function screenLegend(view: View, registryTab: RegistryTab, selectedMachine?: Ma
   if (view === "home") return "Consulte uma máquina pelo código ou selecione uma linha da tabela.";
   if (view === "machineDetail") return selectedMachine ? `Dados cadastrais e histórico da máquina ${displayMachineCode(selectedMachine)}.` : "Dados cadastrais e histórico da máquina.";
   if (view === "service") return "Registre um novo atendimento técnico e gere o relatório em PDF.";
-  if (registryTab === "machines") return "Cadastre, altere ou exclua máquinas e e-mails vinculados ao cliente.";
+  if (registryTab === "machines") return "Cadastre, altere ou exclua máquinas e informações de acesso.";
   return "Cadastre e gerencie os técnicos disponíveis para lançamento dos atendimentos.";
 }
 
