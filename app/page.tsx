@@ -454,6 +454,19 @@ export default function Home() {
     setUserMenuOpen(false);
   }, [view, registryTab]);
 
+  useEffect(() => {
+    function closeFloatingLayers(event: MouseEvent) {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+
+      if (!target.closest(".user-menu")) setUserMenuOpen(false);
+      if (!target.closest(".row-actions")) setOpenActionMenu("");
+    }
+
+    document.addEventListener("mousedown", closeFloatingLayers);
+    return () => document.removeEventListener("mousedown", closeFloatingLayers);
+  }, []);
+
   const selectedMachine = machines.find((machine) => machine.id === selectedMachineId);
   const serviceMachine = selectedMachine ?? machines[0];
   const editingMachine = machines.find((machine) => machine.id === editingMachineId);
@@ -1400,8 +1413,8 @@ export default function Home() {
         )}
 
         {selectedServiceRecord && selectedMachine && (
-          <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="service-modal-title">
-            <section className="modal-card">
+          <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="service-modal-title" onClick={() => setSelectedServiceRecord(null)}>
+            <section className="modal-card" onClick={(event) => event.stopPropagation()}>
               <div className="section-header">
                 <div>
                   <p className="eyebrow">{formatDate(selectedServiceRecord.service_date)}</p>
@@ -1436,8 +1449,8 @@ export default function Home() {
         )}
 
         {helpOpen && (
-          <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="help-modal-title">
-            <section className="modal-card help-card">
+          <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="help-modal-title" onClick={() => setHelpOpen(false)}>
+            <section className="modal-card help-card" onClick={(event) => event.stopPropagation()}>
               <div className="section-header">
                 <div>
                   <p className="eyebrow">Ajuda</p>
