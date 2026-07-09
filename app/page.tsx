@@ -79,6 +79,15 @@ function formatDate(value?: string | null) {
   return `${day}/${month}/${year}`;
 }
 
+function daysUntil(value?: string | null) {
+  if (!value) return null;
+  const today = new Date();
+  const target = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(target.getTime())) return null;
+  today.setHours(0, 0, 0, 0);
+  return Math.ceil((target.getTime() - today.getTime()) / 86400000);
+}
+
 function formatMonthYear(value?: string | null) {
   if (!value) return "-";
   const [year, month] = value.split("-");
@@ -352,6 +361,24 @@ function LogOutIcon() {
   );
 }
 
+function DetailIcon({ type }: { type: "client" | "location" | "serial" | "calendar" | "mechanical" | "software" | "remote" | "info" | "history" | "check" | "mail" }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      {type === "client" && <><path d="M20 21a8 8 0 0 0-16 0" /><circle cx="12" cy="7" r="4" /></>}
+      {type === "location" && <><path d="M12 21s7-4.5 7-11a7 7 0 1 0-14 0c0 6.5 7 11 7 11Z" /><circle cx="12" cy="10" r="2.4" /></>}
+      {type === "serial" && <><path d="M20 10 14 4 4 14l6 6 10-10Z" /><path d="m7.5 13.5 3 3" /></>}
+      {type === "calendar" && <><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M8 3v4M16 3v4M4 10h16" /></>}
+      {type === "mechanical" && <><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1" /></>}
+      {type === "software" && <><rect x="4" y="5" width="16" height="12" rx="2" /><path d="M8 21h8M12 17v4" /></>}
+      {type === "remote" && <><path d="M5 13a10 10 0 0 1 14 0" /><path d="M8.5 16.5a5 5 0 0 1 7 0" /><path d="M12 20h.01" /></>}
+      {type === "info" && <><circle cx="12" cy="12" r="9" /><path d="M12 10v6M12 7h.01" /></>}
+      {type === "history" && <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>}
+      {type === "check" && <><circle cx="12" cy="12" r="9" /><path d="m8 12 2.6 2.6L16.5 9" /></>}
+      {type === "mail" && <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></>}
+    </svg>
+  );
+}
+
 export default function Home() {
   const signatureCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
@@ -486,6 +513,11 @@ export default function Home() {
   const serviceMachine = selectedMachine ?? machines[0];
   const editingMachine = machines.find((machine) => machine.id === editingMachineId);
   const showRemoteAccess = machineHasRemoteAccess(machineForm.remote_access);
+  const selectedMachineAccess = normalizeRemoteAccess(selectedMachine?.remote_access ?? selectedMachine?.access_method);
+  const selectedMachineContractDays = daysUntil(selectedMachine?.support_contract_until);
+  const selectedMachineRecentHistory = [...(selectedMachine?.service_records ?? [])]
+    .sort((a, b) => compareDate(b.service_date, a.service_date))
+    .slice(0, 5);
 
   useEffect(() => {
     setMachineForm(machineFormFromMachine(editingMachine));
@@ -1189,59 +1221,120 @@ export default function Home() {
         )}
 
         {view === "machineDetail" && selectedMachine && (
-          <section className="view active">
-            <section className="table-panel">
-              <div className="section-header">
-                <h2>Dados da máquina</h2>
-                <button className="button ghost" type="button" onClick={() => setView("home")}>Voltar</button>
+          <section className="machine-dashboard view active">
+            <section className="machine-hero">
+              <div className="machine-visual" aria-hidden="true">
+                <span>{(selectedMachine.model || selectedMachine.code || "TM").slice(0, 2).toUpperCase()}</span>
               </div>
-              <div className="details-grid">
-                <div><span>Código</span><strong>{selectedMachine.code || "-"}</strong></div>
-                <div><span>Modelo</span><strong>{selectedMachine.model || "-"}</strong></div>
-                <div><span>Mecânica</span><strong>{selectedMachine.mechanical_list || "-"}</strong></div>
-                <div><span>Código do software</span><strong>{selectedMachine.software_code || "-"}</strong></div>
-                <div><span>Cliente</span><strong>{selectedMachine.client || "-"}</strong></div>
-                <div><span>Localização</span><strong>{selectedMachine.unit_city || "-"}</strong></div>
-                <div><span>Número de série</span><strong>{selectedMachine.serial || "-"}</strong></div>
-                <div><span>Fabricação</span><strong>{formatMonthYear(selectedMachine.manufacture_month)}</strong></div>
-                <div><span>Software</span><strong>{selectedMachine.software_version || "-"}</strong></div>
-                <div><span>Acesso remoto</span><strong>{selectedMachine.remote_access || selectedMachine.access_method || "Sem acesso remoto"}</strong></div>
-                {machineHasRemoteAccess(selectedMachine.remote_access || selectedMachine.access_method || "Sem acesso remoto") && (
-                  <>
-                    <div><span>Contrato ativo</span><strong>{selectedMachine.support_contract_active ? "Sim" : "Não"}</strong></div>
-                    <div><span>Fim da vigência</span><strong>{formatDate(selectedMachine.support_contract_until)}</strong></div>
-                  </>
-                )}
-                <div><span>E-mails do cliente</span><strong>{selectedMachine.machine_emails?.map((item) => item.email).join("; ") || "-"}</strong></div>
+              <div className="machine-hero-main">
+                <div className="machine-title-row">
+                  <div>
+                    <p className="breadcrumb">Máquinas / {displayMachineCode(selectedMachine)}</p>
+                    <h2>{selectedMachine.model || "Máquina"}</h2>
+                  </div>
+                  <span className="code-pill">{displayMachineCode(selectedMachine)}</span>
+                </div>
+                <div className="machine-metrics">
+                  <div><DetailIcon type="client" /><span>Cliente</span><strong>{selectedMachine.client || "-"}</strong></div>
+                  <div><DetailIcon type="serial" /><span>Número de série</span><strong>{selectedMachine.serial || "-"}</strong></div>
+                  <div><DetailIcon type="calendar" /><span>Fabricação</span><strong>{formatMonthYear(selectedMachine.manufacture_month)}</strong></div>
+                  <div><DetailIcon type="location" /><span>Localização</span><strong>{selectedMachine.unit_city || "-"}</strong></div>
+                  <div><DetailIcon type="mechanical" /><span>Mecânica</span><strong>{selectedMachine.mechanical_list || "-"}</strong></div>
+                  <div><DetailIcon type="software" /><span>Software</span><strong>{selectedMachine.software_version || "-"}</strong></div>
+                </div>
+              </div>
+              <aside className={`contract-card ${selectedMachine.support_contract_active ? "active" : "inactive"}`}>
+                <DetailIcon type="check" />
+                <strong>{selectedMachine.support_contract_active ? "Contrato Ativo" : "Sem contrato ativo"}</strong>
+                <span>Fim da vigência</span>
+                <em>{formatDate(selectedMachine.support_contract_until)}</em>
+                {selectedMachineContractDays !== null && <small>{selectedMachineContractDays >= 0 ? `Faltam ${selectedMachineContractDays} dias` : `Vencido há ${Math.abs(selectedMachineContractDays)} dias`}</small>}
+              </aside>
+            </section>
+
+            <section className="dashboard-grid">
+              <article className="dashboard-card">
+                <div className="card-title"><DetailIcon type="info" /><h3>Dados da Máquina</h3></div>
+                <dl className="spec-list">
+                  <div><dt>Código</dt><dd>{selectedMachine.code || "-"}</dd></div>
+                  <div><dt>Modelo</dt><dd>{selectedMachine.model || "-"}</dd></div>
+                  <div><dt>Cliente</dt><dd>{selectedMachine.client || "-"}</dd></div>
+                  <div><dt>Localização</dt><dd>{selectedMachine.unit_city || "-"}</dd></div>
+                  <div><dt>Número de série</dt><dd>{selectedMachine.serial || "-"}</dd></div>
+                  <div><dt>Mecânica</dt><dd>{selectedMachine.mechanical_list || "-"}</dd></div>
+                  <div><dt>Fabricação</dt><dd>{formatMonthYear(selectedMachine.manufacture_month)}</dd></div>
+                </dl>
+              </article>
+
+              <article className="dashboard-card">
+                <div className="card-title"><DetailIcon type="software" /><h3>Software</h3></div>
+                <dl className="spec-list">
+                  <div><dt>Software</dt><dd><span className="soft-pill">{selectedMachine.software_version || "-"}</span></dd></div>
+                  <div><dt>Código do software</dt><dd>{selectedMachine.software_code || "-"}</dd></div>
+                  <div><dt>Último atendimento</dt><dd>{formatDate(lastServiceDate(selectedMachine))}</dd></div>
+                </dl>
+              </article>
+
+              <article className="dashboard-card">
+                <div className="card-title"><DetailIcon type="remote" /><h3>Acesso Remoto</h3><span className="soft-pill">{selectedMachineAccess}</span></div>
+                <dl className="spec-list">
+                  {selectedMachineAccess === "VNC" && (
+                    <>
+                      <div><dt>IP de acesso</dt><dd>{selectedMachine.vnc_ip || "-"}</dd></div>
+                      <div><dt>Senha</dt><dd>{selectedMachine.vnc_password || "-"}</dd></div>
+                      <div><dt>Usuário VM</dt><dd>{selectedMachine.vnc_user || "-"}</dd></div>
+                      <div><dt>Senha VM</dt><dd>{selectedMachine.vnc_vm_password || "-"}</dd></div>
+                      <div><dt>Observações</dt><dd>{selectedMachine.vnc_notes || "-"}</dd></div>
+                    </>
+                  )}
+                  {selectedMachineAccess === "SINEMA" && (
+                    <>
+                      <div><dt>Device Name</dt><dd>{selectedMachine.sinema_url || "-"}</dd></div>
+                      <div><dt>Subnet Name</dt><dd>{selectedMachine.sinema_user || "-"}</dd></div>
+                      <div><dt>Observações</dt><dd>{selectedMachine.sinema_notes || "-"}</dd></div>
+                    </>
+                  )}
+                  {selectedMachineAccess === "Sem acesso remoto" && <div><dt>Status</dt><dd>Sem acesso remoto cadastrado</dd></div>}
+                </dl>
+              </article>
+            </section>
+
+            <section className="dashboard-lower">
+              <article className="dashboard-card info-card">
+                <div className="card-title"><DetailIcon type="mail" /><h3>Informações adicionais</h3></div>
+                <div className="info-strip">
+                  <div><span>E-mail do cliente</span><strong>{selectedMachine.machine_emails?.map((item) => item.email).join("; ") || "-"}</strong></div>
+                  <div><span>Acesso remoto</span><strong>{selectedMachineAccess}</strong></div>
+                  <div><span>Contrato</span><strong>{selectedMachine.support_contract_active ? "Ativo" : "Inativo"}</strong></div>
+                  <div><span>Fim da vigência</span><strong>{formatDate(selectedMachine.support_contract_until)}</strong></div>
+                </div>
+              </article>
+
+              <article className="dashboard-card history-card">
+                <div className="card-title"><DetailIcon type="history" /><h3>Histórico de Atendimentos</h3><button className="button ghost" type="button" onClick={() => setHistoryFilter("")}>Ver todos</button></div>
+                <div className="history-list">
+                  {selectedMachineRecentHistory.length ? selectedMachineRecentHistory.map((record) => (
+                    <button key={record.id} type="button" onClick={() => setSelectedServiceRecord(record)}>
+                      <span>{formatDate(record.service_date)}</span>
+                      <strong>{record.issue_summary || record.equipment || "Atendimento"}</strong>
+                      <em>{normalizeServiceType(record.service_type)}</em>
+                    </button>
+                  )) : <p>Nenhum atendimento registrado.</p>}
+                </div>
+              </article>
+            </section>
+
+            <section className="dashboard-card quick-actions-card">
+              <div className="card-title"><DetailIcon type="mechanical" /><h3>Ações rápidas</h3></div>
+              <div className="quick-action-grid">
+                <button type="button" onClick={startNewService}><PlusIcon /><span>Novo atendimento</span></button>
+                <button type="button" onClick={() => { setEditingMachineId(selectedMachine.id); setRegistryTab("machines"); setView("registry"); }}><EditIcon /><span>Alterar cadastro</span></button>
+                <button type="button" onClick={() => selectedMachineRecentHistory[0] && downloadServicePdf(selectedMachine, selectedMachineRecentHistory[0])} disabled={!selectedMachineRecentHistory.length}><PdfDownloadIcon /><span>Baixar último PDF</span></button>
               </div>
             </section>
 
-            {selectedMachine.remote_access === "VNC" && (
-              <section className="table-panel">
-                <div className="section-header"><h2>Informações de acesso VNC</h2></div>
-                <div className="details-grid">
-                  <div><span>IP de acesso</span><strong>{selectedMachine.vnc_ip || "-"}</strong></div>
-                  <div><span>Senha</span><strong>{selectedMachine.vnc_password || "-"}</strong></div>
-                  <div><span>Usuário VM</span><strong>{selectedMachine.vnc_user || "-"}</strong></div>
-                  <div><span>Senha VM</span><strong>{selectedMachine.vnc_vm_password || "-"}</strong></div>
-                  <div><span>Observações</span><strong>{selectedMachine.vnc_notes || "-"}</strong></div>
-                </div>
-              </section>
-            )}
-
-            {selectedMachine.remote_access === "SINEMA" && (
-              <section className="table-panel">
-                <div className="section-header"><h2>Informações de acesso SINEMA</h2></div>
-                <div className="details-grid">
-                  <div><span>Device Name</span><strong>{selectedMachine.sinema_url || "-"}</strong></div>
-                  <div><span>Subnet Name</span><strong>{selectedMachine.sinema_user || "-"}</strong></div>
-                  <div><span>Observações</span><strong>{selectedMachine.sinema_notes || "-"}</strong></div>
-                </div>
-              </section>
-            )}
-
-            <section className="table-panel">
-              <div className="section-header"><h2>Histórico de {displayMachineCode(selectedMachine)}</h2><span>{filteredHistory.length} registros</span></div>
+            <section className="dashboard-card full-history-card">
+              <div className="section-header"><h2>Histórico completo de {displayMachineCode(selectedMachine)}</h2><span>{filteredHistory.length} registros</span></div>
               <label>Filtrar histórico<input value={historyFilter} onChange={(event) => setHistoryFilter(event.target.value)} /></label>
               <div className="table-wrap">
                 <table className="history-table">
