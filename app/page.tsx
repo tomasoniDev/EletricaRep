@@ -14,6 +14,7 @@ type HistorySortKey = "service_date" | "equipment" | "technician_name" | "issue_
 type TechnicianSortKey = "name" | "email";
 type RemoteAccess = "SINEMA" | "VNC" | "Sem acesso remoto";
 type ServiceType = "Acesso remoto" | "Visita técnica";
+type ThemeMode = "light" | "dark";
 
 type MachineFormState = {
   code: string;
@@ -44,6 +45,7 @@ const ALLOWED_EMAIL_DOMAINS = ["tomasoni.ind.br", "tomasoni.in.br"];
 const DEFAULT_MESSAGE = "Consulte uma máquina pelo código ou selecione uma linha da tabela.";
 const AUTH_CONFIRMED_AT_KEY = "tomasoni-servicecore-auth-confirmed-at";
 const AUTH_CONFIRMATION_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+const THEME_KEY = "tomasoni-servicecore-theme";
 const REMOTE_ACCESS_OPTIONS: RemoteAccess[] = ["Sem acesso remoto", "SINEMA", "VNC"];
 const SERVICE_TYPE_OPTIONS: ServiceType[] = ["Acesso remoto", "Visita técnica"];
 const EMPTY_MACHINE_FORM: MachineFormState = {
@@ -234,6 +236,20 @@ function screenLegend(view: View, registryTab: RegistryTab, selectedMachine?: Ma
   return "Cadastre e gerencie os técnicos disponíveis para lançamento dos atendimentos.";
 }
 
+function helpText(view: View, registryTab: RegistryTab) {
+  if (view === "home") return "Use o filtro para localizar uma máquina por código, modelo, cliente ou localização. Clique no código da máquina para abrir os dados cadastrais e o histórico de atendimentos.";
+  if (view === "machineDetail") return "Nesta tela ficam os dados técnicos da máquina, informações de acesso remoto e histórico. Clique em um atendimento para ver o registro completo ou use o menu de ações para baixar o PDF.";
+  if (view === "service") return "Registre o atendimento com tipo, motivo breve e descrições completas. Em visita técnica, colete a assinatura do cliente para incluir no PDF.";
+  if (registryTab === "machines") return "Cadastre ou altere máquinas, e-mails do cliente e informações de acesso. Use o menu de ações da tabela para editar ou excluir cadastros.";
+  return "Cadastre os técnicos disponíveis para lançamento dos atendimentos. O nome do técnico aparece no relatório e no histórico.";
+}
+
+function initialsFromEmail(value: string) {
+  const normalized = value.trim();
+  if (!normalized) return "US";
+  return normalized.slice(0, 2).toUpperCase();
+}
+
 function PlusIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24">
@@ -263,11 +279,79 @@ function PdfDownloadIcon() {
   );
 }
 
+function MoreIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <circle cx="5" cy="12" r="1.5" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+      <circle cx="19" cy="12" r="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M4 7h16" />
+      <path d="M10 11v6M14 11v6" />
+      <path d="M6 7l1 14h10l1-14" />
+      <path d="M9 7V4h6v3" />
+    </svg>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z" />
+    </svg>
+  );
+}
+
+function HelpIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.5 9a2.6 2.6 0 0 1 5 1.2c0 1.8-2.5 2.1-2.5 4" />
+      <path d="M12 18h.01" />
+    </svg>
+  );
+}
+
+function SunIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M20 15.5A8.3 8.3 0 0 1 8.5 4 8.7 8.7 0 1 0 20 15.5z" />
+    </svg>
+  );
+}
+
+function LogOutIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M10 17l5-5-5-5" />
+      <path d="M15 12H3" />
+      <path d="M21 3v18" />
+    </svg>
+  );
+}
+
 export default function Home() {
   const signatureCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUserId, setCurrentUserId] = useState("");
+  const [currentUserEmail, setCurrentUserEmail] = useState("");
   const [email, setEmail] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [otpSent, setOtpSent] = useState(false);
@@ -291,6 +375,21 @@ export default function Home() {
   const [serviceType, setServiceType] = useState<ServiceType>("Acesso remoto");
   const [customerSignature, setCustomerSignature] = useState("");
   const [isSigning, setIsSigning] = useState(false);
+  const [theme, setTheme] = useState<ThemeMode>("light");
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [openActionMenu, setOpenActionMenu] = useState("");
+
+  useEffect(() => {
+    const storedTheme = window.localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light";
+    setTheme(storedTheme);
+    document.documentElement.classList.toggle("dark", storedTheme === "dark");
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+    window.localStorage.setItem(THEME_KEY, theme);
+  }, [theme]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -315,6 +414,7 @@ export default function Home() {
 
       setIsAuthenticated(Boolean(data.session));
       setCurrentUserId(data.session?.user.id ?? "");
+      setCurrentUserEmail(data.session?.user.email ?? "");
       if (data.session) void loadData();
     });
 
@@ -330,6 +430,7 @@ export default function Home() {
 
       setIsAuthenticated(Boolean(session));
       setCurrentUserId(session?.user.id ?? "");
+      setCurrentUserEmail(session?.user.email ?? "");
       if (session) void loadData();
     });
 
@@ -347,6 +448,11 @@ export default function Home() {
 
     return () => window.clearInterval(interval);
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    setOpenActionMenu("");
+    setUserMenuOpen(false);
+  }, [view, registryTab]);
 
   const selectedMachine = machines.find((machine) => machine.id === selectedMachineId);
   const serviceMachine = selectedMachine ?? machines[0];
@@ -462,6 +568,7 @@ export default function Home() {
     setOtpSent(false);
     setIsAuthenticated(true);
     setCurrentUserId(data.session.user.id);
+    setCurrentUserEmail(data.session.user.email ?? normalizedEmail);
     setMessage("Acesso autorizado.");
     await loadData();
     setAuthLoading(false);
@@ -472,8 +579,13 @@ export default function Home() {
     clearAuthConfirmation();
     setIsAuthenticated(false);
     setCurrentUserId("");
+    setCurrentUserEmail("");
     setMachines([]);
     setTechnicians([]);
+  }
+
+  function toggleTheme() {
+    setTheme((current) => current === "dark" ? "light" : "dark");
   }
 
   function signaturePoint(event: PointerEvent<HTMLCanvasElement>) {
@@ -921,7 +1033,23 @@ export default function Home() {
           <button className={`nav-item ${view === "service" ? "active" : ""}`} onClick={startNewService}>Novo registro</button>
           <button className={`nav-item ${view === "registry" ? "active" : ""}`} onClick={() => setView("registry")}>Cadastro</button>
         </nav>
-        <button className="button ghost logout-button" onClick={signOut}>Sair</button>
+        <div className="user-menu">
+          <button className="user-menu-trigger" type="button" onClick={() => setUserMenuOpen((open) => !open)} aria-expanded={userMenuOpen}>
+            <span className="avatar">{initialsFromEmail(currentUserEmail)}</span>
+            <span className="user-meta">
+              <strong>{currentUserEmail.split("@")[0] || "Usuário"}</strong>
+              <small>{currentUserEmail || "Sessão ativa"}</small>
+            </span>
+            <MoreIcon />
+          </button>
+          {userMenuOpen && (
+            <div className="user-menu-content">
+              <button type="button" onClick={toggleTheme}>{theme === "dark" ? <SunIcon /> : <MoonIcon />} {theme === "dark" ? "Modo claro" : "Modo escuro"}</button>
+              <button type="button" onClick={() => { setHelpOpen(true); setUserMenuOpen(false); }}><HelpIcon /> Ajuda da tela</button>
+              <button type="button" onClick={signOut}><LogOutIcon /> Sair</button>
+            </div>
+          )}
+        </div>
       </aside>
 
       <section className="workspace">
@@ -929,7 +1057,11 @@ export default function Home() {
           <div>
             <h1>Núcleo de Assistência</h1>
           </div>
-          <button className="icon-button add-action" type="button" title="Novo atendimento" aria-label="Novo atendimento" onClick={startNewService}><PlusIcon /></button>
+          <div className="topbar-actions">
+            <button className="icon-button utility-action" type="button" title="Ajuda da tela" aria-label="Ajuda da tela" onClick={() => setHelpOpen(true)}><HelpIcon /></button>
+            <button className="icon-button utility-action" type="button" title={theme === "dark" ? "Modo claro" : "Modo escuro"} aria-label={theme === "dark" ? "Modo claro" : "Modo escuro"} onClick={toggleTheme}>{theme === "dark" ? <SunIcon /> : <MoonIcon />}</button>
+            <button className="icon-button add-action" type="button" title="Novo atendimento" aria-label="Novo atendimento" onClick={startNewService}><PlusIcon /></button>
+          </div>
         </header>
 
         <section className="status-band">
@@ -1032,7 +1164,7 @@ export default function Home() {
                     <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("equipment")}>Equipamento <span>{sortMark(historySort.key === "equipment", historySort.direction)}</span></button></th>
                     <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("technician_name")}>Técnico <span>{sortMark(historySort.key === "technician_name", historySort.direction)}</span></button></th>
                     <th><button className="sort-header" type="button" onClick={() => toggleHistorySort("issue_summary")}>Motivo breve <span>{sortMark(historySort.key === "issue_summary", historySort.direction)}</span></button></th>
-                    <th>PDF</th>
+                    <th>Ações</th>
                   </tr></thead>
                   <tbody>
                     {filteredHistory.map((record) => (
@@ -1041,7 +1173,17 @@ export default function Home() {
                         <td>{record.equipment || "-"}</td>
                         <td>{record.technician_name}</td>
                         <td>{record.issue_summary || "-"}</td>
-                        <td><button className="icon-button download" type="button" title="Baixar PDF" aria-label="Baixar PDF" onClick={(event) => { event.stopPropagation(); downloadServicePdf(selectedMachine, record); }}><PdfDownloadIcon /></button></td>
+                        <td>
+                          <div className="row-actions" onClick={(event) => event.stopPropagation()}>
+                            <button className="icon-button menu-trigger" type="button" title="Ações" aria-label="Ações do atendimento" onClick={() => setOpenActionMenu(openActionMenu === `service-${record.id}` ? "" : `service-${record.id}`)}><MoreIcon /></button>
+                            {openActionMenu === `service-${record.id}` && (
+                              <div className="row-menu">
+                                <button type="button" onClick={() => { downloadServicePdf(selectedMachine, record); setOpenActionMenu(""); }}><PdfDownloadIcon /> Baixar PDF</button>
+                                {record.created_by === currentUserId && <button type="button" onClick={() => { startServiceEdit(record); setOpenActionMenu(""); }}><EditIcon /> Editar</button>}
+                              </div>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1198,8 +1340,15 @@ export default function Home() {
                           <td>{formatMonthYear(machine.manufacture_month)}</td>
                           <td>{machine.remote_access || machine.access_method || "Sem acesso remoto"}</td>
                           <td>
-                            <button className="icon-button edit" type="button" title="Alterar máquina" aria-label={`Alterar máquina ${displayMachineCode(machine)}`} onClick={() => { setEditingMachineId(machine.id); setRegistryTab("machines"); }}>✎</button>
-                            <button className="icon-button danger" type="button" title="Excluir máquina" aria-label={`Excluir máquina ${displayMachineCode(machine)}`} onClick={() => deleteMachine(machine.id)}>×</button>
+                            <div className="row-actions">
+                              <button className="icon-button menu-trigger" type="button" title="Ações" aria-label={`Ações da máquina ${displayMachineCode(machine)}`} onClick={() => setOpenActionMenu(openActionMenu === `machine-${machine.id}` ? "" : `machine-${machine.id}`)}><MoreIcon /></button>
+                              {openActionMenu === `machine-${machine.id}` && (
+                                <div className="row-menu">
+                                  <button type="button" onClick={() => { setEditingMachineId(machine.id); setRegistryTab("machines"); setOpenActionMenu(""); }}><EditIcon /> Alterar cadastro</button>
+                                  <button className="danger" type="button" onClick={() => { void deleteMachine(machine.id); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>
+                                </div>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}</tbody>
@@ -1226,7 +1375,22 @@ export default function Home() {
                         <th><button className="sort-header" type="button" onClick={() => toggleTechnicianSort("email")}>E-mail <span>{sortMark(technicianSort.key === "email", technicianSort.direction)}</span></button></th>
                         <th>Ações</th>
                       </tr></thead>
-                      <tbody>{sortedTechnicians.map((technician) => <tr key={technician.id}><td>{technician.name}</td><td>{technician.email || "-"}</td><td><button className="icon-button danger" type="button" title="Excluir técnico" aria-label={`Excluir técnico ${technician.name}`} onClick={() => deleteTechnician(technician.id)}>×</button></td></tr>)}</tbody>
+                      <tbody>{sortedTechnicians.map((technician) => (
+                        <tr key={technician.id}>
+                          <td>{technician.name}</td>
+                          <td>{technician.email || "-"}</td>
+                          <td>
+                            <div className="row-actions">
+                              <button className="icon-button menu-trigger" type="button" title="Ações" aria-label={`Ações do técnico ${technician.name}`} onClick={() => setOpenActionMenu(openActionMenu === `technician-${technician.id}` ? "" : `technician-${technician.id}`)}><MoreIcon /></button>
+                              {openActionMenu === `technician-${technician.id}` && (
+                                <div className="row-menu">
+                                  <button className="danger" type="button" onClick={() => { void deleteTechnician(technician.id); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}</tbody>
                     </table>
                   </div>
                 </section>
@@ -1267,6 +1431,21 @@ export default function Home() {
                   <button className="button primary" type="button" onClick={() => startServiceEdit(selectedServiceRecord)}>Editar atendimento</button>
                 )}
               </div>
+            </section>
+          </div>
+        )}
+
+        {helpOpen && (
+          <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="help-modal-title">
+            <section className="modal-card help-card">
+              <div className="section-header">
+                <div>
+                  <p className="eyebrow">Ajuda</p>
+                  <h2 id="help-modal-title">Como usar esta tela</h2>
+                </div>
+                <button className="button ghost" type="button" onClick={() => setHelpOpen(false)}>Fechar</button>
+              </div>
+              <p>{helpText(view, registryTab)}</p>
             </section>
           </div>
         )}
