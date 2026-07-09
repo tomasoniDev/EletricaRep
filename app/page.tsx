@@ -121,6 +121,14 @@ function displayMachineCode(machine?: Pick<Machine, "code" | "model" | "client">
   return machine?.code?.trim() || machine?.model?.trim() || machine?.client?.trim() || "Máquina sem código";
 }
 
+function normalizeProjectFolderLink(value?: string | null) {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^www\./i.test(trimmed)) return `https://${trimmed}`;
+  return trimmed;
+}
+
 function machineFormFromMachine(machine?: Machine | null): MachineFormState {
   if (!machine) return EMPTY_MACHINE_FORM;
   return {
@@ -599,11 +607,10 @@ export default function Home() {
     setMachineComponents((current) => (current.length === 1 ? [{ ...EMPTY_COMPONENT }] : current.filter((_, itemIndex) => itemIndex !== index)));
   }
 
-  async function copyProjectFolderLink(link: string | null) {
-    if (link) {
-      await navigator.clipboard?.writeText(link);
-      setMessage("Link da pasta copiado para a área de transferência.");
-    }
+  function openProjectFolderLink(link: string | null) {
+    const target = normalizeProjectFolderLink(link);
+    if (!target) return;
+    window.open(target, "_blank", "noopener,noreferrer");
   }
 
   async function saveMachine(event: FormEvent<HTMLFormElement>) {
@@ -959,7 +966,7 @@ export default function Home() {
                         <tr key={component.id}>
                           <td>{component.machine_name}</td>
                           <td>{component.electrical_project}</td>
-                          <td>{component.project_folder_link ? <button className="link-button" type="button" onClick={() => copyProjectFolderLink(component.project_folder_link)}>Copiar link</button> : "-"}</td>
+                          <td>{component.project_folder_link ? <button className="link-button" type="button" onClick={() => openProjectFolderLink(component.project_folder_link)}>Abrir pasta</button> : "-"}</td>
                           <td>{component.ip_range || "-"}</td>
                         </tr>
                       ))}
