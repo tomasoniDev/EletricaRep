@@ -80,8 +80,6 @@ function sectionTitle(doc: jsPDF, title: string, y: number) {
 function continuationHeader(doc: jsPDF) {
   setText(doc, BLUE, 10, "bold");
   doc.text("Relatório de Atendimento Técnico", MARGIN, 48);
-  setText(doc, MUTED, 7);
-  doc.text("continuação", PAGE_WIDTH - MARGIN, 48, { align: "right" });
   line(doc, MARGIN, 60, PAGE_WIDTH - MARGIN, 60, BLUE, 1);
 }
 
@@ -98,22 +96,57 @@ function ensurePageSpace(doc: jsPDF, y: number, height: number) {
 
 function flowTextSection(doc: jsPDF, title: string, value: string | null, y: number) {
   const lineHeight = 13.2;
+  const paragraphGap = 7;
+  const textX = MARGIN + 8;
+  const textWidth = CONTENT_WIDTH - 18;
   y = ensurePageSpace(doc, y, 42);
   setText(doc, MUTED, 7, "bold");
   doc.text(title.toUpperCase(), MARGIN, y);
   line(doc, MARGIN, y + 8, PAGE_WIDTH - MARGIN, y + 8, SOFT_LINE, 0.5);
   y += 24;
   setText(doc, DARK, 8.8);
-  const lines = doc.splitTextToSize(valueOrDash(value), CONTENT_WIDTH - 18);
+  const paragraphs = valueOrDash(value)
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.replace(/\s*\n\s*/g, " ").trim())
+    .filter(Boolean);
 
-  for (const textLine of lines) {
-    y = ensurePageSpace(doc, y, lineHeight + 8);
-    setText(doc, DARK, 8.8);
-    doc.text(textLine, MARGIN + 8, y);
-    y += lineHeight;
+  for (const [paragraphIndex, paragraph] of paragraphs.entries()) {
+    const lines = doc.splitTextToSize(paragraph, textWidth);
+    for (const [lineIndex, textLine] of lines.entries()) {
+      y = ensurePageSpace(doc, y, lineHeight + 8);
+      setText(doc, DARK, 8.8);
+      drawJustifiedTextLine(doc, textLine, textX, y, textWidth, lineIndex < lines.length - 1);
+      y += lineHeight;
+    }
+
+    if (paragraphIndex < paragraphs.length - 1) {
+      y = ensurePageSpace(doc, y, paragraphGap + 8);
+      y += paragraphGap;
+    }
   }
 
   return y + 20;
+}
+
+function drawJustifiedTextLine(doc: jsPDF, text: string, x: number, y: number, width: number, justify: boolean) {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (!justify || words.length < 2) {
+    doc.text(text, x, y);
+    return;
+  }
+
+  const wordsWidth = words.reduce((total, word) => total + doc.getTextWidth(word), 0);
+  const gap = (width - wordsWidth) / (words.length - 1);
+  if (!Number.isFinite(gap) || gap < 1.8 || gap > 8) {
+    doc.text(text, x, y);
+    return;
+  }
+
+  let cursorX = x;
+  for (const word of words) {
+    doc.text(word, cursorX, y);
+    cursorX += doc.getTextWidth(word) + gap;
+  }
 }
 
 function imageToDataUrl(path: string) {
