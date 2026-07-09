@@ -1085,17 +1085,22 @@ export default function Home() {
                     </div>
                     <button className="button ghost" type="button" onClick={clearSignature}>Limpar assinatura</button>
                   </div>
-                  <canvas
-                    ref={signatureCanvasRef}
-                    className="signature-canvas"
-                    width={900}
-                    height={220}
-                    aria-label="Campo para assinatura do cliente"
-                    onPointerDown={startSignature}
-                    onPointerMove={drawSignature}
-                    onPointerUp={finishSignature}
-                    onPointerCancel={finishSignature}
-                  />
+                  <div className="signature-canvas-wrap">
+                    <canvas
+                      ref={signatureCanvasRef}
+                      className="signature-canvas"
+                      width={900}
+                      height={220}
+                      aria-label="Campo para assinatura do cliente"
+                      onPointerDown={startSignature}
+                      onPointerMove={drawSignature}
+                      onPointerUp={finishSignature}
+                      onPointerCancel={finishSignature}
+                    />
+                    <div className="signature-guide" aria-hidden="true">
+                      <span>Assine sobre a linha</span>
+                    </div>
+                  </div>
                 </section>
               )}
             </div>
