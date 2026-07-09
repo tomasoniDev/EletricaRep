@@ -1253,11 +1253,15 @@ export default function Home() {
               <aside className={`contract-card ${selectedMachine.support_contract_active ? "active" : "inactive"}`}>
                 <DetailIcon type={selectedMachine.support_contract_active ? "check" : "alert"} />
                 <strong>{selectedMachine.support_contract_active ? "Contrato Ativo" : "Sem contrato ativo"}</strong>
-                <span>Tipo de contrato</span>
-                <b>{selectedMachine.support_contract_type || "-"}</b>
-                <span>Fim da vigência</span>
-                <em>{formatDate(selectedMachine.support_contract_until)}</em>
-                {selectedMachineContractDays !== null && <small>{selectedMachineContractDays >= 0 ? `Faltam ${selectedMachineContractDays} dias` : `Vencido há ${Math.abs(selectedMachineContractDays)} dias`}</small>}
+                {selectedMachine.support_contract_active && (
+                  <>
+                    <span>Tipo de contrato</span>
+                    <b>{selectedMachine.support_contract_type || "-"}</b>
+                    <span>Fim da vigência</span>
+                    <em>{formatDate(selectedMachine.support_contract_until)}</em>
+                    {selectedMachineContractDays !== null && <small>{selectedMachineContractDays >= 0 ? `Faltam ${selectedMachineContractDays} dias` : `Vencido há ${Math.abs(selectedMachineContractDays)} dias`}</small>}
+                  </>
+                )}
               </aside>
             </section>
 
