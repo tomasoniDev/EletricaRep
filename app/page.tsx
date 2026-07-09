@@ -817,14 +817,12 @@ export default function Home() {
             <section className="table-panel">
               <div className="section-header"><h2>Máquinas cadastradas</h2><span>{filteredMachines.length} registros</span></div>
               <div className="table-wrap">
-                <table>
+                <table className="home-table">
                   <thead><tr>
                     <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("code")}>Código <span>{sortMark(machineSort.key === "code", machineSort.direction)}</span></button></th>
                     <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("model")}>Modelo <span>{sortMark(machineSort.key === "model", machineSort.direction)}</span></button></th>
                     <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("client")}>Cliente <span>{sortMark(machineSort.key === "client", machineSort.direction)}</span></button></th>
                     <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("unit_city")}>Unidade / Cidade <span>{sortMark(machineSort.key === "unit_city", machineSort.direction)}</span></button></th>
-                    <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("serial")}>Série <span>{sortMark(machineSort.key === "serial", machineSort.direction)}</span></button></th>
-                    <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("software_version")}>Software <span>{sortMark(machineSort.key === "software_version", machineSort.direction)}</span></button></th>
                     <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("last_service")}>Último atendimento <span>{sortMark(machineSort.key === "last_service", machineSort.direction)}</span></button></th>
                   </tr></thead>
                   <tbody>
@@ -834,8 +832,6 @@ export default function Home() {
                         <td>{machine.model || "-"}</td>
                         <td>{machine.client || "-"}</td>
                         <td>{machine.unit_city || "-"}</td>
-                        <td>{machine.serial || "-"}</td>
-                        <td>{machine.software_version || "-"}</td>
                         <td>{formatDate(lastServiceDate(machine))}</td>
                       </tr>
                     ))}
@@ -1034,14 +1030,13 @@ export default function Home() {
                   <div className="section-header"><h2>Máquinas cadastradas</h2><span>{registryMachines.length} registros</span></div>
                   <div className="table-wrap">
                     <table>
-                      <thead><tr><th>Código</th><th>Modelo</th><th>Cliente</th><th>Localização</th><th>Série</th><th>Fabricação</th><th>Acesso</th><th>Ações</th></tr></thead>
+                      <thead><tr><th>Código</th><th>Modelo</th><th>Cliente</th><th>Localização</th><th>Fabricação</th><th>Acesso</th><th>Ações</th></tr></thead>
                       <tbody>{registryMachines.map((machine) => (
                         <tr key={machine.id}>
                           <td>{displayMachineCode(machine)}</td>
                           <td>{machine.model || "-"}</td>
                           <td>{machine.client || "-"}</td>
                           <td>{machine.unit_city || "-"}</td>
-                          <td>{machine.serial || "-"}</td>
                           <td>{formatMonthYear(machine.manufacture_month)}</td>
                           <td>{machine.remote_access || machine.access_method || "Sem acesso remoto"}</td>
                           <td>

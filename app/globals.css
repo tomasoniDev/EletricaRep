@@ -506,6 +506,7 @@ table {
   background: #fff;
 }
 
+.home-table { min-width: 820px; }
 .compact-table { min-width: 520px; }
 
 th, td {
