@@ -1163,7 +1163,6 @@ export default function Home() {
         <div className="brand"><Image src="/tomasoni-logo-transparent.png" alt="Tomasoni" width={220} height={59} priority /></div>
         <nav className="side-nav">
           <button className={`nav-item ${view === "home" ? "active" : ""}`} onClick={() => setView("home")}>Tela inicial</button>
-          <button className={`nav-item ${view === "service" ? "active" : ""}`} onClick={startNewService}>Novo registro</button>
           <button className={`nav-item ${view === "registry" ? "active" : ""}`} onClick={() => { setRegistryTab("machines"); setView("registry"); }}>Cadastro</button>
         </nav>
         <div className="user-menu">
@@ -1192,6 +1191,7 @@ export default function Home() {
           <div className="topbar-actions">
             <button className="icon-button utility-action" type="button" title="Ajuda da tela" aria-label="Ajuda da tela" onClick={() => setHelpOpen(true)}><HelpIcon /></button>
             <button className="icon-button utility-action" type="button" title={theme === "dark" ? "Modo claro" : "Modo escuro"} aria-label={theme === "dark" ? "Modo claro" : "Modo escuro"} onClick={toggleTheme}>{theme === "dark" ? <SunIcon /> : <MoonIcon />}</button>
+            {view === "service" && <button className="icon-button save-action" type="submit" form="service-record-form" title={editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"} aria-label={editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"}><SaveIcon /></button>}
             <button className="icon-button add-action" type="button" title="Novo atendimento" aria-label="Novo atendimento" onClick={startNewService}><PlusIcon /></button>
           </div>
         </header>
@@ -1362,12 +1362,12 @@ export default function Home() {
         )}
 
         {view === "service" && (
-          <form className="form-panel" onSubmit={saveService}>
+          <form id="service-record-form" className="form-panel" onSubmit={saveService}>
             <div className="section-header">
               <h2>{editingServiceRecord ? "Editar atendimento" : "Registrar atendimento"}</h2>
               <div className="actions-row">
                 {editingServiceRecord && <button className="button ghost" type="button" onClick={startNewService}>Cancelar edição</button>}
-                <button className="icon-button save-action" title={editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"} aria-label={editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"}><SaveIcon /></button>
+                <button className="icon-button save-action" type="submit" title={editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"} aria-label={editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"}><SaveIcon /></button>
               </div>
             </div>
             <div className="fields-grid">
