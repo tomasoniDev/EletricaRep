@@ -844,13 +844,16 @@ input:focus, textarea:focus, select:focus {
 
 .dashboard-card {
   display: grid;
+  grid-template-rows: 32px minmax(0, auto);
   gap: 18px;
+  align-content: start;
   min-width: 0;
   padding: 18px;
 }
 
 .card-title {
   grid-template-columns: 30px minmax(0, 1fr) auto;
+  height: 32px;
   min-height: 32px;
   align-items: center;
 }
