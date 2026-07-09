@@ -798,7 +798,7 @@ input:focus, textarea:focus, select:focus {
 .contract-card {
   display: grid;
   justify-items: center;
-  gap: 8px;
+  gap: 6px;
   min-height: 172px;
   border-radius: 12px;
   background: linear-gradient(145deg, rgba(18, 104, 216, 0.12), rgba(16, 185, 129, 0.14));
@@ -807,7 +807,7 @@ input:focus, textarea:focus, select:focus {
 }
 
 .contract-card.inactive {
-  background: linear-gradient(145deg, rgba(18, 104, 216, 0.08), rgba(100, 106, 115, 0.12));
+  background: linear-gradient(145deg, rgba(165, 60, 53, 0.1), rgba(100, 106, 115, 0.12));
 }
 
 .contract-card svg {
@@ -816,10 +816,18 @@ input:focus, textarea:focus, select:focus {
   stroke: #10a567;
 }
 
+.contract-card.inactive svg {
+  stroke: var(--danger);
+}
+
 .contract-card strong {
   color: #0f9b5f;
   font-size: 1.08rem;
   font-weight: 800;
+}
+
+.contract-card.inactive strong {
+  color: var(--danger);
 }
 
 .contract-card span,
@@ -829,11 +837,20 @@ input:focus, textarea:focus, select:focus {
   font-weight: 600;
 }
 
+.contract-card b {
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
 .contract-card em {
   color: #0f9b5f;
   font-style: normal;
   font-size: 1.35rem;
   font-weight: 850;
+}
+
+.contract-card.inactive em {
+  color: var(--danger);
 }
 
 .dashboard-grid {

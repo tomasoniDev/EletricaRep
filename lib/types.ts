@@ -22,6 +22,7 @@ export type Machine = {
   sinema_password: string | null;
   sinema_notes: string | null;
   support_contract_active: boolean | null;
+  support_contract_type: string | null;
   support_contract_until: string | null;
   created_at: string;
   updated_at: string;

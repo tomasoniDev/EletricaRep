@@ -15,6 +15,7 @@ type TechnicianSortKey = "name" | "email";
 type RemoteAccess = "SINEMA" | "VNC" | "Sem acesso remoto";
 type ServiceType = "Acesso remoto" | "Visita técnica";
 type ThemeMode = "light" | "dark";
+type ContractType = "Seg-Sex" | "Seg-Sab" | "Garantia";
 
 type MachineFormState = {
   code: string;
@@ -38,6 +39,7 @@ type MachineFormState = {
   sinema_password: string;
   sinema_notes: string;
   support_contract_active: string;
+  support_contract_type: string;
   support_contract_until: string;
 };
 
@@ -48,6 +50,7 @@ const AUTH_CONFIRMATION_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 const THEME_KEY = "tomasoni-servicecore-theme";
 const REMOTE_ACCESS_OPTIONS: RemoteAccess[] = ["Sem acesso remoto", "SINEMA", "VNC"];
 const SERVICE_TYPE_OPTIONS: ServiceType[] = ["Acesso remoto", "Visita técnica"];
+const CONTRACT_TYPE_OPTIONS: ContractType[] = ["Seg-Sex", "Seg-Sab", "Garantia"];
 const EMPTY_MACHINE_FORM: MachineFormState = {
   code: "",
   mechanical_list: "",
@@ -70,6 +73,7 @@ const EMPTY_MACHINE_FORM: MachineFormState = {
   sinema_password: "",
   sinema_notes: "",
   support_contract_active: "",
+  support_contract_type: "",
   support_contract_until: ""
 };
 
@@ -146,6 +150,7 @@ function machineFormFromMachine(machine?: Machine | null): MachineFormState {
     sinema_password: machine.sinema_password ?? "",
     sinema_notes: machine.sinema_notes ?? "",
     support_contract_active: machine.support_contract_active === null || machine.support_contract_active === undefined ? "" : machine.support_contract_active ? "Sim" : "Não",
+    support_contract_type: machine.support_contract_type ?? "",
     support_contract_until: machine.support_contract_until ?? ""
   };
 }
@@ -361,7 +366,7 @@ function LogOutIcon() {
   );
 }
 
-function DetailIcon({ type }: { type: "client" | "location" | "serial" | "calendar" | "mechanical" | "software" | "remote" | "info" | "history" | "check" | "mail" }) {
+function DetailIcon({ type }: { type: "client" | "location" | "serial" | "calendar" | "mechanical" | "software" | "remote" | "info" | "history" | "check" | "alert" | "mail" }) {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24">
       {type === "client" && <><path d="M20 21a8 8 0 0 0-16 0" /><circle cx="12" cy="7" r="4" /></>}
@@ -374,6 +379,7 @@ function DetailIcon({ type }: { type: "client" | "location" | "serial" | "calend
       {type === "info" && <><circle cx="12" cy="12" r="9" /><path d="M12 10v6M12 7h.01" /></>}
       {type === "history" && <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>}
       {type === "check" && <><circle cx="12" cy="12" r="9" /><path d="m8 12 2.6 2.6L16.5 9" /></>}
+      {type === "alert" && <><circle cx="12" cy="12" r="9" /><path d="M8 8l8 8M16 8l-8 8" /></>}
       {type === "mail" && <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></>}
     </svg>
   );
@@ -875,6 +881,7 @@ export default function Home() {
           next.sinema_password = "";
           next.sinema_notes = "";
           next.support_contract_active = "";
+          next.support_contract_type = "";
           next.support_contract_until = "";
         }
 
@@ -892,6 +899,10 @@ export default function Home() {
           next.sinema_password = "";
           next.sinema_notes = "";
         }
+      }
+
+      if (key === "support_contract_active" && value !== "Sim") {
+        next.support_contract_type = "";
       }
 
       return next;
@@ -923,6 +934,7 @@ export default function Home() {
       sinema_password: null,
       sinema_notes: machineForm.remote_access === "SINEMA" ? machineForm.sinema_notes.trim() || null : null,
       support_contract_active: showRemoteAccess ? machineForm.support_contract_active === "Sim" : null,
+      support_contract_type: showRemoteAccess && machineForm.support_contract_active === "Sim" ? machineForm.support_contract_type.trim() || null : null,
       support_contract_until: showRemoteAccess ? machineForm.support_contract_until.trim() || null : null
     };
 
@@ -1239,8 +1251,10 @@ export default function Home() {
                 </div>
               </div>
               <aside className={`contract-card ${selectedMachine.support_contract_active ? "active" : "inactive"}`}>
-                <DetailIcon type="check" />
+                <DetailIcon type={selectedMachine.support_contract_active ? "check" : "alert"} />
                 <strong>{selectedMachine.support_contract_active ? "Contrato Ativo" : "Sem contrato ativo"}</strong>
+                <span>Tipo de contrato</span>
+                <b>{selectedMachine.support_contract_type || "-"}</b>
                 <span>Fim da vigência</span>
                 <em>{formatDate(selectedMachine.support_contract_until)}</em>
                 {selectedMachineContractDays !== null && <small>{selectedMachineContractDays >= 0 ? `Faltam ${selectedMachineContractDays} dias` : `Vencido há ${Math.abs(selectedMachineContractDays)} dias`}</small>}
@@ -1465,6 +1479,10 @@ export default function Home() {
                           <option value="">Selecione</option>
                           <option value="Sim">Sim</option>
                           <option value="Não">Não</option>
+                        </select></label>
+                        <label>Tipo de contrato<select value={machineForm.support_contract_type} onChange={(event) => updateMachineForm("support_contract_type", event.target.value)}>
+                          <option value="">Selecione</option>
+                          {CONTRACT_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                         </select></label>
                         <label>Final de vigência do contrato<input type="date" value={machineForm.support_contract_until} onChange={(event) => updateMachineForm("support_contract_until", event.target.value)} /></label>
                       </div>
