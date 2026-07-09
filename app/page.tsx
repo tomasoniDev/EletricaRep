@@ -20,6 +20,7 @@ type MachineFormState = {
   code: string;
   mechanical_list: string;
   software_code: string;
+  ip_range: string;
   serial: string;
   model: string;
   client: string;
@@ -51,6 +52,7 @@ const EMPTY_MACHINE_FORM: MachineFormState = {
   code: "",
   mechanical_list: "",
   software_code: "",
+  ip_range: "",
   serial: "",
   model: "",
   client: "",
@@ -126,6 +128,7 @@ function machineFormFromMachine(machine?: Machine | null): MachineFormState {
     code: machine.code ?? "",
     mechanical_list: machine.mechanical_list ?? "",
     software_code: machine.software_code ?? "",
+    ip_range: machine.ip_range ?? "",
     serial: machine.serial ?? "",
     model: machine.model ?? "",
     client: machine.client ?? "",
@@ -157,13 +160,6 @@ function parseEmails(value: string) {
 function lastServiceDate(machine: Machine) {
   const dates = machine.service_records?.map((record) => record.service_date).filter(Boolean) ?? [];
   return dates.sort().at(-1) ?? "";
-}
-
-function machineIpRange(machine: Machine) {
-  const rawIp = machine.vnc_ip?.split("/")[0]?.trim();
-  const parts = rawIp?.split(".");
-  if (!parts || parts.length < 3) return "-";
-  return `${parts[0]}.${parts[1]}.${parts[2]}.xxx`;
 }
 
 function compareText(first?: string | null, second?: string | null) {
@@ -913,6 +909,7 @@ export default function Home() {
       manufacture_month: normalizeMonthYear(machineForm.manufacture_month),
       mechanical_list: machineForm.mechanical_list.trim() || null,
       software_code: machineForm.software_code.trim().toUpperCase() || null,
+      ip_range: machineForm.ip_range.trim() || null,
       software_version: machineForm.software_version.trim() || null,
       access_method: null,
       remote_access: machineForm.remote_access,
@@ -1256,7 +1253,7 @@ export default function Home() {
                 <dl className="spec-list">
                   <div><dt>Software</dt><dd><span className="soft-pill">{selectedMachine.software_version || "-"}</span></dd></div>
                   <div><dt>Código do software</dt><dd>{selectedMachine.software_code || "-"}</dd></div>
-                  <div><dt>Faixa de IP</dt><dd>{machineIpRange(selectedMachine)}</dd></div>
+                  <div><dt>Faixa de IP</dt><dd>{selectedMachine.ip_range || "-"}</dd></div>
                   <div><dt>Último atendimento</dt><dd>{formatDate(lastServiceDate(selectedMachine))}</dd></div>
                 </dl>
               </article>
@@ -1430,6 +1427,7 @@ export default function Home() {
                       <label>Localização<input value={machineForm.unit_city} onChange={(event) => updateMachineForm("unit_city", event.target.value)} placeholder="Cidade - Estado" /></label>
                       <label>Mecânica<input value={machineForm.mechanical_list} onChange={(event) => updateMachineForm("mechanical_list", event.target.value)} placeholder="Lista mecânica" /></label>
                       <label>Código do software<input value={machineForm.software_code} onChange={(event) => updateMachineForm("software_code", event.target.value)} placeholder="Código do software da máquina" /></label>
+                      <label>Faixa de IP<input value={machineForm.ip_range} onChange={(event) => updateMachineForm("ip_range", event.target.value)} placeholder="Ex.: 189.1.87.xxx" /></label>
                       <label>Número de série<input value={machineForm.serial} onChange={(event) => updateMachineForm("serial", event.target.value)} /></label>
                       <label>Fabricação<input value={machineForm.manufacture_month} onChange={(event) => updateMachineForm("manufacture_month", event.target.value)} placeholder="mm/aa" pattern="\d{2}/\d{2}" /></label>
                       <label>Software<input value={machineForm.software_version} onChange={(event) => updateMachineForm("software_version", event.target.value)} placeholder="TIA Vx, Scout..." /></label>
