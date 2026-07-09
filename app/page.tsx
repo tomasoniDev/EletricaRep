@@ -162,6 +162,13 @@ function lastServiceDate(machine: Machine) {
   return dates.sort().at(-1) ?? "";
 }
 
+function machineIpRange(machine: Machine) {
+  const rawIp = machine.vnc_ip?.split("/")[0]?.trim();
+  const parts = rawIp?.split(".");
+  if (!parts || parts.length < 3) return "-";
+  return `${parts[0]}.${parts[1]}.${parts[2]}.xxx`;
+}
+
 function compareText(first?: string | null, second?: string | null) {
   return (first ?? "").localeCompare(second ?? "", "pt-BR", { numeric: true, sensitivity: "base" });
 }
@@ -1233,8 +1240,7 @@ export default function Home() {
                   <div><DetailIcon type="serial" /><p><span>Número de série</span><strong>{selectedMachine.serial || "-"}</strong></p></div>
                   <div><DetailIcon type="calendar" /><p><span>Fabricação</span><strong>{formatMonthYear(selectedMachine.manufacture_month)}</strong></p></div>
                   <div><DetailIcon type="location" /><p><span>Localização</span><strong>{selectedMachine.unit_city || "-"}</strong></p></div>
-                  <div><DetailIcon type="mechanical" /><p><span>Mecânica</span><strong>{selectedMachine.mechanical_list || "-"}</strong></p></div>
-                  <div><DetailIcon type="software" /><p><span>Software</span><strong>{selectedMachine.software_version || "-"}</strong></p></div>
+                  <div><DetailIcon type="mechanical" /><p><span>Lista Mecânica</span><strong>{selectedMachine.mechanical_list || "-"}</strong></p></div>
                 </div>
               </div>
               <aside className={`contract-card ${selectedMachine.support_contract_active ? "active" : "inactive"}`}>
@@ -1248,23 +1254,11 @@ export default function Home() {
 
             <section className="dashboard-grid">
               <article className="dashboard-card">
-                <div className="card-title"><DetailIcon type="info" /><h3>Dados da Máquina</h3></div>
-                <dl className="spec-list">
-                  <div><dt>Código</dt><dd>{selectedMachine.code || "-"}</dd></div>
-                  <div><dt>Modelo</dt><dd>{selectedMachine.model || "-"}</dd></div>
-                  <div><dt>Cliente</dt><dd>{selectedMachine.client || "-"}</dd></div>
-                  <div><dt>Localização</dt><dd>{selectedMachine.unit_city || "-"}</dd></div>
-                  <div><dt>Número de série</dt><dd>{selectedMachine.serial || "-"}</dd></div>
-                  <div><dt>Mecânica</dt><dd>{selectedMachine.mechanical_list || "-"}</dd></div>
-                  <div><dt>Fabricação</dt><dd>{formatMonthYear(selectedMachine.manufacture_month)}</dd></div>
-                </dl>
-              </article>
-
-              <article className="dashboard-card">
                 <div className="card-title"><DetailIcon type="software" /><h3>Software</h3></div>
                 <dl className="spec-list">
                   <div><dt>Software</dt><dd><span className="soft-pill">{selectedMachine.software_version || "-"}</span></dd></div>
                   <div><dt>Código do software</dt><dd>{selectedMachine.software_code || "-"}</dd></div>
+                  <div><dt>Faixa de IP</dt><dd>{machineIpRange(selectedMachine)}</dd></div>
                   <div><dt>Último atendimento</dt><dd>{formatDate(lastServiceDate(selectedMachine))}</dd></div>
                 </dl>
               </article>
@@ -1291,18 +1285,6 @@ export default function Home() {
                   {selectedMachineAccess === "Sem acesso remoto" && <div><dt>Status</dt><dd>Sem acesso remoto cadastrado</dd></div>}
                 </dl>
               </article>
-            </section>
-
-            <section className="dashboard-lower">
-              <article className="dashboard-card info-card">
-                <div className="card-title"><DetailIcon type="mail" /><h3>Informações adicionais</h3></div>
-                <div className="info-strip">
-                  <div><span>E-mail do cliente</span><strong>{selectedMachine.machine_emails?.map((item) => item.email).join("; ") || "-"}</strong></div>
-                  <div><span>Acesso remoto</span><strong>{selectedMachineAccess}</strong></div>
-                  <div><span>Contrato</span><strong>{selectedMachine.support_contract_active ? "Ativo" : "Inativo"}</strong></div>
-                  <div><span>Fim da vigência</span><strong>{formatDate(selectedMachine.support_contract_until)}</strong></div>
-                </div>
-              </article>
 
               <article className="dashboard-card history-card">
                 <div className="card-title"><DetailIcon type="history" /><h3>Histórico de Atendimentos</h3><button className="button ghost" type="button" onClick={() => setHistoryFilter("")}>Ver todos</button></div>
@@ -1314,6 +1296,18 @@ export default function Home() {
                       <em>{normalizeServiceType(record.service_type)}</em>
                     </button>
                   )) : <p>Nenhum atendimento registrado.</p>}
+                </div>
+              </article>
+            </section>
+
+            <section className="dashboard-lower">
+              <article className="dashboard-card info-card">
+                <div className="card-title"><DetailIcon type="mail" /><h3>Informações adicionais</h3></div>
+                <div className="info-strip">
+                  <div><span>E-mail do cliente</span><strong>{selectedMachine.machine_emails?.map((item) => item.email).join("; ") || "-"}</strong></div>
+                  <div><span>Acesso remoto</span><strong>{selectedMachineAccess}</strong></div>
+                  <div><span>Contrato</span><strong>{selectedMachine.support_contract_active ? "Ativo" : "Inativo"}</strong></div>
+                  <div><span>Fim da vigência</span><strong>{formatDate(selectedMachine.support_contract_until)}</strong></div>
                 </div>
               </article>
             </section>

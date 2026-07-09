@@ -848,7 +848,7 @@ input:focus, textarea:focus, select:focus {
 
 .dashboard-lower {
   display: grid;
-  grid-template-columns: minmax(0, 2.1fr) minmax(320px, 0.9fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 
