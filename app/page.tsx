@@ -1223,19 +1223,9 @@ export default function Home() {
         {view === "machineDetail" && selectedMachine && (
           <section className="machine-dashboard view active">
             <section className="machine-hero">
-              <div className="machine-visual" aria-hidden="true">
-                <div className="machine-id-plate">
-                  <span>Tomasoni</span>
-                  <strong>{displayMachineCode(selectedMachine)}</strong>
-                  <em>{selectedMachine.model || "Máquina"}</em>
-                </div>
-              </div>
               <div className="machine-hero-main">
                 <div className="machine-title-row">
-                  <div>
-                    <p className="breadcrumb">Máquinas / {displayMachineCode(selectedMachine)}</p>
-                    <h2>{selectedMachine.model || "Máquina"}</h2>
-                  </div>
+                  <h2>{selectedMachine.model || "Máquina"}</h2>
                   <span className="code-pill">{displayMachineCode(selectedMachine)}</span>
                 </div>
                 <div className="machine-metrics">
