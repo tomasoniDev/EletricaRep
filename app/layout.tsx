@@ -3,8 +3,8 @@ import { GeistSans } from "geist/font/sans";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  applicationName: "Núcleo de Assistência",
-  title: "Núcleo de Assistência Tomasoni",
+  applicationName: "Assistência Tomasoni",
+  title: "Assistência Tomasoni",
   description: "Aplicação corporativa para registros de atendimento técnico.",
   manifest: "/manifest.webmanifest",
   icons: {
@@ -23,4 +23,5 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     </html>
   );
 }
+
 

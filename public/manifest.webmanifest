@@ -1,6 +1,6 @@
 ﻿{
-  "name": "Núcleo de Assistência Tomasoni",
-  "short_name": "Núcleo",
+  "name": "Assistência Tomasoni",
+  "short_name": "Tomasoni Assist.",
   "description": "Aplicação corporativa para registros de atendimento técnico.",
   "start_url": "/",
   "scope": "/",
@@ -22,3 +22,4 @@
     }
   ]
 }
+
