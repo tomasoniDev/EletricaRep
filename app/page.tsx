@@ -1179,36 +1179,36 @@ export default function Home() {
   function downloadMachinesBackup() {
     if (!canDownloadBackup) {
       setUserMenuOpen(false);
-      setMessage("Backup disponÃ­vel apenas para usuÃ¡rio autorizado.");
+      setMessage("Backup disponível apenas para usuário autorizado.");
       return;
     }
 
     const headers = [
-      "CÃ³digo",
+      "Código",
       "Modelo",
-      "DescriÃ§Ã£o",
+      "Descrição",
       "Cliente",
-      "LocalizaÃ§Ã£o",
-      "NÃºmero de sÃ©rie",
-      "Lista mecÃ¢nica",
-      "FabricaÃ§Ã£o",
+      "Localização",
+      "Número de série",
+      "Lista mecânica",
+      "Fabricação",
       "Software",
-      "CÃ³digo do software",
+      "Código do software",
       "VM",
       "Faixa de IP",
       "Acesso remoto",
       "IP de acesso VNC",
       "Senha VNC",
-      "UsuÃ¡rio VM",
+      "Usuário VM",
       "Senha VM",
-      "ObservaÃ§Ãµes VNC",
+      "Observações VNC",
       "Device Name SINEMA",
       "Subnet Name SINEMA",
-      "ObservaÃ§Ãµes SINEMA",
+      "Observações SINEMA",
       "Contrato ativo",
       "Tipo de contrato",
-      "Final da vigÃªncia",
-      "Ãšltimo atendimento",
+      "Final da vigência",
+      "Último atendimento",
       "Quantidade de atendimentos",
       "Criado em",
       "Atualizado em"
@@ -1257,7 +1257,7 @@ export default function Home() {
     URL.revokeObjectURL(url);
 
     setUserMenuOpen(false);
-    setMessage(`Backup de ${machines.length} mÃ¡quinas gerado em planilha CSV.`);
+    setMessage(`Backup de ${machines.length} máquinas gerado em planilha CSV.`);
   }
 
   async function saveUserProfile(event: FormEvent<HTMLFormElement>) {
