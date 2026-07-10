@@ -6,7 +6,7 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { downloadServicePdf, servicePdfBase64, servicePdfFileName } from "@/lib/pdf";
 import type { Machine, Profile, ServiceRecord, Technician } from "@/lib/types";
 
-type View = "home" | "machineDetail" | "service" | "registry";
+type View = "home" | "overview" | "machineDetail" | "service" | "registry";
 type RegistryTab = "machines" | "technicians";
 type SortDirection = "asc" | "desc";
 type MachineSortKey = "code" | "model" | "client" | "unit_city" | "serial" | "software_version" | "last_service";
@@ -170,6 +170,43 @@ function lastServiceDate(machine: Machine) {
   return dates.sort().at(-1) ?? "";
 }
 
+function daysSince(value?: string | null) {
+  if (!value) return null;
+  const target = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(target.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.floor((today.getTime() - target.getTime()) / 86400000);
+}
+
+function monthKey(value: Date) {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthLabel(key: string) {
+  const [year, month] = key.split("-");
+  return `${month}/${year.slice(-2)}`;
+}
+
+function addMonths(value: Date, amount: number) {
+  const next = new Date(value);
+  next.setDate(1);
+  next.setMonth(next.getMonth() + amount);
+  return next;
+}
+
+function locationState(value?: string | null) {
+  const text = value?.trim();
+  if (!text) return "Sem localização";
+  const match = text.match(/(?:-|\/)\s*([A-Za-z]{2})\s*$/);
+  return match ? match[1].toUpperCase() : "Sem UF";
+}
+
+function percent(part: number, total: number) {
+  if (!total) return 0;
+  return Math.round((part / total) * 100);
+}
+
 function compareText(first?: string | null, second?: string | null) {
   return (first ?? "").localeCompare(second ?? "", "pt-BR", { numeric: true, sensitivity: "base" });
 }
@@ -247,6 +284,7 @@ function dataMessage(error: string) {
 
 function screenLegend(view: View, registryTab: RegistryTab, selectedMachine?: Machine) {
   if (view === "home") return "Consulte uma máquina pelo código ou selecione uma linha da tabela.";
+  if (view === "overview") return "Visão geral da base instalada, contratos, acessos e atendimentos registrados.";
   if (view === "machineDetail") return selectedMachine ? `Dados cadastrais e histórico da máquina ${displayMachineCode(selectedMachine)}.` : "Dados cadastrais e histórico da máquina.";
   if (view === "service") return "Registre um novo atendimento técnico e gere o relatório em PDF.";
   if (registryTab === "machines") return "Cadastre, altere ou exclua máquinas e informações de acesso.";
@@ -255,6 +293,7 @@ function screenLegend(view: View, registryTab: RegistryTab, selectedMachine?: Ma
 
 function helpText(view: View, registryTab: RegistryTab) {
   if (view === "home") return "Use o filtro para localizar uma máquina por código, modelo, cliente ou localização. Clique no código da máquina para abrir os dados cadastrais e o histórico de atendimentos.";
+  if (view === "overview") return "A visão geral consolida indicadores da base cadastrada, contratos, acesso remoto, localização e volume de atendimentos. Use os rankings para localizar máquinas, clientes e regiões que merecem atenção.";
   if (view === "machineDetail") return "Nesta tela ficam os dados técnicos da máquina, informações de acesso remoto e histórico. Clique em um atendimento para ver o registro completo ou use o menu de ações para baixar o PDF.";
   if (view === "service") return "Registre o atendimento com tipo, motivo breve e descrições completas. Em visita técnica, colete a assinatura do cliente para incluir no PDF.";
   if (registryTab === "machines") return "Cadastre ou altere máquinas e informações de acesso. Use o menu de ações da tabela para editar ou excluir cadastros.";
@@ -528,6 +567,86 @@ export default function Home() {
   const selectedMachineRecentHistory = [...(selectedMachine?.service_records ?? [])]
     .sort((a, b) => compareDate(b.service_date, a.service_date))
     .slice(0, 5);
+  const overviewData = useMemo(() => {
+    const today = new Date();
+    const currentMonth = monthKey(today);
+    const lastSixMonths = Array.from({ length: 6 }, (_, index) => monthKey(addMonths(today, index - 5)));
+    const serviceEntries = machines.flatMap((machine) => (machine.service_records ?? []).map((record) => ({ machine, record })));
+    const machinesWithRemote = machines.filter((machine) => machineHasRemoteAccess(normalizeRemoteAccess(machine.remote_access ?? machine.access_method)));
+    const machinesWithoutService = machines.filter((machine) => !lastServiceDate(machine));
+    const activeContracts = machines.filter((machine) => machine.support_contract_active);
+    const expiringContracts = activeContracts.filter((machine) => {
+      const days = daysUntil(machine.support_contract_until);
+      return days !== null && days >= 0 && days <= 90;
+    });
+    const expiredContracts = activeContracts.filter((machine) => {
+      const days = daysUntil(machine.support_contract_until);
+      return days !== null && days < 0;
+    });
+    const staleMachines = machines.filter((machine) => {
+      const days = daysSince(lastServiceDate(machine));
+      return days === null || days > 180;
+    });
+
+    const countBy = <T,>(items: T[], label: (item: T) => string) => {
+      const map = new Map<string, number>();
+      items.forEach((item) => {
+        const key = label(item) || "Não informado";
+        map.set(key, (map.get(key) ?? 0) + 1);
+      });
+      return [...map.entries()]
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value || compareText(a.name, b.name));
+    };
+
+    const serviceMonthCounts = new Map(lastSixMonths.map((key) => [key, 0]));
+    serviceEntries.forEach(({ record }) => {
+      if (!record.service_date) return;
+      const key = record.service_date.slice(0, 7);
+      if (serviceMonthCounts.has(key)) serviceMonthCounts.set(key, (serviceMonthCounts.get(key) ?? 0) + 1);
+    });
+
+    const machineAttention = machines
+      .map((machine) => ({
+        machine,
+        lastDate: lastServiceDate(machine),
+        days: daysSince(lastServiceDate(machine)),
+        services: machine.service_records?.length ?? 0
+      }))
+      .sort((a, b) => (b.days ?? 99999) - (a.days ?? 99999))
+      .slice(0, 6);
+
+    const topMachinesByService = [...machines]
+      .map((machine) => ({ machine, value: machine.service_records?.length ?? 0 }))
+      .sort((a, b) => b.value - a.value || compareText(displayMachineCode(a.machine), displayMachineCode(b.machine)))
+      .slice(0, 6);
+
+    const recentServices = serviceEntries
+      .sort((a, b) => compareDate(b.record.service_date, a.record.service_date))
+      .slice(0, 6);
+
+    return {
+      totalMachines: machines.length,
+      totalServices: serviceEntries.length,
+      servicesThisMonth: serviceEntries.filter(({ record }) => record.service_date?.startsWith(currentMonth)).length,
+      activeContracts: activeContracts.length,
+      expiringContracts: expiringContracts.length,
+      expiredContracts: expiredContracts.length,
+      remoteCoverage: percent(machinesWithRemote.length, machines.length),
+      staleMachines: staleMachines.length,
+      machinesWithoutService: machinesWithoutService.length,
+      byModel: countBy(machines, (machine) => machine.model?.trim() || "Modelo não informado").slice(0, 7),
+      byAccess: countBy(machines, (machine) => normalizeRemoteAccess(machine.remote_access ?? machine.access_method)),
+      byState: countBy(machines, (machine) => locationState(machine.unit_city)).slice(0, 8),
+      byContractType: countBy(activeContracts, (machine) => machine.support_contract_type || "Tipo não informado"),
+      byServiceType: countBy(serviceEntries, ({ record }) => normalizeServiceType(record.service_type)),
+      byClient: countBy(machines, (machine) => machine.client?.trim() || "Cliente não informado").slice(0, 8),
+      serviceTrend: [...serviceMonthCounts.entries()].map(([name, value]) => ({ name: monthLabel(name), value })),
+      topMachinesByService,
+      machineAttention,
+      recentServices
+    };
+  }, [machines]);
 
   useEffect(() => {
     setMachineForm(machineFormFromMachine(editingMachine));
@@ -1168,6 +1287,7 @@ export default function Home() {
         <div className="brand"><Image src="/tomasoni-logo-transparent.png" alt="Tomasoni" width={220} height={59} priority /></div>
         <nav className="side-nav">
           <button className={`nav-item ${view === "home" ? "active" : ""}`} onClick={() => setView("home")}>Tela inicial</button>
+          <button className={`nav-item ${view === "overview" ? "active" : ""}`} onClick={() => setView("overview")}>Visão geral</button>
           <button className={`nav-item ${view === "registry" ? "active" : ""}`} onClick={() => { setRegistryTab("machines"); setView("registry"); }}>Cadastro</button>
         </nav>
         <div className="user-menu">
@@ -1204,6 +1324,180 @@ export default function Home() {
           <strong>{screenLegend(view, registryTab, selectedMachine)}</strong>
           {message !== DEFAULT_MESSAGE && <span>{message}</span>}
         </section>
+
+        {view === "overview" && (
+          <section className="overview-page view active">
+            <section className="kpi-grid">
+              <article className="kpi-card accent">
+                <span>Base instalada</span>
+                <strong>{overviewData.totalMachines}</strong>
+                <small>{overviewData.totalServices} atendimentos registrados</small>
+              </article>
+              <article className="kpi-card">
+                <span>Atendimentos no mês</span>
+                <strong>{overviewData.servicesThisMonth}</strong>
+                <small>{overviewData.totalServices ? `${percent(overviewData.servicesThisMonth, overviewData.totalServices)}% do histórico` : "Sem histórico"}</small>
+              </article>
+              <article className="kpi-card success">
+                <span>Contratos ativos</span>
+                <strong>{overviewData.activeContracts}</strong>
+                <small>{percent(overviewData.activeContracts, overviewData.totalMachines)}% da base</small>
+              </article>
+              <article className="kpi-card warning">
+                <span>Contratos a vencer</span>
+                <strong>{overviewData.expiringContracts}</strong>
+                <small>Próximos 90 dias</small>
+              </article>
+              <article className="kpi-card">
+                <span>Cobertura remota</span>
+                <strong>{overviewData.remoteCoverage}%</strong>
+                <small>SINEMA ou VNC cadastrados</small>
+              </article>
+              <article className="kpi-card danger">
+                <span>Atenção operacional</span>
+                <strong>{overviewData.staleMachines}</strong>
+                <small>Sem atendimento há mais de 180 dias ou sem histórico</small>
+              </article>
+            </section>
+
+            <section className="overview-grid">
+              <article className="dashboard-card chart-card wide-card">
+                <div className="card-title"><DetailIcon type="history" /><h3>Tendência de atendimentos</h3></div>
+                <div className="trend-chart">
+                  {overviewData.serviceTrend.map((item) => {
+                    const max = Math.max(...overviewData.serviceTrend.map((entry) => entry.value), 1);
+                    return (
+                      <div key={item.name} className="trend-bar">
+                        <span>{item.value}</span>
+                        <div style={{ height: `${Math.max(8, (item.value / max) * 100)}%` }} />
+                        <small>{item.name}</small>
+                      </div>
+                    );
+                  })}
+                </div>
+              </article>
+
+              <article className="dashboard-card">
+                <div className="card-title"><DetailIcon type="remote" /><h3>Acesso remoto</h3></div>
+                <div className="bar-list">
+                  {overviewData.byAccess.map((item) => (
+                    <div key={item.name}>
+                      <span>{item.name}</span><strong>{item.value}</strong>
+                      <em><i style={{ width: `${percent(item.value, overviewData.totalMachines)}%` }} /></em>
+                    </div>
+                  ))}
+                </div>
+              </article>
+
+              <article className="dashboard-card">
+                <div className="card-title"><DetailIcon type="check" /><h3>Contratos</h3></div>
+                <div className="contract-summary-list">
+                  <div><span>Ativos</span><strong>{overviewData.activeContracts}</strong></div>
+                  <div><span>A vencer em 90 dias</span><strong>{overviewData.expiringContracts}</strong></div>
+                  <div><span>Vencidos</span><strong>{overviewData.expiredContracts}</strong></div>
+                </div>
+                <div className="bar-list compact">
+                  {overviewData.byContractType.map((item) => (
+                    <div key={item.name}>
+                      <span>{item.name}</span><strong>{item.value}</strong>
+                      <em><i style={{ width: `${percent(item.value, overviewData.activeContracts)}%` }} /></em>
+                    </div>
+                  ))}
+                </div>
+              </article>
+
+              <article className="dashboard-card">
+                <div className="card-title"><DetailIcon type="software" /><h3>Modelos</h3></div>
+                <div className="bar-list">
+                  {overviewData.byModel.map((item) => (
+                    <div key={item.name}>
+                      <span>{item.name}</span><strong>{item.value}</strong>
+                      <em><i style={{ width: `${percent(item.value, overviewData.totalMachines)}%` }} /></em>
+                    </div>
+                  ))}
+                </div>
+              </article>
+
+              <article className="dashboard-card">
+                <div className="card-title"><DetailIcon type="location" /><h3>Geolocalização</h3></div>
+                <div className="state-map-list">
+                  {overviewData.byState.map((item) => (
+                    <button key={item.name} type="button" onClick={() => { setMachineFilter(item.name === "Sem localização" ? "" : item.name); setView("home"); }}>
+                      <span>{item.name}</span>
+                      <strong>{item.value}</strong>
+                    </button>
+                  ))}
+                </div>
+              </article>
+
+              <article className="dashboard-card">
+                <div className="card-title"><DetailIcon type="client" /><h3>Clientes</h3></div>
+                <div className="bar-list">
+                  {overviewData.byClient.map((item) => (
+                    <div key={item.name}>
+                      <span>{item.name}</span><strong>{item.value}</strong>
+                      <em><i style={{ width: `${percent(item.value, overviewData.totalMachines)}%` }} /></em>
+                    </div>
+                  ))}
+                </div>
+              </article>
+
+              <article className="dashboard-card">
+                <div className="card-title"><DetailIcon type="info" /><h3>Tipo de atendimento</h3></div>
+                <div className="donut-panel">
+                  <div className="donut" style={{ ["--value" as string]: `${percent(overviewData.byServiceType.find((item) => item.name === "Acesso remoto")?.value ?? 0, overviewData.totalServices)}%` }}>
+                    <strong>{percent(overviewData.byServiceType.find((item) => item.name === "Acesso remoto")?.value ?? 0, overviewData.totalServices)}%</strong>
+                    <span>Remoto</span>
+                  </div>
+                  <div className="mini-list">
+                    {overviewData.byServiceType.map((item) => <div key={item.name}><span>{item.name}</span><strong>{item.value}</strong></div>)}
+                  </div>
+                </div>
+              </article>
+            </section>
+
+            <section className="overview-grid bottom-grid">
+              <article className="dashboard-card overview-table-card">
+                <div className="card-title"><DetailIcon type="history" /><h3>Máquinas com mais atendimentos</h3></div>
+                <div className="overview-table">
+                  {overviewData.topMachinesByService.map(({ machine, value }) => (
+                    <button key={machine.id} type="button" onClick={() => { setSelectedMachineId(machine.id); setHistoryFilter(""); setView("machineDetail"); }}>
+                      <span>{displayMachineCode(machine)}</span>
+                      <em>{machine.client || "-"}</em>
+                      <strong>{value}</strong>
+                    </button>
+                  ))}
+                </div>
+              </article>
+
+              <article className="dashboard-card overview-table-card">
+                <div className="card-title"><DetailIcon type="alert" /><h3>Máquinas para atenção</h3></div>
+                <div className="overview-table">
+                  {overviewData.machineAttention.map(({ machine, lastDate, days }) => (
+                    <button key={machine.id} type="button" onClick={() => { setSelectedMachineId(machine.id); setHistoryFilter(""); setView("machineDetail"); }}>
+                      <span>{displayMachineCode(machine)}</span>
+                      <em>{lastDate ? `Último: ${formatDate(lastDate)}` : "Sem histórico"}</em>
+                      <strong>{days === null ? "-" : `${days}d`}</strong>
+                    </button>
+                  ))}
+                </div>
+              </article>
+
+              <article className="dashboard-card overview-table-card">
+                <div className="card-title"><DetailIcon type="detail" /><h3>Últimos atendimentos</h3></div>
+                <div className="overview-table">
+                  {overviewData.recentServices.map(({ machine, record }) => (
+                    <button key={record.id} type="button" onClick={() => { setSelectedMachineId(machine.id); setSelectedServiceRecord(record); }}>
+                      <span>{record.issue_summary || record.equipment || "Atendimento"}</span>
+                      <em>{displayMachineCode(machine)} - {formatDate(record.service_date)}</em>
+                      <strong>{normalizeServiceType(record.service_type).replace("Acesso remoto", "Remoto").replace("Visita técnica", "Visita")}</strong>
+                    </button>
+                  ))}
+                </div>
+              </article>
+            </section>
+          </section>
+        )}
 
         {view === "home" && (
           <section className="view active">
