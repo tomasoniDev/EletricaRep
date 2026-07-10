@@ -1029,7 +1029,7 @@ export default function Home() {
       return;
     }
 
-    if (editingServiceRecord?.created_by && editingServiceRecord.created_by !== currentUserId) {
+    if (editingServiceRecord && editingServiceRecord.created_by !== currentUserId) {
       setMessage("Este atendimento só pode ser alterado pelo usuário que lançou o registro.");
       return;
     }
@@ -1191,7 +1191,6 @@ export default function Home() {
           <div className="topbar-actions">
             <button className="icon-button utility-action" type="button" title="Ajuda da tela" aria-label="Ajuda da tela" onClick={() => setHelpOpen(true)}><HelpIcon /></button>
             <button className="icon-button utility-action" type="button" title={theme === "dark" ? "Modo claro" : "Modo escuro"} aria-label={theme === "dark" ? "Modo claro" : "Modo escuro"} onClick={toggleTheme}>{theme === "dark" ? <SunIcon /> : <MoonIcon />}</button>
-            {view === "service" && <button className="icon-button save-action" type="submit" form="service-record-form" title={editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"} aria-label={editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"}><SaveIcon /></button>}
             <button className="icon-button add-action" type="button" title="Novo atendimento" aria-label="Novo atendimento" onClick={startNewService}><PlusIcon /></button>
           </div>
         </header>
@@ -1365,10 +1364,6 @@ export default function Home() {
           <form id="service-record-form" className="form-panel" onSubmit={saveService}>
             <div className="section-header">
               <h2>{editingServiceRecord ? "Editar atendimento" : "Registrar atendimento"}</h2>
-              <div className="actions-row">
-                {editingServiceRecord && <button className="button ghost" type="button" onClick={startNewService}>Cancelar edição</button>}
-                <button className="icon-button save-action" type="submit" title={editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"} aria-label={editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"}><SaveIcon /></button>
-              </div>
             </div>
             <div className="fields-grid">
               <label>Máquina<select name="machine_id" required defaultValue={editingServiceRecord?.machine_id ?? serviceMachine?.id}>{machines.map((machine) => <option key={machine.id} value={machine.id}>{displayMachineCode(machine)}</option>)}</select></label>
@@ -1414,6 +1409,10 @@ export default function Home() {
                   </div>
                 </section>
               )}
+            </div>
+            <div className="service-form-actions">
+              {editingServiceRecord && <button className="button ghost" type="button" onClick={startNewService}>Cancelar edição</button>}
+              <button className="icon-button save-action" type="submit" title={editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"} aria-label={editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"}><SaveIcon /></button>
             </div>
           </form>
         )}

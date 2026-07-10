@@ -1140,6 +1140,16 @@ tbody tr:hover { background: var(--surface-2); }
   flex-wrap: wrap;
 }
 
+.service-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
 .row-actions {
   position: relative;
   display: inline-flex;
@@ -1261,7 +1271,7 @@ tbody tr:hover { background: var(--surface-2); }
 @media (max-width: 680px) {
   .workspace, .sidebar { padding: 18px; }
   .topbar, .section-header { align-items: stretch; flex-direction: column; }
-  .actions-row, .modal-actions { align-items: stretch; flex-direction: column; }
+  .actions-row, .modal-actions, .service-form-actions { align-items: stretch; flex-direction: column; }
   .details-grid { grid-template-columns: 1fr; }
   .machine-hero { padding: 18px; }
   .machine-title-row { flex-direction: column; }
