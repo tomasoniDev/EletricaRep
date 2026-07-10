@@ -10,6 +10,7 @@ export type Machine = {
   mechanical_list: string | null;
   software_code: string | null;
   ip_range: string | null;
+  vm: string | null;
   software_version: string | null;
   access_method: string | null;
   remote_access: "SINEMA" | "VNC" | "Sem acesso remoto" | null;

@@ -9,25 +9,37 @@ import type { Machine, Profile, ServiceRecord, Technician } from "@/lib/types";
 type View = "home" | "overview" | "machineDetail" | "service" | "registry";
 type RegistryTab = "machines" | "technicians";
 type SortDirection = "asc" | "desc";
-type MachineSortKey = "code" | "model" | "client" | "unit_city" | "serial" | "software_version" | "last_service";
+type MachineSortKey = "code" | "model" | "client" | "unit_city" | "serial" | "software_version" | "vm" | "last_service";
 type HistorySortKey = "service_date" | "equipment" | "technician_name" | "issue_summary";
 type TechnicianSortKey = "name" | "email";
 type RemoteAccess = "SINEMA" | "VNC" | "Sem acesso remoto";
 type ServiceType = "Acesso remoto" | "Visita técnica";
 type ThemeMode = "light" | "dark";
 type ContractType = "Seg-Sex" | "Seg-Sab" | "Garantia";
+type LeafletLayerTarget = LeafletMap | LeafletLayerGroup;
 type LeafletMap = {
   fitBounds: (bounds: [number, number][], options?: Record<string, unknown>) => LeafletMap;
+  getZoom: () => number;
+  hasLayer: (layer: LeafletLayerGroup) => boolean;
+  addLayer: (layer: LeafletLayerGroup) => LeafletMap;
+  removeLayer: (layer: LeafletLayerGroup) => LeafletMap;
+  on: (event: string, handler: () => void) => LeafletMap;
+  off: (event: string, handler: () => void) => LeafletMap;
   remove: () => void;
   setView: (center: [number, number], zoom: number) => LeafletMap;
 };
+type LeafletLayerGroup = {
+  addTo: (map: LeafletMap) => LeafletLayerGroup;
+  clearLayers: () => LeafletLayerGroup;
+};
 type LeafletMarker = {
-  addTo: (map: LeafletMap) => LeafletMarker;
+  addTo: (target: LeafletLayerTarget) => LeafletMarker;
   bindPopup: (content: string) => LeafletMarker;
 };
 type LeafletNamespace = {
   map: (element: HTMLElement, options?: Record<string, unknown>) => LeafletMap;
   tileLayer: (url: string, options?: Record<string, unknown>) => { addTo: (map: LeafletMap) => unknown };
+  layerGroup: () => LeafletLayerGroup;
   circleMarker: (center: [number, number], options?: Record<string, unknown>) => LeafletMarker;
 };
 
@@ -36,6 +48,7 @@ type MachineFormState = {
   mechanical_list: string;
   software_code: string;
   ip_range: string;
+  vm: string;
   serial: string;
   description: string;
   model: string;
@@ -102,6 +115,7 @@ const EMPTY_MACHINE_FORM: MachineFormState = {
   mechanical_list: "",
   software_code: "",
   ip_range: "",
+  vm: "",
   serial: "",
   description: "",
   model: "",
@@ -180,6 +194,7 @@ function machineFormFromMachine(machine?: Machine | null): MachineFormState {
     mechanical_list: machine.mechanical_list ?? "",
     software_code: machine.software_code ?? "",
     ip_range: machine.ip_range ?? "",
+    vm: machine.vm ?? "",
     serial: machine.serial ?? "",
     description: machine.description ?? "",
     model: machine.model ?? "",
@@ -245,6 +260,13 @@ function locationState(value?: string | null) {
   if (!text) return "Sem localização";
   const match = text.match(/(?:-|\/)\s*([A-Za-z]{2})\s*$/);
   return match ? match[1].toUpperCase() : "Sem UF";
+}
+
+function locationCity(value?: string | null) {
+  const text = value?.trim();
+  if (!text) return "";
+  const match = text.match(/^(.+?)(?:\s*[-/]\s*)[A-Za-z]{2}\s*$/);
+  return (match?.[1] ?? text).trim();
 }
 
 function percent(part: number, total: number) {
@@ -340,6 +362,30 @@ function escapeHtml(value: string) {
   }[character] ?? character));
 }
 
+async function geocodeCity(city: string, state: string) {
+  if (!city || !STATE_CENTERS[state]) return null;
+  const cacheKey = `tomasoni-map-city:${city.toLowerCase()}-${state.toLowerCase()}`;
+  const cached = window.localStorage.getItem(cacheKey);
+  if (cached) {
+    try {
+      const parsed = JSON.parse(cached) as [number, number];
+      if (Array.isArray(parsed) && parsed.length === 2) return parsed;
+    } catch {
+      window.localStorage.removeItem(cacheKey);
+    }
+  }
+
+  const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(`${city}, ${state}, Brasil`)}`);
+  if (!response.ok) return null;
+  const result = await response.json() as Array<{ lat?: string; lon?: string }>;
+  const first = result[0];
+  if (!first?.lat || !first?.lon) return null;
+  const point: [number, number] = [Number(first.lat), Number(first.lon)];
+  if (Number.isNaN(point[0]) || Number.isNaN(point[1])) return null;
+  window.localStorage.setItem(cacheKey, JSON.stringify(point));
+  return point;
+}
+
 function describeAuthError(error: unknown) {
   if (!error) return "erro não informado pelo Supabase.";
   if (typeof error === "string") return error || "erro não informado pelo Supabase.";
@@ -396,6 +442,72 @@ function helpText(view: View, registryTab: RegistryTab) {
   if (view === "service") return "Registre o atendimento com tipo, motivo breve e descrições completas. Em visita técnica, colete a assinatura do cliente para incluir no PDF.";
   if (registryTab === "machines") return "Cadastre ou altere máquinas e informações de acesso. Use o menu de ações da tabela para editar ou excluir cadastros.";
   return "Cadastre os técnicos disponíveis para lançamento dos atendimentos. O nome do técnico aparece no relatório e no histórico.";
+}
+
+function helpSections(view: View, registryTab: RegistryTab) {
+  if (view === "overview") {
+    return [
+      ["KPIs superiores", "Resumo rápido da base: máquinas cadastradas, atendimentos do mês, contratos, cobertura remota e máquinas que pedem atenção."],
+      ["Tendência de atendimentos", "Mostra o volume mensal dos últimos meses para perceber aumento ou queda na demanda."],
+      ["Acesso remoto", "Distribui a base entre SINEMA, VNC e máquinas sem acesso remoto cadastrado."],
+      ["Contratos", "Resume contratos ativos, vencidos e a vencer, separando também o tipo de contrato quando informado."],
+      ["Modelos", "Mostra quais modelos concentram mais máquinas cadastradas."],
+      ["Softwares por VM", "Conta códigos de software únicos por VM. Se duas máquinas usam o mesmo código de software, ele entra uma única vez naquela VM."],
+      ["Geolocalização", "No zoom inicial o mapa agrupa por estado. Ao aproximar, o mapa tenta posicionar as máquinas pela cidade cadastrada."],
+      ["Clientes", "Clientes com mais máquinas indica base instalada. Clientes mais atendidos indica volume de chamados registrados."],
+      ["Rankings inferiores", "Ajudam a localizar máquinas com mais atendimentos, máquinas há muito tempo sem registro e os últimos atendimentos lançados."]
+    ];
+  }
+
+  if (view === "registry" && registryTab === "machines") {
+    return [
+      ["Código", "Número do projeto da máquina ou referência principal usada pela equipe."],
+      ["Modelo e descrição", "Informe o tipo da máquina no modelo e detalhe a configuração no campo descrição."],
+      ["Cliente e localização", "Informe a empresa e a cidade com UF, preferencialmente no formato Cidade - UF."],
+      ["Mecânica", "Lista mecânica ou referência do projeto mecânico."],
+      ["Código do software", "Número do software da máquina. Ele é usado nos indicadores por VM."],
+      ["VM", "Nome ou identificação da VM onde o software está alocado."],
+      ["Faixa de IP", "Faixa reservada pela engenharia para a máquina ou software."],
+      ["Fabricação", "Mês e ano no formato mm/aa."],
+      ["Software", "Plataforma ou versão principal, como TIA V19, Scout ou equivalente."],
+      ["Acesso remoto", "Escolha SINEMA, VNC ou sem acesso remoto. Os campos adicionais aparecem conforme a opção."],
+      ["Contrato", "Preencha somente quando houver contrato ativo ou informação de vigência relevante."]
+    ];
+  }
+
+  if (view === "service") {
+    return [
+      ["Máquina e equipamento", "Selecione a máquina atendida e indique o equipamento ou área afetada."],
+      ["Tipo de atendimento", "Use acesso remoto para suporte remoto e visita técnica quando houver atendimento presencial."],
+      ["E-mails para envio", "Informe os destinatários separados por ponto e vírgula. Esses e-mails não entram no PDF."],
+      ["Motivo breve", "Resumo curto que aparece nas tabelas, por exemplo: Falha no acionamento X."],
+      ["Campos descritivos", "Registre solicitação, diagnóstico, serviço realizado e observações com o máximo de clareza."],
+      ["Assinatura", "Em visita técnica, o campo de assinatura entra no relatório em PDF."]
+    ];
+  }
+
+  if (view === "machineDetail") {
+    return [
+      ["Card principal", "Mostra os dados cadastrais mais importantes da máquina."],
+      ["Software", "Concentra software, código do software, VM, faixa de IP e último atendimento."],
+      ["Acesso remoto", "Mostra informações de SINEMA ou VNC cadastradas para consulta rápida."],
+      ["Histórico", "Clique em um atendimento para abrir o popup com o registro completo e baixar o PDF."],
+      ["Ações rápidas", "Permite registrar novo atendimento, alterar cadastro ou baixar o último PDF."]
+    ];
+  }
+
+  if (view === "home") {
+    return [
+      ["Filtro", "Use para buscar por código, modelo, cliente, localização, VM, software ou acesso remoto."],
+      ["Tabela", "Clique no código da máquina para abrir seus dados cadastrais e histórico."],
+      ["Ordenação", "Clique nos cabeçalhos para ordenar a lista conforme a coluna escolhida."]
+    ];
+  }
+
+  return [
+    ["Cadastro de usuários", "Esta área deve ser usada apenas para manter técnicos legados, se necessário."],
+    ["Usuário logado", "Nos novos atendimentos, o técnico responsável é preenchido automaticamente pelo usuário conectado."]
+  ];
 }
 
 function displayUserName(value: string) {
@@ -688,9 +800,25 @@ export default function Home() {
       return days === null || days > 180;
     });
     const machinesByState = new Map<string, Machine[]>();
+    const machinesByCity = new Map<string, { city: string; state: string; machines: Machine[] }>();
+    const softwareByVm = new Map<string, Set<string>>();
     machines.forEach((machine) => {
       const state = locationState(machine.unit_city);
       machinesByState.set(state, [...(machinesByState.get(state) ?? []), machine]);
+      const city = locationCity(machine.unit_city);
+      if (city && STATE_CENTERS[state]) {
+        const key = `${city}|${state}`.toLowerCase();
+        const current = machinesByCity.get(key) ?? { city, state, machines: [] };
+        current.machines.push(machine);
+        machinesByCity.set(key, current);
+      }
+      const softwareCode = machine.software_code?.trim();
+      if (softwareCode) {
+        const vm = machine.vm?.trim() || "VM não informada";
+        const current = softwareByVm.get(vm) ?? new Set<string>();
+        current.add(softwareCode.toUpperCase());
+        softwareByVm.set(vm, current);
+      }
     });
 
     const countBy = <T,>(items: T[], label: (item: T) => string) => {
@@ -747,9 +875,17 @@ export default function Home() {
         .filter(([state]) => Boolean(STATE_CENTERS[state]))
         .map(([state, stateMachines]) => ({ state, value: stateMachines.length, machines: stateMachines }))
         .sort((a, b) => b.value - a.value || compareText(a.state, b.state)),
+      geoCities: [...machinesByCity.values()]
+        .map((item) => ({ ...item, value: item.machines.length }))
+        .sort((a, b) => b.value - a.value || compareText(`${a.city}-${a.state}`, `${b.city}-${b.state}`)),
       byContractType: countBy(activeContracts, (machine) => machine.support_contract_type || "Tipo não informado"),
       byServiceType: countBy(serviceEntries, ({ record }) => normalizeServiceType(record.service_type)),
       byClient: countBy(machines, (machine) => machine.client?.trim() || "Cliente não informado").slice(0, 8),
+      byClientServices: countBy(serviceEntries, ({ machine }) => machine.client?.trim() || "Cliente não informado").slice(0, 8),
+      byVmSoftware: [...softwareByVm.entries()]
+        .map(([name, softwareCodes]) => ({ name, value: softwareCodes.size }))
+        .sort((a, b) => b.value - a.value || compareText(a.name, b.name))
+        .slice(0, 8),
       serviceTrend: [...serviceMonthCounts.entries()].map(([name, value]) => ({ name: monthLabel(name), value })),
       topMachinesByService,
       machineAttention,
@@ -784,7 +920,10 @@ export default function Home() {
           attribution: "&copy; OpenStreetMap"
         }).addTo(map);
 
+        const stateLayer = leaflet.layerGroup();
+        const cityLayer = leaflet.layerGroup();
         const bounds: [number, number][] = [];
+
         overviewData.geoStates.forEach((item) => {
           const center = STATE_CENTERS[item.state];
           if (!center) return;
@@ -801,11 +940,46 @@ export default function Home() {
             fillOpacity: 0.72,
             weight: 2
           })
-            .addTo(map)
+            .addTo(stateLayer)
             .bindPopup(`<strong>${escapeHtml(item.state)} - ${item.value} máquina${item.value === 1 ? "" : "s"}</strong><ul>${machineList}</ul>${item.value > 8 ? `<small>+${item.value - 8} máquinas</small>` : ""}`);
         });
 
+        stateLayer.addTo(map);
+
+        const updateGeoLayers = () => {
+          const showCities = map.getZoom() >= 7;
+          if (showCities) {
+            if (map.hasLayer(stateLayer)) map.removeLayer(stateLayer);
+            if (!map.hasLayer(cityLayer)) map.addLayer(cityLayer);
+          } else {
+            if (map.hasLayer(cityLayer)) map.removeLayer(cityLayer);
+            if (!map.hasLayer(stateLayer)) map.addLayer(stateLayer);
+          }
+        };
+
+        Promise.all(overviewData.geoCities.map(async (item) => {
+          const center = await geocodeCity(item.city, item.state);
+          if (!center || cancelled) return;
+          const machineList = item.machines
+            .slice(0, 8)
+            .map((machine) => `<li>${escapeHtml(displayMachineCode(machine))} - ${escapeHtml(machine.client || "Cliente não informado")}</li>`)
+            .join("");
+          leaflet.circleMarker(center, {
+            radius: Math.min(22, 7 + item.value * 2),
+            color: "#0f9b5f",
+            fillColor: "#0f9b5f",
+            fillOpacity: 0.72,
+            weight: 2
+          })
+            .addTo(cityLayer)
+            .bindPopup(`<strong>${escapeHtml(item.city)} - ${escapeHtml(item.state)}</strong><br/><span>${item.value} máquina${item.value === 1 ? "" : "s"}</span><ul>${machineList}</ul>${item.value > 8 ? `<small>+${item.value - 8} máquinas</small>` : ""}`);
+        })).then(() => {
+          if (!cancelled) updateGeoLayers();
+        });
+
+        map.on("zoomend", updateGeoLayers);
         if (bounds.length > 1) map.fitBounds(bounds, { padding: [28, 28], maxZoom: 6 });
+        updateGeoLayers();
         leafletMapRef.current = map;
       })
       .catch(() => {
@@ -815,7 +989,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [overviewData.geoStates, view]);
+  }, [overviewData.geoCities, overviewData.geoStates, view]);
 
   useEffect(() => {
     setMachineForm(machineFormFromMachine(editingMachine));
@@ -1088,7 +1262,7 @@ export default function Home() {
     return [...machines]
       .filter((machine) => {
         if (!term) return true;
-        return [machine.code, machine.mechanical_list, machine.software_code, machine.model, machine.description, machine.client, machine.unit_city, machine.serial, machine.manufacture_month, machine.software_version, machine.remote_access, machine.access_method]
+        return [machine.code, machine.mechanical_list, machine.software_code, machine.ip_range, machine.vm, machine.model, machine.description, machine.client, machine.unit_city, machine.serial, machine.manufacture_month, machine.software_version, machine.remote_access, machine.access_method]
           .join(" ")
           .toLowerCase()
           .includes(term);
@@ -1104,6 +1278,7 @@ export default function Home() {
         if (machineSort.key === "unit_city") result = compareText(a.unit_city, b.unit_city);
         if (machineSort.key === "serial") result = compareText(a.serial, b.serial);
         if (machineSort.key === "software_version") result = compareText(a.software_version, b.software_version);
+        if (machineSort.key === "vm") result = compareText(a.vm, b.vm);
 
         return result * direction;
       });
@@ -1214,6 +1389,7 @@ export default function Home() {
       mechanical_list: machineForm.mechanical_list.trim() || null,
       software_code: machineForm.software_code.trim().toUpperCase() || null,
       ip_range: machineForm.ip_range.trim() || null,
+      vm: machineForm.vm.trim() || null,
       software_version: machineForm.software_version.trim() || null,
       access_method: null,
       remote_access: machineForm.remote_access,
@@ -1587,10 +1763,22 @@ export default function Home() {
                 </div>
               </article>
 
+              <article className="dashboard-card">
+                <div className="card-title"><DetailIcon type="software" /><h3>Softwares por VM</h3></div>
+                <div className="bar-list">
+                  {overviewData.byVmSoftware.length ? overviewData.byVmSoftware.map((item) => (
+                    <div key={item.name}>
+                      <span>{item.name}</span><strong>{item.value}</strong>
+                      <em><i style={{ width: `${percent(item.value, Math.max(...overviewData.byVmSoftware.map((entry) => entry.value), 1))}%` }} /></em>
+                    </div>
+                  )) : <p className="empty-card-note">Nenhum código de software com VM cadastrada.</p>}
+                </div>
+              </article>
+
               <article className="dashboard-card geo-card">
-                <div className="card-title"><DetailIcon type="location" /><h3>Geolocalização</h3></div>
+                <div className="card-title"><DetailIcon type="location" /><h3>Geolocalização</h3><span className="soft-pill">Estados / cidades</span></div>
                 <div className="geo-panel">
-                  <div className="real-map" ref={overviewMapRef} aria-label="Mapa de máquinas por estado" />
+                  <div className="real-map" ref={overviewMapRef} aria-label="Mapa de máquinas por estado e cidade" />
                   <div className="state-map-list">
                     {overviewData.byState.map((item) => (
                       <button key={item.name} type="button" onClick={() => { setMachineFilter(item.name === "Sem localização" ? "" : item.name); setView("home"); }}>
@@ -1603,12 +1791,24 @@ export default function Home() {
               </article>
 
               <article className="dashboard-card">
-                <div className="card-title"><DetailIcon type="client" /><h3>Clientes</h3></div>
+                <div className="card-title"><DetailIcon type="client" /><h3>Clientes com mais máquinas</h3></div>
                 <div className="bar-list">
                   {overviewData.byClient.map((item) => (
                     <div key={item.name}>
                       <span>{item.name}</span><strong>{item.value}</strong>
                       <em><i style={{ width: `${percent(item.value, overviewData.totalMachines)}%` }} /></em>
+                    </div>
+                  ))}
+                </div>
+              </article>
+
+              <article className="dashboard-card">
+                <div className="card-title"><DetailIcon type="history" /><h3>Clientes mais atendidos</h3></div>
+                <div className="bar-list">
+                  {overviewData.byClientServices.map((item) => (
+                    <div key={item.name}>
+                      <span>{item.name}</span><strong>{item.value}</strong>
+                      <em><i style={{ width: `${percent(item.value, overviewData.totalServices)}%` }} /></em>
                     </div>
                   ))}
                 </div>
@@ -1685,6 +1885,7 @@ export default function Home() {
                     <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("model")}>Modelo <span>{sortMark(machineSort.key === "model", machineSort.direction)}</span></button></th>
                     <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("client")}>Cliente <span>{sortMark(machineSort.key === "client", machineSort.direction)}</span></button></th>
                     <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("unit_city")}>Unidade / Cidade <span>{sortMark(machineSort.key === "unit_city", machineSort.direction)}</span></button></th>
+                    <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("vm")}>VM <span>{sortMark(machineSort.key === "vm", machineSort.direction)}</span></button></th>
                     <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("last_service")}>Último atendimento <span>{sortMark(machineSort.key === "last_service", machineSort.direction)}</span></button></th>
                   </tr></thead>
                   <tbody>
@@ -1694,6 +1895,7 @@ export default function Home() {
                         <td>{machine.model || "-"}</td>
                         <td>{machine.client || "-"}</td>
                         <td>{machine.unit_city || "-"}</td>
+                        <td>{machine.vm || "-"}</td>
                         <td>{formatDate(lastServiceDate(machine))}</td>
                       </tr>
                     ))}
@@ -1742,6 +1944,7 @@ export default function Home() {
                 <dl className="spec-list">
                   <div><dt>Software</dt><dd><span className="soft-pill">{selectedMachine.software_version || "-"}</span></dd></div>
                   <div><dt>Código do software</dt><dd>{selectedMachine.software_code || "-"}</dd></div>
+                  <div><dt>VM</dt><dd>{selectedMachine.vm || "-"}</dd></div>
                   <div><dt>Faixa de IP</dt><dd>{selectedMachine.ip_range || "-"}</dd></div>
                   <div><dt>Último atendimento</dt><dd>{formatDate(lastServiceDate(selectedMachine))}</dd></div>
                 </dl>
@@ -1917,6 +2120,7 @@ export default function Home() {
                       <label>Localização<input value={machineForm.unit_city} onChange={(event) => updateMachineForm("unit_city", event.target.value)} placeholder="Cidade - Estado" /></label>
                       <label>Mecânica<input value={machineForm.mechanical_list} onChange={(event) => updateMachineForm("mechanical_list", event.target.value)} placeholder="Lista mecânica" /></label>
                       <label>Código do software<input value={machineForm.software_code} onChange={(event) => updateMachineForm("software_code", event.target.value)} placeholder="Código do software da máquina" /></label>
+                      <label>VM<input value={machineForm.vm} onChange={(event) => updateMachineForm("vm", event.target.value)} placeholder="VM onde o software está alocado" /></label>
                       <label>Faixa de IP<input value={machineForm.ip_range} onChange={(event) => updateMachineForm("ip_range", event.target.value)} placeholder="Ex.: 189.1.87.xxx" /></label>
                       <label>Número de série<input value={machineForm.serial} onChange={(event) => updateMachineForm("serial", event.target.value)} /></label>
                       <label>Fabricação<input value={machineForm.manufacture_month} onChange={(event) => updateMachineForm("manufacture_month", event.target.value)} placeholder="mm/aa" pattern="\d{2}/\d{2}" /></label>
@@ -1971,13 +2175,14 @@ export default function Home() {
                   <div className="section-header"><h2>Máquinas cadastradas</h2><span>{registryMachines.length} registros</span></div>
                   <div className="table-wrap">
                     <table>
-                      <thead><tr><th>Código</th><th>Modelo</th><th>Cliente</th><th>Localização</th><th>Fabricação</th><th>Acesso</th><th>Ações</th></tr></thead>
+                      <thead><tr><th>Código</th><th>Modelo</th><th>Cliente</th><th>Localização</th><th>VM</th><th>Fabricação</th><th>Acesso</th><th>Ações</th></tr></thead>
                       <tbody>{registryMachines.map((machine) => (
                         <tr key={machine.id}>
                           <td>{displayMachineCode(machine)}</td>
                           <td>{machine.model || "-"}</td>
                           <td>{machine.client || "-"}</td>
                           <td>{machine.unit_city || "-"}</td>
+                          <td>{machine.vm || "-"}</td>
                           <td>{formatMonthYear(machine.manufacture_month)}</td>
                           <td>{machine.remote_access || machine.access_method || "Sem acesso remoto"}</td>
                           <td>
@@ -2109,6 +2314,14 @@ export default function Home() {
                 <button className="button ghost" type="button" onClick={() => setHelpOpen(false)}>Fechar</button>
               </div>
               <p>{helpText(view, registryTab)}</p>
+              <div className="help-topic-list">
+                {helpSections(view, registryTab).map(([title, body]) => (
+                  <article key={title}>
+                    <h3>{title}</h3>
+                    <p>{body}</p>
+                  </article>
+                ))}
+              </div>
             </section>
           </div>
         )}

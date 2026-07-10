@@ -919,6 +919,7 @@ input:focus, textarea:focus, select:focus {
 .overview-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-flow: dense;
   gap: 16px;
 }
 
@@ -1026,24 +1027,25 @@ input:focus, textarea:focus, select:focus {
 
 .state-map-list {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  align-content: start;
+  gap: 6px;
 }
 
 .geo-card {
   grid-column: span 2;
+  grid-row: span 2;
 }
 
 .geo-panel {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(190px, 0.6fr);
+  grid-template-columns: minmax(0, 1fr) minmax(148px, 0.28fr);
   gap: 14px;
-  min-height: 320px;
+  min-height: 520px;
 }
 
 .real-map {
   overflow: hidden;
-  min-height: 320px;
+  min-height: 520px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--surface-2);
@@ -1071,12 +1073,12 @@ input:focus, textarea:focus, select:focus {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 44px;
+  min-height: 34px;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface-2);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 4%, var(--surface));
   color: var(--text);
-  padding: 0 12px;
+  padding: 0 10px;
   cursor: pointer;
 }
 
@@ -1086,12 +1088,25 @@ input:focus, textarea:focus, select:focus {
 }
 
 .state-map-list span {
-  font-weight: 750;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .state-map-list strong {
   color: var(--primary);
+  font-size: 0.82rem;
   font-weight: 850;
+}
+
+.empty-card-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.45;
 }
 
 .donut-panel {
@@ -1369,19 +1384,22 @@ table {
 }
 
 .home-table th:nth-child(1),
-.home-table td:nth-child(1) { width: 16%; }
+.home-table td:nth-child(1) { width: 15%; }
 
 .home-table th:nth-child(2),
-.home-table td:nth-child(2) { width: 17%; }
+.home-table td:nth-child(2) { width: 16%; }
 
 .home-table th:nth-child(3),
 .home-table td:nth-child(3) { width: 17%; }
 
 .home-table th:nth-child(4),
-.home-table td:nth-child(4) { width: 26%; }
+.home-table td:nth-child(4) { width: 23%; }
 
 .home-table th:nth-child(5),
-.home-table td:nth-child(5) { width: 24%; }
+.home-table td:nth-child(5) { width: 13%; }
+
+.home-table th:nth-child(6),
+.home-table td:nth-child(6) { width: 16%; }
 
 .history-table {
   min-width: 760px;
@@ -1494,7 +1512,10 @@ tbody tr:hover { background: var(--surface-2); }
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 20;
+  width: 100vw;
+  min-height: 100vh;
+  min-height: 100dvh;
+  z-index: 1000;
   display: grid;
   place-items: center;
   background: rgba(17, 24, 39, 0.38);
@@ -1556,6 +1577,32 @@ tbody tr:hover { background: var(--surface-2); }
   line-height: 1.55;
 }
 
+.help-card {
+  width: min(920px, 100%);
+}
+
+.help-topic-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.help-topic-list article {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-3);
+  padding: 12px;
+}
+
+.help-topic-list h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
 .modal-actions {
   margin-top: 18px;
   padding-top: 16px;
@@ -1589,6 +1636,7 @@ tbody tr:hover { background: var(--surface-2); }
   }
   .geo-card {
     grid-column: 1 / -1;
+    grid-row: auto;
   }
   .machine-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1619,6 +1667,7 @@ tbody tr:hover { background: var(--surface-2); }
 
   .geo-card {
     grid-column: 1 / -1;
+    grid-row: auto;
   }
 }
 
@@ -1638,8 +1687,10 @@ tbody tr:hover { background: var(--surface-2); }
     grid-template-columns: 1fr;
   }
   .wide-card { grid-column: auto; }
-  .geo-card { grid-column: auto; }
+  .geo-card { grid-column: auto; grid-row: auto; }
   .geo-panel { grid-template-columns: 1fr; }
+  .real-map { min-height: 360px; }
+  .help-topic-list { grid-template-columns: 1fr; }
   .donut-panel { grid-template-columns: 1fr; justify-items: center; }
   .overview-table button { grid-template-columns: 1fr auto; }
   .overview-table em { grid-column: 1 / -1; }
