@@ -16,6 +16,20 @@ type RemoteAccess = "SINEMA" | "VNC" | "Sem acesso remoto";
 type ServiceType = "Acesso remoto" | "Visita técnica";
 type ThemeMode = "light" | "dark";
 type ContractType = "Seg-Sex" | "Seg-Sab" | "Garantia";
+type LeafletMap = {
+  fitBounds: (bounds: [number, number][], options?: Record<string, unknown>) => LeafletMap;
+  remove: () => void;
+  setView: (center: [number, number], zoom: number) => LeafletMap;
+};
+type LeafletMarker = {
+  addTo: (map: LeafletMap) => LeafletMarker;
+  bindPopup: (content: string) => LeafletMarker;
+};
+type LeafletNamespace = {
+  map: (element: HTMLElement, options?: Record<string, unknown>) => LeafletMap;
+  tileLayer: (url: string, options?: Record<string, unknown>) => { addTo: (map: LeafletMap) => unknown };
+  circleMarker: (center: [number, number], options?: Record<string, unknown>) => LeafletMarker;
+};
 
 type MachineFormState = {
   code: string;
@@ -52,6 +66,37 @@ const THEME_KEY = "tomasoni-servicecore-theme";
 const REMOTE_ACCESS_OPTIONS: RemoteAccess[] = ["Sem acesso remoto", "SINEMA", "VNC"];
 const SERVICE_TYPE_OPTIONS: ServiceType[] = ["Acesso remoto", "Visita técnica"];
 const CONTRACT_TYPE_OPTIONS: ContractType[] = ["Seg-Sex", "Seg-Sab", "Garantia"];
+const LEAFLET_CSS_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+const LEAFLET_JS_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+const STATE_CENTERS: Record<string, [number, number]> = {
+  AC: [-9.0238, -70.812],
+  AL: [-9.5713, -36.782],
+  AP: [1.3545, -51.916],
+  AM: [-3.4168, -65.856],
+  BA: [-12.5797, -41.7007],
+  CE: [-5.4984, -39.3206],
+  DF: [-15.7998, -47.8645],
+  ES: [-19.1834, -40.3089],
+  GO: [-15.827, -49.8362],
+  MA: [-5.42, -45.44],
+  MT: [-12.6819, -56.9211],
+  MS: [-20.7722, -54.7852],
+  MG: [-18.5122, -44.555],
+  PA: [-3.79, -52.48],
+  PB: [-7.24, -36.78],
+  PR: [-24.89, -51.55],
+  PE: [-8.38, -37.86],
+  PI: [-6.6, -42.28],
+  RJ: [-22.25, -42.66],
+  RN: [-5.81, -36.59],
+  RS: [-30.17, -53.5],
+  RO: [-10.83, -63.34],
+  RR: [2.05, -61.39],
+  SC: [-27.33, -50.48],
+  SP: [-22.19, -48.79],
+  SE: [-10.57, -37.45],
+  TO: [-10.25, -48.25]
+};
 const EMPTY_MACHINE_FORM: MachineFormState = {
   code: "",
   mechanical_list: "",
@@ -242,6 +287,59 @@ function clearAuthConfirmation() {
   window.localStorage.removeItem(AUTH_CONFIRMED_AT_KEY);
 }
 
+let leafletLoadPromise: Promise<LeafletNamespace> | null = null;
+
+function loadLeaflet() {
+  if (typeof window === "undefined") return Promise.reject(new Error("Mapa indisponível fora do navegador."));
+  const existingLeaflet = (window as Window & { L?: LeafletNamespace }).L;
+  if (existingLeaflet) return Promise.resolve(existingLeaflet);
+
+  if (!document.querySelector(`link[href="${LEAFLET_CSS_URL}"]`)) {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = LEAFLET_CSS_URL;
+    document.head.appendChild(link);
+  }
+
+  if (!leafletLoadPromise) {
+    leafletLoadPromise = new Promise((resolve, reject) => {
+      const existingScript = document.querySelector<HTMLScriptElement>(`script[src="${LEAFLET_JS_URL}"]`);
+      if (existingScript) {
+        existingScript.addEventListener("load", () => {
+          const loadedLeaflet = (window as Window & { L?: LeafletNamespace }).L;
+          if (loadedLeaflet) resolve(loadedLeaflet);
+          else reject(new Error("Leaflet não carregou corretamente."));
+        }, { once: true });
+        existingScript.addEventListener("error", () => reject(new Error("Falha ao carregar o mapa.")), { once: true });
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.src = LEAFLET_JS_URL;
+      script.async = true;
+      script.onload = () => {
+        const loadedLeaflet = (window as Window & { L?: LeafletNamespace }).L;
+        if (loadedLeaflet) resolve(loadedLeaflet);
+        else reject(new Error("Leaflet não carregou corretamente."));
+      };
+      script.onerror = () => reject(new Error("Falha ao carregar o mapa."));
+      document.head.appendChild(script);
+    });
+  }
+
+  return leafletLoadPromise;
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#039;"
+  }[character] ?? character));
+}
+
 function describeAuthError(error: unknown) {
   if (!error) return "erro não informado pelo Supabase.";
   if (typeof error === "string") return error || "erro não informado pelo Supabase.";
@@ -430,6 +528,8 @@ function DetailIcon({ type }: { type: "client" | "location" | "serial" | "calend
 
 export default function Home() {
   const signatureCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const overviewMapRef = useRef<HTMLDivElement | null>(null);
+  const leafletMapRef = useRef<LeafletMap | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUserId, setCurrentUserId] = useState("");
@@ -587,6 +687,11 @@ export default function Home() {
       const days = daysSince(lastServiceDate(machine));
       return days === null || days > 180;
     });
+    const machinesByState = new Map<string, Machine[]>();
+    machines.forEach((machine) => {
+      const state = locationState(machine.unit_city);
+      machinesByState.set(state, [...(machinesByState.get(state) ?? []), machine]);
+    });
 
     const countBy = <T,>(items: T[], label: (item: T) => string) => {
       const map = new Map<string, number>();
@@ -638,6 +743,10 @@ export default function Home() {
       byModel: countBy(machines, (machine) => machine.model?.trim() || "Modelo não informado").slice(0, 7),
       byAccess: countBy(machines, (machine) => normalizeRemoteAccess(machine.remote_access ?? machine.access_method)),
       byState: countBy(machines, (machine) => locationState(machine.unit_city)).slice(0, 8),
+      geoStates: [...machinesByState.entries()]
+        .filter(([state]) => Boolean(STATE_CENTERS[state]))
+        .map(([state, stateMachines]) => ({ state, value: stateMachines.length, machines: stateMachines }))
+        .sort((a, b) => b.value - a.value || compareText(a.state, b.state)),
       byContractType: countBy(activeContracts, (machine) => machine.support_contract_type || "Tipo não informado"),
       byServiceType: countBy(serviceEntries, ({ record }) => normalizeServiceType(record.service_type)),
       byClient: countBy(machines, (machine) => machine.client?.trim() || "Cliente não informado").slice(0, 8),
@@ -647,6 +756,66 @@ export default function Home() {
       recentServices
     };
   }, [machines]);
+
+  useEffect(() => {
+    if (view !== "overview" || !overviewMapRef.current) {
+      if (leafletMapRef.current) {
+        leafletMapRef.current.remove();
+        leafletMapRef.current = null;
+      }
+      return;
+    }
+
+    let cancelled = false;
+    loadLeaflet()
+      .then((leaflet) => {
+        if (cancelled || !overviewMapRef.current) return;
+        if (leafletMapRef.current) {
+          leafletMapRef.current.remove();
+          leafletMapRef.current = null;
+        }
+
+        const map = leaflet.map(overviewMapRef.current, {
+          scrollWheelZoom: true,
+          zoomControl: true
+        }).setView([-14.235, -51.9253], 4);
+
+        leaflet.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: "&copy; OpenStreetMap"
+        }).addTo(map);
+
+        const bounds: [number, number][] = [];
+        overviewData.geoStates.forEach((item) => {
+          const center = STATE_CENTERS[item.state];
+          if (!center) return;
+          bounds.push(center);
+          const machineList = item.machines
+            .slice(0, 8)
+            .map((machine) => `<li>${escapeHtml(displayMachineCode(machine))} - ${escapeHtml(machine.client || "Cliente não informado")}</li>`)
+            .join("");
+
+          leaflet.circleMarker(center, {
+            radius: Math.min(28, 9 + item.value * 3),
+            color: "#1268d8",
+            fillColor: "#1268d8",
+            fillOpacity: 0.72,
+            weight: 2
+          })
+            .addTo(map)
+            .bindPopup(`<strong>${escapeHtml(item.state)} - ${item.value} máquina${item.value === 1 ? "" : "s"}</strong><ul>${machineList}</ul>${item.value > 8 ? `<small>+${item.value - 8} máquinas</small>` : ""}`);
+        });
+
+        if (bounds.length > 1) map.fitBounds(bounds, { padding: [28, 28], maxZoom: 6 });
+        leafletMapRef.current = map;
+      })
+      .catch(() => {
+        setMessage("Não foi possível carregar o mapa. Verifique a conexão e tente novamente.");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [overviewData.geoStates, view]);
 
   useEffect(() => {
     setMachineForm(machineFormFromMachine(editingMachine));
@@ -1418,15 +1587,18 @@ export default function Home() {
                 </div>
               </article>
 
-              <article className="dashboard-card">
+              <article className="dashboard-card geo-card">
                 <div className="card-title"><DetailIcon type="location" /><h3>Geolocalização</h3></div>
-                <div className="state-map-list">
-                  {overviewData.byState.map((item) => (
-                    <button key={item.name} type="button" onClick={() => { setMachineFilter(item.name === "Sem localização" ? "" : item.name); setView("home"); }}>
-                      <span>{item.name}</span>
-                      <strong>{item.value}</strong>
-                    </button>
-                  ))}
+                <div className="geo-panel">
+                  <div className="real-map" ref={overviewMapRef} aria-label="Mapa de máquinas por estado" />
+                  <div className="state-map-list">
+                    {overviewData.byState.map((item) => (
+                      <button key={item.name} type="button" onClick={() => { setMachineFilter(item.name === "Sem localização" ? "" : item.name); setView("home"); }}>
+                        <span>{item.name}</span>
+                        <strong>{item.value}</strong>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </article>
 

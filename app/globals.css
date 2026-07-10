@@ -1030,6 +1030,43 @@ input:focus, textarea:focus, select:focus {
   gap: 10px;
 }
 
+.geo-card {
+  grid-column: span 2;
+}
+
+.geo-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(190px, 0.6fr);
+  gap: 14px;
+  min-height: 320px;
+}
+
+.real-map {
+  overflow: hidden;
+  min-height: 320px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.real-map .leaflet-popup-content {
+  margin: 12px 14px;
+  color: #152033;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  line-height: 1.35;
+}
+
+.real-map .leaflet-popup-content strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #1268d8;
+}
+
+.real-map .leaflet-popup-content ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
 .state-map-list button {
   display: flex;
   align-items: center;
@@ -1550,6 +1587,9 @@ tbody tr:hover { background: var(--surface-2); }
   .wide-card {
     grid-column: 1 / -1;
   }
+  .geo-card {
+    grid-column: 1 / -1;
+  }
   .machine-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1576,6 +1616,10 @@ tbody tr:hover { background: var(--surface-2); }
   .wide-card {
     grid-column: 1 / -1;
   }
+
+  .geo-card {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 680px) {
@@ -1594,6 +1638,8 @@ tbody tr:hover { background: var(--surface-2); }
     grid-template-columns: 1fr;
   }
   .wide-card { grid-column: auto; }
+  .geo-card { grid-column: auto; }
+  .geo-panel { grid-template-columns: 1fr; }
   .donut-panel { grid-template-columns: 1fr; justify-items: center; }
   .overview-table button { grid-template-columns: 1fr auto; }
   .overview-table em { grid-column: 1 / -1; }
