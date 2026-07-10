@@ -72,6 +72,7 @@ type MachineFormState = {
 };
 
 const ALLOWED_EMAIL_DOMAINS = ["tomasoni.ind.br", "tomasoni.in.br"];
+const BACKUP_ALLOWED_EMAIL = "lucas.lessa@tomasoni.ind.br";
 const DEFAULT_MESSAGE = "Consulte uma máquina pelo código ou selecione uma linha da tabela.";
 const AUTH_CONFIRMED_AT_KEY = "tomasoni-servicecore-auth-confirmed-at";
 const AUTH_CONFIRMATION_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -228,6 +229,17 @@ function parseEmails(value: string) {
 function lastServiceDate(machine: Machine) {
   const dates = machine.service_records?.map((record) => record.service_date).filter(Boolean) ?? [];
   return dates.sort().at(-1) ?? "";
+}
+
+function csvCell(value: unknown) {
+  const text = value === null || value === undefined ? "" : String(value);
+  return `"${text.replace(/"/g, "\"\"")}"`;
+}
+
+function fileTimestamp() {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
 }
 
 function daysSince(value?: string | null) {
@@ -780,6 +792,7 @@ export default function Home() {
   const serviceMachine = selectedMachine ?? machines[0];
   const editingMachine = machines.find((machine) => machine.id === editingMachineId);
   const showRemoteAccess = machineHasRemoteAccess(machineForm.remote_access);
+  const canDownloadBackup = currentUserEmail.trim().toLowerCase() === BACKUP_ALLOWED_EMAIL;
   const selectedMachineAccess = normalizeRemoteAccess(selectedMachine?.remote_access ?? selectedMachine?.access_method);
   const selectedMachineContractDays = daysUntil(selectedMachine?.support_contract_until);
   const selectedMachineRecentHistory = [...(selectedMachine?.service_records ?? [])]
@@ -1161,6 +1174,90 @@ export default function Home() {
     setUserMenuOpen(false);
     setProfileName(currentUserName || displayUserName(currentUserEmail));
     setProfileModalOpen(true);
+  }
+
+  function downloadMachinesBackup() {
+    if (!canDownloadBackup) {
+      setUserMenuOpen(false);
+      setMessage("Backup disponÃ­vel apenas para usuÃ¡rio autorizado.");
+      return;
+    }
+
+    const headers = [
+      "CÃ³digo",
+      "Modelo",
+      "DescriÃ§Ã£o",
+      "Cliente",
+      "LocalizaÃ§Ã£o",
+      "NÃºmero de sÃ©rie",
+      "Lista mecÃ¢nica",
+      "FabricaÃ§Ã£o",
+      "Software",
+      "CÃ³digo do software",
+      "VM",
+      "Faixa de IP",
+      "Acesso remoto",
+      "IP de acesso VNC",
+      "Senha VNC",
+      "UsuÃ¡rio VM",
+      "Senha VM",
+      "ObservaÃ§Ãµes VNC",
+      "Device Name SINEMA",
+      "Subnet Name SINEMA",
+      "ObservaÃ§Ãµes SINEMA",
+      "Contrato ativo",
+      "Tipo de contrato",
+      "Final da vigÃªncia",
+      "Ãšltimo atendimento",
+      "Quantidade de atendimentos",
+      "Criado em",
+      "Atualizado em"
+    ];
+
+    const rows = machines.map((machine) => [
+      displayMachineCode(machine),
+      machine.model ?? "",
+      machine.description ?? "",
+      machine.client ?? "",
+      machine.unit_city ?? "",
+      machine.serial ?? "",
+      machine.mechanical_list ?? "",
+      machine.manufacture_month ? formatMonthYear(machine.manufacture_month) : "",
+      machine.software_version ?? "",
+      machine.software_code ?? "",
+      machine.vm ?? "",
+      machine.ip_range ?? "",
+      normalizeRemoteAccess(machine.remote_access ?? machine.access_method),
+      machine.vnc_ip ?? "",
+      machine.vnc_password ?? "",
+      machine.vnc_user ?? "",
+      machine.vnc_vm_password ?? "",
+      machine.vnc_notes ?? "",
+      machine.sinema_url ?? "",
+      machine.sinema_user ?? "",
+      machine.sinema_notes ?? "",
+      machine.support_contract_active === null || machine.support_contract_active === undefined ? "" : machine.support_contract_active ? "Sim" : "NÃ£o",
+      machine.support_contract_type ?? "",
+      machine.support_contract_until ? formatDate(machine.support_contract_until) : "",
+      lastServiceDate(machine) ? formatDate(lastServiceDate(machine)) : "",
+      machine.service_records?.length ?? 0,
+      machine.created_at ? formatDate(machine.created_at.slice(0, 10)) : "",
+      machine.updated_at ? formatDate(machine.updated_at.slice(0, 10)) : ""
+    ]);
+
+    const csv = [headers, ...rows].map((row) => row.map(csvCell).join(";")).join("\r\n");
+    const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `backup-maquinas-tomasoni-${fileTimestamp()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+
+    setUserMenuOpen(false);
+    setMessage(`Backup de ${machines.length} mÃ¡quinas gerado em planilha CSV.`);
   }
 
   async function saveUserProfile(event: FormEvent<HTMLFormElement>) {
@@ -1685,6 +1782,7 @@ export default function Home() {
           {userMenuOpen && (
             <div className="user-menu-content">
               <button type="button" onClick={editUser}><EditIcon /> Editar Usuário</button>
+              {canDownloadBackup && <button type="button" onClick={downloadMachinesBackup}><PdfDownloadIcon /> Backup de máquinas</button>}
               <button type="button" onClick={signOut}><LogOutIcon /> Sair</button>
             </div>
           )}
