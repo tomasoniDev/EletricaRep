@@ -1814,7 +1814,7 @@ export default function Home() {
                 </div>
               </article>
 
-              <article className="dashboard-card">
+              <article className="dashboard-card service-type-card">
                 <div className="card-title"><DetailIcon type="info" /><h3>Tipo de atendimento</h3></div>
                 <div className="donut-panel">
                   <div className="donut" style={{ ["--value" as string]: `${percent(overviewData.byServiceType.find((item) => item.name === "Acesso remoto")?.value ?? 0, overviewData.totalServices)}%` }}>
@@ -1826,10 +1826,8 @@ export default function Home() {
                   </div>
                 </div>
               </article>
-            </section>
 
-            <section className="overview-grid bottom-grid">
-              <article className="dashboard-card overview-table-card">
+              <article className="dashboard-card overview-table-card service-rank-card">
                 <div className="card-title"><DetailIcon type="history" /><h3>Máquinas com mais atendimentos</h3></div>
                 <div className="overview-table">
                   {overviewData.topMachinesByService.map(({ machine, value }) => (
@@ -1842,7 +1840,7 @@ export default function Home() {
                 </div>
               </article>
 
-              <article className="dashboard-card overview-table-card">
+              <article className="dashboard-card overview-table-card attention-rank-card">
                 <div className="card-title"><DetailIcon type="alert" /><h3>Máquinas para atenção</h3></div>
                 <div className="overview-table">
                   {overviewData.machineAttention.map(({ machine, lastDate, days }) => (
@@ -1855,7 +1853,7 @@ export default function Home() {
                 </div>
               </article>
 
-              <article className="dashboard-card overview-table-card">
+              <article className="dashboard-card overview-table-card recent-rank-card">
                 <div className="card-title"><DetailIcon type="detail" /><h3>Últimos atendimentos</h3></div>
                 <div className="overview-table">
                   {overviewData.recentServices.map(({ machine, record }) => (
