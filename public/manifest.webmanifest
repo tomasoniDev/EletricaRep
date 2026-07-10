@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "Núcleo de Assistência Tomasoni",
   "short_name": "Núcleo",
   "description": "Aplicação corporativa para registros de atendimento técnico.",
@@ -9,13 +9,13 @@
   "theme_color": "#1268d8",
   "icons": [
     {
-      "src": "/icon-192.png",
+      "src": "/app-icon-192-v2.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/icon-512.png",
+      "src": "/app-icon-512-v2.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
