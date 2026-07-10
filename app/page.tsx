@@ -672,6 +672,7 @@ export default function Home() {
   const [serviceType, setServiceType] = useState<ServiceType>("Acesso remoto");
   const [customerSignature, setCustomerSignature] = useState("");
   const [isSigning, setIsSigning] = useState(false);
+  const [signatureExpanded, setSignatureExpanded] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>("light");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -756,6 +757,11 @@ export default function Home() {
     setOpenActionMenu("");
     setUserMenuOpen(false);
   }, [view, registryTab]);
+
+  useEffect(() => {
+    document.body.classList.toggle("signature-mode-open", signatureExpanded);
+    return () => document.body.classList.remove("signature-mode-open");
+  }, [signatureExpanded]);
 
   useEffect(() => {
     function closeFloatingLayers(event: MouseEvent) {
@@ -1189,8 +1195,35 @@ export default function Home() {
     };
   }
 
+  function shouldExpandSignaturePad() {
+    return window.matchMedia("(max-width: 760px)").matches && !signatureExpanded;
+  }
+
+  async function openSignaturePad() {
+    setSignatureExpanded(true);
+    try {
+      if (!document.fullscreenElement) await document.documentElement.requestFullscreen?.();
+      const orientation = screen.orientation as ScreenOrientation & { lock?: (orientation: "landscape") => Promise<void> };
+      await orientation.lock?.("landscape");
+    } catch {}
+  }
+
+  async function closeSignaturePad() {
+    finishSignature();
+    setSignatureExpanded(false);
+    try {
+      screen.orientation?.unlock?.();
+      if (document.fullscreenElement) await document.exitFullscreen?.();
+    } catch {}
+  }
+
   function startSignature(event: PointerEvent<HTMLCanvasElement>) {
     if (serviceType !== "Visita técnica") return;
+    if (shouldExpandSignaturePad()) {
+      event.preventDefault();
+      void openSignaturePad();
+      return;
+    }
     const canvas = signatureCanvasRef.current;
     const point = signaturePoint(event);
     const context = canvas?.getContext("2d");
@@ -1240,10 +1273,14 @@ export default function Home() {
 
   function updateServiceType(value: ServiceType) {
     setServiceType(value);
-    if (value !== "Visita técnica") clearSignature();
+    if (value !== "Visita técnica") {
+      setSignatureExpanded(false);
+      clearSignature();
+    }
   }
 
   function startNewService() {
+    setSignatureExpanded(false);
     setEditingServiceRecord(null);
     setSelectedServiceRecord(null);
     updateServiceType("Acesso remoto");
@@ -1540,6 +1577,7 @@ export default function Home() {
     const record = data as ServiceRecord;
     setSelectedMachineId(machine.id);
     setMessage(isEditingService ? "Atendimento atualizado com sucesso." : "Atendimento salvo. Gerando PDF e preparando envio por e-mail.");
+    setSignatureExpanded(false);
     setEditingServiceRecord(null);
     setSelectedServiceRecord(null);
     formElement.reset();
@@ -2056,13 +2094,17 @@ export default function Home() {
               <label className="wide">Serviço realizado<textarea name="service_done" rows={3} required defaultValue={editingServiceRecord?.service_done ?? ""} /></label>
               <label className="wide">Observações<textarea name="observations" rows={3} defaultValue={editingServiceRecord?.observations ?? ""} /></label>
               {serviceType === "Visita técnica" && (
-                <section className="signature-panel wide">
+                <section className={`signature-panel wide ${signatureExpanded ? "signature-expanded" : ""}`}>
                   <div className="section-header">
                     <div>
                       <h3>Assinatura do cliente</h3>
-                      <p>Assine com mouse, touchpad ou tela touch.</p>
+                      <p>{signatureExpanded ? "Use a tela horizontal para assinar com mais espaço." : "Assine com mouse, touchpad ou tela touch."}</p>
                     </div>
-                    <button className="button ghost" type="button" onClick={clearSignature}>Limpar assinatura</button>
+                    <div className="signature-actions">
+                      {!signatureExpanded && <button className="button ghost signature-expand-button" type="button" onClick={() => void openSignaturePad()}>Ampliar assinatura</button>}
+                      {signatureExpanded && <button className="button primary" type="button" onClick={() => void closeSignaturePad()}>Concluir</button>}
+                      <button className="button ghost" type="button" onClick={clearSignature}>Limpar assinatura</button>
+                    </div>
                   </div>
                   <div className="signature-canvas-wrap">
                     <canvas
