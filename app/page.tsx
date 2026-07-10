@@ -23,6 +23,7 @@ type MachineFormState = {
   software_code: string;
   ip_range: string;
   serial: string;
+  description: string;
   model: string;
   client: string;
   unit_city: string;
@@ -57,6 +58,7 @@ const EMPTY_MACHINE_FORM: MachineFormState = {
   software_code: "",
   ip_range: "",
   serial: "",
+  description: "",
   model: "",
   client: "",
   unit_city: "",
@@ -134,6 +136,7 @@ function machineFormFromMachine(machine?: Machine | null): MachineFormState {
     software_code: machine.software_code ?? "",
     ip_range: machine.ip_range ?? "",
     serial: machine.serial ?? "",
+    description: machine.description ?? "",
     model: machine.model ?? "",
     client: machine.client ?? "",
     unit_city: machine.unit_city ?? "",
@@ -366,7 +369,7 @@ function LogOutIcon() {
   );
 }
 
-function DetailIcon({ type }: { type: "client" | "location" | "serial" | "calendar" | "mechanical" | "software" | "remote" | "info" | "history" | "check" | "alert" | "mail" }) {
+function DetailIcon({ type }: { type: "client" | "location" | "serial" | "calendar" | "mechanical" | "software" | "remote" | "info" | "history" | "check" | "alert" | "mail" | "detail" }) {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24">
       {type === "client" && <><path d="M20 21a8 8 0 0 0-16 0" /><circle cx="12" cy="7" r="4" /></>}
@@ -381,6 +384,7 @@ function DetailIcon({ type }: { type: "client" | "location" | "serial" | "calend
       {type === "check" && <><circle cx="12" cy="12" r="9" /><path d="m8 12 2.6 2.6L16.5 9" /></>}
       {type === "alert" && <><circle cx="12" cy="12" r="9" /><path d="M8 8l8 8M16 8l-8 8" /></>}
       {type === "mail" && <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></>}
+      {type === "detail" && <><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M8 9h8M8 13h8M8 17h5" /></>}
     </svg>
   );
 }
@@ -796,7 +800,7 @@ export default function Home() {
     return [...machines]
       .filter((machine) => {
         if (!term) return true;
-        return [machine.code, machine.mechanical_list, machine.software_code, machine.model, machine.client, machine.unit_city, machine.serial, machine.manufacture_month, machine.software_version, machine.remote_access, machine.access_method]
+        return [machine.code, machine.mechanical_list, machine.software_code, machine.model, machine.description, machine.client, machine.unit_city, machine.serial, machine.manufacture_month, machine.software_version, machine.remote_access, machine.access_method]
           .join(" ")
           .toLowerCase()
           .includes(term);
@@ -917,6 +921,7 @@ export default function Home() {
       client: machineForm.client.trim() || null,
       unit_city: machineForm.unit_city.trim() || null,
       serial: machineForm.serial.trim() || null,
+      description: machineForm.description.trim() || null,
       manufacture_month: normalizeMonthYear(machineForm.manufacture_month),
       mechanical_list: machineForm.mechanical_list.trim() || null,
       software_code: machineForm.software_code.trim().toUpperCase() || null,
@@ -1247,6 +1252,7 @@ export default function Home() {
                   <div><DetailIcon type="calendar" /><p><span>Fabricação</span><strong>{formatMonthYear(selectedMachine.manufacture_month)}</strong></p></div>
                   <div><DetailIcon type="location" /><p><span>Localização</span><strong>{selectedMachine.unit_city || "-"}</strong></p></div>
                   <div><DetailIcon type="mechanical" /><p><span>Lista Mecânica</span><strong>{selectedMachine.mechanical_list || "-"}</strong></p></div>
+                  <div className="metric-wide"><DetailIcon type="detail" /><p><span>Descrição</span><strong>{selectedMachine.description || "-"}</strong></p></div>
                 </div>
               </div>
               <aside className={`contract-card ${selectedMachine.support_contract_active ? "active" : "inactive"}`}>
@@ -1440,6 +1446,7 @@ export default function Home() {
                     <div className="fields-grid">
                       <label>Código<input value={machineForm.code} onChange={(event) => updateMachineForm("code", event.target.value)} placeholder="Número do projeto" /></label>
                       <label>Modelo<input value={machineForm.model} onChange={(event) => updateMachineForm("model", event.target.value)} placeholder="Onduladeira, Dryend, ICV..." /></label>
+                      <label className="wide">Descrição<textarea rows={3} value={machineForm.description} onChange={(event) => updateMachineForm("description", event.target.value)} placeholder="Detalhe o modelo da máquina, configuração ou observações do equipamento" /></label>
                       <label>Cliente<input value={machineForm.client} onChange={(event) => updateMachineForm("client", event.target.value)} placeholder="Nome da empresa" /></label>
                       <label>Localização<input value={machineForm.unit_city} onChange={(event) => updateMachineForm("unit_city", event.target.value)} placeholder="Cidade - Estado" /></label>
                       <label>Mecânica<input value={machineForm.mechanical_list} onChange={(event) => updateMachineForm("mechanical_list", event.target.value)} placeholder="Lista mecânica" /></label>

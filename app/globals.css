@@ -795,6 +795,14 @@ input:focus, textarea:focus, select:focus {
   white-space: nowrap;
 }
 
+.machine-metrics .metric-wide {
+  grid-column: 1 / -1;
+}
+
+.machine-metrics .metric-wide strong {
+  white-space: normal;
+}
+
 .contract-card {
   display: grid;
   justify-items: center;
