@@ -95,6 +95,7 @@ const AUTH_CONFIRMATION_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 const BIOMETRIC_EMAIL_KEY = "tomasoni-servicecore-biometric-email";
 const BIOMETRIC_CREDENTIAL_KEY = "tomasoni-servicecore-biometric-credential";
 const BIOMETRIC_PROMPT_DISMISSED_KEY = "tomasoni-servicecore-biometric-dismissed";
+const BIOMETRIC_SESSION_VERIFIED_KEY = "tomasoni-servicecore-biometric-session-verified";
 const THEME_KEY = "tomasoni-servicecore-theme";
 const REMOTE_ACCESS_OPTIONS: RemoteAccess[] = ["Sem acesso remoto", "SINEMA", "VNC"];
 const SERVICE_TYPE_OPTIONS: ServiceType[] = ["Acesso remoto", "Visita técnica"];
@@ -370,6 +371,27 @@ function base64UrlToBuffer(value: string) {
 
 function canUseWebAuthn() {
   return typeof window !== "undefined" && Boolean(window.PublicKeyCredential && navigator.credentials);
+}
+
+function hasBiometricEnabledFor(email: string) {
+  return Boolean(
+    email
+    && window.localStorage.getItem(BIOMETRIC_EMAIL_KEY) === email
+    && window.localStorage.getItem(BIOMETRIC_CREDENTIAL_KEY)
+    && canUseWebAuthn()
+  );
+}
+
+function hasBiometricVerifiedThisOpen(email: string) {
+  return window.sessionStorage.getItem(BIOMETRIC_SESSION_VERIFIED_KEY) === email;
+}
+
+function storeBiometricVerifiedThisOpen(email: string) {
+  window.sessionStorage.setItem(BIOMETRIC_SESSION_VERIFIED_KEY, email);
+}
+
+function clearBiometricVerifiedThisOpen() {
+  window.sessionStorage.removeItem(BIOMETRIC_SESSION_VERIFIED_KEY);
 }
 
 function hasFullAccess(role?: UserRole | null) {
@@ -851,22 +873,20 @@ export default function Home() {
       }
 
       if (data.session && !hasFreshAuthConfirmation()) {
-        const biometricEmail = window.localStorage.getItem(BIOMETRIC_EMAIL_KEY);
-        const biometricCredential = window.localStorage.getItem(BIOMETRIC_CREDENTIAL_KEY);
-        if (biometricEmail === userEmail && biometricCredential && canUseWebAuthn()) {
-          setBiometricRequired(true);
-          setCurrentUserId(data.session.user.id);
-          setCurrentUserEmail(userEmail);
-          void loadProfile(data.session.user.id, userEmail);
-          setMessage("Confirme sua biometria para renovar o acesso neste dispositivo.");
-          return;
-        }
-
         void supabase.auth.signOut();
         clearAuthConfirmation();
         setIsAuthenticated(false);
         setCurrentUserId("");
         setMessage("Por segurança, confirme seu acesso novamente com o código enviado ao e-mail.");
+        return;
+      }
+
+      if (data.session && hasBiometricEnabledFor(userEmail) && !hasBiometricVerifiedThisOpen(userEmail)) {
+        setBiometricRequired(true);
+        setCurrentUserId(data.session.user.id);
+        setCurrentUserEmail(userEmail);
+        void loadProfile(data.session.user.id, userEmail);
+        setMessage("Confirme sua biometria para abrir o app neste dispositivo.");
         return;
       }
 
@@ -889,6 +909,16 @@ export default function Home() {
         return;
       }
 
+      if (session && hasBiometricEnabledFor(userEmail) && !hasBiometricVerifiedThisOpen(userEmail)) {
+        setBiometricRequired(true);
+        setIsAuthenticated(false);
+        setCurrentUserId(session.user.id);
+        setCurrentUserEmail(userEmail);
+        void loadProfile(session.user.id, userEmail);
+        setMessage("Confirme sua biometria para abrir o app neste dispositivo.");
+        return;
+      }
+
       setIsAuthenticated(Boolean(session));
       setCurrentUserId(session?.user.id ?? "");
       setCurrentUserEmail(session?.user.email ?? "");
@@ -907,14 +937,6 @@ export default function Home() {
     const interval = window.setInterval(() => {
       if (hasFreshAuthConfirmation()) return;
       setMessage("Por segurança, confirme seu acesso novamente com o código enviado ao e-mail.");
-      const biometricEmail = window.localStorage.getItem(BIOMETRIC_EMAIL_KEY);
-      const biometricCredential = window.localStorage.getItem(BIOMETRIC_CREDENTIAL_KEY);
-      if (biometricEmail === currentUserEmail && biometricCredential && canUseWebAuthn()) {
-        setBiometricRequired(true);
-        setIsAuthenticated(false);
-        setMessage("Confirme sua biometria para renovar o acesso neste dispositivo.");
-        return;
-      }
       void signOut();
     }, 60 * 1000);
 
@@ -1342,6 +1364,7 @@ export default function Home() {
     }
 
     storeAuthConfirmation();
+    storeBiometricVerifiedThisOpen(data.session.user.email ?? normalizedEmail);
     setOtpCode("");
     setOtpSent(false);
     setIsAuthenticated(true);
@@ -1359,6 +1382,7 @@ export default function Home() {
   async function signOut() {
     await supabase.auth.signOut();
     clearAuthConfirmation();
+    clearBiometricVerifiedThisOpen();
     setIsAuthenticated(false);
     setCurrentUserId("");
     setCurrentUserEmail("");
@@ -1437,10 +1461,11 @@ export default function Home() {
       });
 
       if (!credential) throw new Error("Biometria cancelada.");
-      storeAuthConfirmation();
+      const biometricEmail = window.localStorage.getItem(BIOMETRIC_EMAIL_KEY) || currentUserEmail;
+      storeBiometricVerifiedThisOpen(biometricEmail);
       setBiometricRequired(false);
       setIsAuthenticated(true);
-      setMessage("Acesso renovado por biometria.");
+      setMessage("Acesso liberado por biometria.");
       await loadData();
     } catch {
       setMessage("Biometria não confirmada. Acesse novamente com o código enviado ao e-mail.");
@@ -2176,7 +2201,7 @@ export default function Home() {
         <section className="login-card">
           <Image className="login-logo" src="/tomasoni-logo-transparent.png" alt="Tomasoni" width={300} height={80} priority />
           <h1>Confirmar acesso</h1>
-          <p>Use a biometria deste dispositivo para renovar a confirmação de acesso.</p>
+          <p>Use a biometria deste dispositivo para abrir o app. A renovação de acesso por e-mail continua sendo solicitada a cada 7 dias.</p>
           <button className="button primary" type="button" onClick={() => void confirmBiometricAccess()}>Confirmar por biometria</button>
           <button className="link-button auth-secondary-action" type="button" onClick={() => void signOut()}>Entrar com código</button>
           {message !== DEFAULT_MESSAGE && <span className="form-message">{message}</span>}
@@ -2991,7 +3016,7 @@ export default function Home() {
                   <h2 id="biometric-modal-title">Habilitar biometria</h2>
                 </div>
               </div>
-              <p>Depois de habilitar, este dispositivo poderá renovar a confirmação de acesso com biometria quando o prazo de 7 dias vencer.</p>
+              <p>Depois de habilitar, este dispositivo pedirá biometria sempre que o app for aberto. A confirmação por e-mail continuará sendo renovada a cada 7 dias.</p>
               <div className="modal-actions">
                 <button className="button ghost" type="button" onClick={() => { window.localStorage.setItem(BIOMETRIC_PROMPT_DISMISSED_KEY, "1"); setBiometricPromptOpen(false); }}>Agora não</button>
                 <button className="button primary" type="button" onClick={() => void enableBiometricAuth()}>Habilitar biometria</button>
