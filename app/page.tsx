@@ -644,9 +644,22 @@ function helpSections(view: View, registryTab: RegistryTab) {
     ];
   }
 
+  if (view === "schedule") {
+    return [
+      ["Datas", "Informe início e fim no formato dd/mm ou escreva A definir quando a agenda ainda não estiver fechada."],
+      ["Código e cliente", "Use o código da máquina ou projeto quando existir e selecione/digite o cliente atendido."],
+      ["Técnicos", "Liste os técnicos envolvidos. O campo aceita mais de um nome e aparece completo na tabela."],
+      ["Status", "Atualize o andamento da viagem para facilitar o acompanhamento operacional."],
+      ["Motivo", "Descreva o objetivo da viagem ou atendimento planejado com o nível de detalhe necessário."]
+    ];
+  }
+
   return [
-    ["Cadastro de usuários", "Esta área deve ser usada apenas para manter técnicos legados, se necessário."],
-    ["Usuário logado", "Nos novos atendimentos, o técnico responsável é preenchido automaticamente pelo usuário conectado."]
+    ["Usuário", "Cadastre o nome que será exibido no sistema e associado aos registros feitos por essa conta."],
+    ["E-mail", "Informe o e-mail corporativo autorizado. Apenas e-mails cadastrados conseguem validar o acesso ao app."],
+    ["Perfil / setor", "Escolha o perfil correto para liberar apenas as telas e ações compatíveis com o setor do usuário."],
+    ["Permissões", "Admin e Diretoria têm acesso total. Engenharia, Montagem e Comercial seguem restrições específicas de cadastro, cronograma, contratos e relatórios."],
+    ["Ações", "Use o menu de ações da tabela para editar dados do usuário ou remover acessos que não devem mais entrar no sistema."]
   ];
 }
 
