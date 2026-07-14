@@ -1740,6 +1740,14 @@ export default function Home() {
     });
   }, [authorizedUsers, userSort]);
 
+  const clientSuggestions = useMemo(() => {
+    return Array.from(new Set(
+      machines
+        .map((machine) => machine.client?.trim())
+        .filter((client): client is string => Boolean(client))
+    )).sort((a, b) => compareText(a, b));
+  }, [machines]);
+
   function toggleMachineSort(key: MachineSortKey) {
     setMachineSort((current) => ({ key, direction: nextDirection(current.key === key, current.direction) }));
   }
@@ -2495,7 +2503,7 @@ export default function Home() {
                   <label>Data de início<input value={travelForm.start_date} onChange={(event) => setTravelForm((current) => ({ ...current, start_date: event.target.value }))} placeholder="dd/mm ou A definir" /></label>
                   <label>Data de fim<input value={travelForm.end_date} onChange={(event) => setTravelForm((current) => ({ ...current, end_date: event.target.value }))} placeholder="dd/mm ou A definir" /></label>
                   <label>Código<input value={travelForm.code} onChange={(event) => setTravelForm((current) => ({ ...current, code: event.target.value }))} placeholder="T665-xxx" maxLength={10} /></label>
-                  <label>Cliente<input value={travelForm.client} onChange={(event) => setTravelForm((current) => ({ ...current, client: event.target.value }))} /></label>
+                  <label>Cliente<input list="client-suggestions" value={travelForm.client} onChange={(event) => setTravelForm((current) => ({ ...current, client: event.target.value }))} /></label>
                   <label>Técnicos<input value={travelForm.technicians} onChange={(event) => setTravelForm((current) => ({ ...current, technicians: event.target.value }))} placeholder="Nomes separados por vírgula" /></label>
                   <label>Status<select value={travelForm.status} onChange={(event) => setTravelForm((current) => ({ ...current, status: event.target.value }))}>
                     {TRAVEL_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
@@ -2760,7 +2768,8 @@ export default function Home() {
                       <label>Código<input disabled={machineMainFieldsDisabled} value={machineForm.code} onChange={(event) => updateMachineForm("code", event.target.value)} placeholder="T665-xxx" maxLength={10} /></label>
                       <label>Modelo<input disabled={machineMainFieldsDisabled} value={machineForm.model} onChange={(event) => updateMachineForm("model", event.target.value)} placeholder="Onduladeira, Dryend, ICV..." maxLength={120} /></label>
                       <label className="wide">Descrição<textarea disabled={machineMainFieldsDisabled} rows={4} value={machineForm.description} onChange={(event) => updateMachineForm("description", event.target.value)} placeholder="Detalhe o modelo da máquina, configuração ou observações do equipamento" maxLength={4000} /></label>
-                      <label>Cliente<input disabled={machineMainFieldsDisabled} value={machineForm.client} onChange={(event) => updateMachineForm("client", event.target.value)} placeholder="Nome da empresa" maxLength={160} /></label>
+                      <label>Cliente<input disabled={machineMainFieldsDisabled} list="client-suggestions" value={machineForm.client} onChange={(event) => updateMachineForm("client", event.target.value)} placeholder="Nome da empresa" maxLength={160} /></label>
+                      <datalist id="client-suggestions">{clientSuggestions.map((client) => <option key={client} value={client} />)}</datalist>
                       <label>Localização<input disabled={machineMainFieldsDisabled} list="city-suggestions" value={machineForm.unit_city} onChange={(event) => updateMachineForm("unit_city", event.target.value)} placeholder="Cidade - UF ou Cidade - PAIS" maxLength={160} /></label>
                       <datalist id="city-suggestions">{citySuggestions.map((city) => <option key={city} value={city} />)}</datalist>
                       <label>Mecânica<input disabled={machineMainFieldsDisabled} value={machineForm.mechanical_list} onChange={(event) => updateMachineForm("mechanical_list", event.target.value)} placeholder="500-xxx ou T-0xxx" maxLength={10} /></label>
