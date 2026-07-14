@@ -1300,10 +1300,16 @@ export default function Home() {
 
     setMachines((machineRows ?? []) as Machine[]);
 
-    const { data: userRows } = await supabase
+    const { data: userRows, error: userError } = await supabase
       .from("authorized_users")
       .select("*")
       .order("name", { ascending: true });
+
+    if (userError) {
+      setMessage(dataMessage(userError.message || ""));
+      setAuthorizedUsers([]);
+      return;
+    }
 
     setAuthorizedUsers((userRows ?? []) as AuthorizedUser[]);
 
@@ -1949,17 +1955,22 @@ export default function Home() {
       return;
     }
 
-    const { error } = editingUserId
-      ? await supabase.from("authorized_users").update(payload).eq("id", editingUserId)
-      : await supabase.from("authorized_users").insert(payload);
+    const { data, error } = editingUserId
+      ? await supabase.from("authorized_users").update(payload).eq("id", editingUserId).select().single()
+      : await supabase.from("authorized_users").insert(payload).select().single();
 
-    if (error) {
-      setMessage(dataMessage(error.message));
+    if (error || !data) {
+      setMessage(dataMessage(error?.message || ""));
       return;
     }
 
+    const savedUser = data as AuthorizedUser;
     setEditingUserId("");
-    setMessage("Técnico salvo com sucesso.");
+    setAuthorizedUsers((current) => {
+      const withoutSaved = current.filter((user) => user.id !== savedUser.id);
+      return [...withoutSaved, savedUser].sort((a, b) => compareText(a.name, b.name));
+    });
+    setMessage("Usuário salvo com sucesso.");
     setUserForm(EMPTY_USER_FORM);
     event.currentTarget.reset();
     await loadData();
