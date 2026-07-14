@@ -4,14 +4,14 @@ import { FormEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "r
 import Image from "next/image";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { downloadServicePdf, servicePdfBase64, servicePdfFileName } from "@/lib/pdf";
-import type { Machine, Profile, ServiceRecord, Technician } from "@/lib/types";
+import type { AuthorizedUser, Machine, Profile, ServiceRecord, TravelSchedule, UserRole } from "@/lib/types";
 
-type View = "home" | "overview" | "machineDetail" | "service" | "registry";
-type RegistryTab = "machines" | "technicians";
+type View = "home" | "overview" | "machineDetail" | "service" | "registry" | "schedule";
+type RegistryTab = "machines" | "users";
 type SortDirection = "asc" | "desc";
 type MachineSortKey = "code" | "model" | "client" | "unit_city" | "serial" | "software_version" | "vm" | "last_service";
 type HistorySortKey = "service_date" | "equipment" | "technician_name" | "issue_summary";
-type TechnicianSortKey = "name" | "email";
+type UserSortKey = "name" | "email" | "role";
 type RemoteAccess = "SINEMA" | "VNC" | "Sem acesso remoto";
 type ServiceType = "Acesso remoto" | "Visita técnica";
 type ThemeMode = "light" | "dark";
@@ -71,15 +71,36 @@ type MachineFormState = {
   support_contract_until: string;
 };
 
+type AuthorizedUserFormState = {
+  name: string;
+  email: string;
+  role: UserRole;
+};
+
+type TravelScheduleFormState = {
+  start_date: string;
+  end_date: string;
+  code: string;
+  client: string;
+  technicians: string;
+  status: string;
+  reason: string;
+};
+
 const ALLOWED_EMAIL_DOMAINS = ["tomasoni.ind.br", "tomasoni.in.br"];
 const BACKUP_ALLOWED_EMAIL = "lucas.lessa@tomasoni.ind.br";
 const DEFAULT_MESSAGE = "Consulte uma máquina pelo código ou selecione uma linha da tabela.";
 const AUTH_CONFIRMED_AT_KEY = "tomasoni-servicecore-auth-confirmed-at";
 const AUTH_CONFIRMATION_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+const BIOMETRIC_EMAIL_KEY = "tomasoni-servicecore-biometric-email";
+const BIOMETRIC_CREDENTIAL_KEY = "tomasoni-servicecore-biometric-credential";
+const BIOMETRIC_PROMPT_DISMISSED_KEY = "tomasoni-servicecore-biometric-dismissed";
 const THEME_KEY = "tomasoni-servicecore-theme";
 const REMOTE_ACCESS_OPTIONS: RemoteAccess[] = ["Sem acesso remoto", "SINEMA", "VNC"];
 const SERVICE_TYPE_OPTIONS: ServiceType[] = ["Acesso remoto", "Visita técnica"];
 const CONTRACT_TYPE_OPTIONS: ContractType[] = ["Seg-Sex", "Seg-Sab", "Garantia"];
+const USER_ROLE_OPTIONS: UserRole[] = ["Admin", "Diretoria", "Engenharia", "Montagem", "Comercial"];
+const TRAVEL_STATUS_OPTIONS = ["A definir", "Planejado", "Em andamento", "Concluido", "Cancelado"];
 const LEAFLET_CSS_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
 const LEAFLET_JS_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
 const STATE_CENTERS: Record<string, [number, number]> = {
@@ -137,6 +158,20 @@ const EMPTY_MACHINE_FORM: MachineFormState = {
   support_contract_active: "",
   support_contract_type: "",
   support_contract_until: ""
+};
+const EMPTY_USER_FORM: AuthorizedUserFormState = {
+  name: "",
+  email: "",
+  role: "Montagem"
+};
+const EMPTY_TRAVEL_FORM: TravelScheduleFormState = {
+  start_date: "",
+  end_date: "",
+  code: "",
+  client: "",
+  technicians: "",
+  status: "A definir",
+  reason: ""
 };
 
 function formatDate(value?: string | null) {
@@ -321,6 +356,75 @@ function clearAuthConfirmation() {
   window.localStorage.removeItem(AUTH_CONFIRMED_AT_KEY);
 }
 
+function bufferToBase64Url(buffer: ArrayBuffer) {
+  return btoa(String.fromCharCode(...new Uint8Array(buffer)))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+function base64UrlToBuffer(value: string) {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+}
+
+function canUseWebAuthn() {
+  return typeof window !== "undefined" && Boolean(window.PublicKeyCredential && navigator.credentials);
+}
+
+function hasFullAccess(role?: UserRole | null) {
+  return role === "Admin" || role === "Diretoria";
+}
+
+function canManageUsers(role?: UserRole | null) {
+  return hasFullAccess(role);
+}
+
+function canEditMachine(role?: UserRole | null) {
+  return hasFullAccess(role) || role === "Engenharia" || role === "Comercial";
+}
+
+function canEditMachineContractsOnly(role?: UserRole | null) {
+  return role === "Comercial";
+}
+
+function canEmitReports(role?: UserRole | null) {
+  return role !== "Comercial";
+}
+
+function canEditSchedule(role?: UserRole | null) {
+  return hasFullAccess(role) || role === "Comercial";
+}
+
+function validateCodePattern(value: string, pattern: RegExp, label: string) {
+  const normalized = value.trim().toUpperCase();
+  if (!normalized) return "";
+  return pattern.test(normalized) ? "" : `${label} fora do padrão esperado.`;
+}
+
+function validateDayMonth(value: string, label: string) {
+  const normalized = value.trim();
+  if (!normalized || normalized.toLowerCase() === "a definir") return "";
+  const match = normalized.match(/^(\d{2})\/(\d{2})$/);
+  if (!match) return `${label} deve estar no formato dd/mm.`;
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) return `${label} possui mês inválido.`;
+  const maxDay = new Date(2024, month, 0).getDate();
+  if (day < 1 || day > maxDay) return `${label} possui dia inválido para o mês informado.`;
+  return "";
+}
+
+function validateMonthYear(value: string, label: string) {
+  const normalized = value.trim();
+  if (!normalized) return "";
+  const match = normalized.match(/^(\d{2})\/(\d{2})$/);
+  if (!match) return `${label} deve estar no formato mm/aa.`;
+  const month = Number(match[1]);
+  if (month < 1 || month > 12) return `${label} possui mês inválido.`;
+  return "";
+}
+
 let leafletLoadPromise: Promise<LeafletNamespace> | null = null;
 
 function loadLeaflet() {
@@ -443,8 +547,9 @@ function screenLegend(view: View, registryTab: RegistryTab, selectedMachine?: Ma
   if (view === "overview") return "Visão geral da base instalada, contratos, acessos e atendimentos registrados.";
   if (view === "machineDetail") return selectedMachine ? `Dados cadastrais e histórico da máquina ${displayMachineCode(selectedMachine)}.` : "Dados cadastrais e histórico da máquina.";
   if (view === "service") return "Registre um novo atendimento técnico e gere o relatório em PDF.";
+  if (view === "schedule") return "Acompanhe o cronograma de viagens e atendimentos planejados.";
   if (registryTab === "machines") return "Cadastre, altere ou exclua máquinas e informações de acesso.";
-  return "Cadastre e gerencie os técnicos disponíveis para lançamento dos atendimentos.";
+  return "Cadastre e gerencie os usuários autorizados a acessar o sistema.";
 }
 
 function helpText(view: View, registryTab: RegistryTab) {
@@ -452,8 +557,9 @@ function helpText(view: View, registryTab: RegistryTab) {
   if (view === "overview") return "A visão geral consolida indicadores da base cadastrada, contratos, acesso remoto, localização e volume de atendimentos. Use os rankings para localizar máquinas, clientes e regiões que merecem atenção.";
   if (view === "machineDetail") return "Nesta tela ficam os dados técnicos da máquina, informações de acesso remoto e histórico. Clique em um atendimento para ver o registro completo ou use o menu de ações para baixar o PDF.";
   if (view === "service") return "Registre o atendimento com tipo, motivo breve e descrições completas. Em visita técnica, colete a assinatura do cliente para incluir no PDF.";
+  if (view === "schedule") return "Use o cronograma para planejar viagens, técnicos envolvidos, cliente, código, status e motivo. Datas podem ser dd/mm ou A definir.";
   if (registryTab === "machines") return "Cadastre ou altere máquinas e informações de acesso. Use o menu de ações da tabela para editar ou excluir cadastros.";
-  return "Cadastre os técnicos disponíveis para lançamento dos atendimentos. O nome do técnico aparece no relatório e no histórico.";
+  return "Cadastre usuários autorizados. O perfil define permissões de cadastro, cronograma, contratos, histórico e relatórios.";
 }
 
 function helpSections(view: View, registryTab: RegistryTab) {
@@ -665,19 +771,27 @@ export default function Home() {
   const [otpCode, setOtpCode] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
+  const [biometricPromptOpen, setBiometricPromptOpen] = useState(false);
+  const [biometricRequired, setBiometricRequired] = useState(false);
   const [view, setView] = useState<View>("home");
   const [registryTab, setRegistryTab] = useState<RegistryTab>("machines");
   const [machines, setMachines] = useState<Machine[]>([]);
-  const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [authorizedUsers, setAuthorizedUsers] = useState<AuthorizedUser[]>([]);
+  const [travelSchedules, setTravelSchedules] = useState<TravelSchedule[]>([]);
+  const [currentUserRole, setCurrentUserRole] = useState<UserRole | null>(null);
   const [selectedMachineId, setSelectedMachineId] = useState("");
   const [message, setMessage] = useState(DEFAULT_MESSAGE);
   const [machineFilter, setMachineFilter] = useState("");
   const [historyFilter, setHistoryFilter] = useState("");
   const [machineSort, setMachineSort] = useState<{ key: MachineSortKey; direction: SortDirection }>({ key: "last_service", direction: "desc" });
   const [historySort, setHistorySort] = useState<{ key: HistorySortKey; direction: SortDirection }>({ key: "service_date", direction: "desc" });
-  const [technicianSort, setTechnicianSort] = useState<{ key: TechnicianSortKey; direction: SortDirection }>({ key: "name", direction: "asc" });
+  const [userSort, setUserSort] = useState<{ key: UserSortKey; direction: SortDirection }>({ key: "name", direction: "asc" });
   const [editingMachineId, setEditingMachineId] = useState("");
-  const [editingTechnicianId, setEditingTechnicianId] = useState("");
+  const [editingUserId, setEditingUserId] = useState("");
+  const [userForm, setUserForm] = useState<AuthorizedUserFormState>(EMPTY_USER_FORM);
+  const [editingTravelId, setEditingTravelId] = useState("");
+  const [travelForm, setTravelForm] = useState<TravelScheduleFormState>(EMPTY_TRAVEL_FORM);
+  const [citySuggestions, setCitySuggestions] = useState<string[]>([]);
   const [selectedServiceRecord, setSelectedServiceRecord] = useState<ServiceRecord | null>(null);
   const [editingServiceRecord, setEditingServiceRecord] = useState<ServiceRecord | null>(null);
   const [machineForm, setMachineForm] = useState<MachineFormState>(EMPTY_MACHINE_FORM);
@@ -702,6 +816,29 @@ export default function Home() {
   }, [theme]);
 
   useEffect(() => {
+    let cancelled = false;
+    fetch("https://servicodados.ibge.gov.br/api/v1/localidades/municipios")
+      .then((response) => response.ok ? response.json() : [])
+      .then((rows: Array<{ nome?: string; microrregiao?: { mesorregiao?: { UF?: { sigla?: string } } } }>) => {
+        if (cancelled) return;
+        const suggestions = rows
+          .map((row) => {
+            const city = row.nome?.trim();
+            const state = row.microrregiao?.mesorregiao?.UF?.sigla?.trim();
+            return city && state ? `${city} - ${state}` : "";
+          })
+          .filter(Boolean)
+          .sort((a, b) => compareText(a, b));
+        setCitySuggestions(suggestions);
+      })
+      .catch(() => setCitySuggestions([]));
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSessionReady(true);
       const userEmail = data.session?.user.email ?? "";
@@ -714,6 +851,17 @@ export default function Home() {
       }
 
       if (data.session && !hasFreshAuthConfirmation()) {
+        const biometricEmail = window.localStorage.getItem(BIOMETRIC_EMAIL_KEY);
+        const biometricCredential = window.localStorage.getItem(BIOMETRIC_CREDENTIAL_KEY);
+        if (biometricEmail === userEmail && biometricCredential && canUseWebAuthn()) {
+          setBiometricRequired(true);
+          setCurrentUserId(data.session.user.id);
+          setCurrentUserEmail(userEmail);
+          void loadProfile(data.session.user.id, userEmail);
+          setMessage("Confirme sua biometria para renovar o acesso neste dispositivo.");
+          return;
+        }
+
         void supabase.auth.signOut();
         clearAuthConfirmation();
         setIsAuthenticated(false);
@@ -759,6 +907,14 @@ export default function Home() {
     const interval = window.setInterval(() => {
       if (hasFreshAuthConfirmation()) return;
       setMessage("Por segurança, confirme seu acesso novamente com o código enviado ao e-mail.");
+      const biometricEmail = window.localStorage.getItem(BIOMETRIC_EMAIL_KEY);
+      const biometricCredential = window.localStorage.getItem(BIOMETRIC_CREDENTIAL_KEY);
+      if (biometricEmail === currentUserEmail && biometricCredential && canUseWebAuthn()) {
+        setBiometricRequired(true);
+        setIsAuthenticated(false);
+        setMessage("Confirme sua biometria para renovar o acesso neste dispositivo.");
+        return;
+      }
       void signOut();
     }, 60 * 1000);
 
@@ -793,6 +949,13 @@ export default function Home() {
   const editingMachine = machines.find((machine) => machine.id === editingMachineId);
   const showRemoteAccess = machineHasRemoteAccess(machineForm.remote_access);
   const canDownloadBackup = currentUserEmail.trim().toLowerCase() === BACKUP_ALLOWED_EMAIL;
+  const currentUserHasFullAccess = hasFullAccess(currentUserRole);
+  const currentUserCanManageUsers = canManageUsers(currentUserRole);
+  const currentUserCanEditMachine = canEditMachine(currentUserRole);
+  const currentUserContractsOnly = canEditMachineContractsOnly(currentUserRole);
+  const currentUserCanEmitReports = canEmitReports(currentUserRole);
+  const currentUserCanEditSchedule = canEditSchedule(currentUserRole);
+  const machineMainFieldsDisabled = !currentUserCanEditMachine || currentUserContractsOnly;
   const selectedMachineAccess = normalizeRemoteAccess(selectedMachine?.remote_access ?? selectedMachine?.access_method);
   const selectedMachineContractDays = daysUntil(selectedMachine?.support_contract_until);
   const selectedMachineRecentHistory = [...(selectedMachine?.service_records ?? [])]
@@ -1043,6 +1206,20 @@ export default function Home() {
 
   async function loadProfile(userId: string, userEmail: string) {
     const fallbackName = displayUserName(userEmail);
+    const { data: authorizedRow } = await supabase
+      .from("authorized_users")
+      .select("*")
+      .eq("email", userEmail.toLowerCase())
+      .maybeSingle();
+
+    if (authorizedRow) {
+      const authorizedUser = authorizedRow as AuthorizedUser;
+      setCurrentUserRole(authorizedUser.role);
+      setCurrentUserName(authorizedUser.name || fallbackName);
+      return;
+    }
+
+    setCurrentUserRole(null);
     const { data, error } = await supabase
       .from("profiles")
       .select("*")
@@ -1086,6 +1263,20 @@ export default function Home() {
     }
 
     setMachines((machineRows ?? []) as Machine[]);
+
+    const { data: userRows } = await supabase
+      .from("authorized_users")
+      .select("*")
+      .order("name", { ascending: true });
+
+    setAuthorizedUsers((userRows ?? []) as AuthorizedUser[]);
+
+    const { data: scheduleRows } = await supabase
+      .from("travel_schedules")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    setTravelSchedules((scheduleRows ?? []) as TravelSchedule[]);
   }
 
   async function signIn(event: FormEvent<HTMLFormElement>) {
@@ -1102,6 +1293,13 @@ export default function Home() {
     setMessage(DEFAULT_MESSAGE);
 
     if (!otpSent) {
+      const { data: isAuthorized, error: lookupError } = await supabase.rpc("authorized_email_exists", { input_email: normalizedEmail });
+      if (lookupError || !isAuthorized) {
+        setMessage("E-mail não cadastrado para acesso ao sistema.");
+        setAuthLoading(false);
+        return;
+      }
+
       const { error } = await supabase.auth.signInWithOtp({
         email: normalizedEmail,
         options: {
@@ -1150,6 +1348,9 @@ export default function Home() {
     setCurrentUserId(data.session.user.id);
     setCurrentUserEmail(data.session.user.email ?? normalizedEmail);
     await loadProfile(data.session.user.id, data.session.user.email ?? normalizedEmail);
+    if (canUseWebAuthn() && !window.localStorage.getItem(BIOMETRIC_CREDENTIAL_KEY) && !window.localStorage.getItem(BIOMETRIC_PROMPT_DISMISSED_KEY)) {
+      setBiometricPromptOpen(true);
+    }
     setMessage("Acesso autorizado.");
     await loadData();
     setAuthLoading(false);
@@ -1162,8 +1363,10 @@ export default function Home() {
     setCurrentUserId("");
     setCurrentUserEmail("");
     setCurrentUserName("");
+    setCurrentUserRole(null);
     setMachines([]);
-    setTechnicians([]);
+    setAuthorizedUsers([]);
+    setTravelSchedules([]);
   }
 
   function toggleTheme() {
@@ -1174,6 +1377,75 @@ export default function Home() {
     setUserMenuOpen(false);
     setProfileName(currentUserName || displayUserName(currentUserEmail));
     setProfileModalOpen(true);
+  }
+
+  async function enableBiometricAuth() {
+    if (!canUseWebAuthn() || !currentUserEmail) {
+      setMessage("Biometria indisponível neste navegador ou dispositivo.");
+      return;
+    }
+
+    try {
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
+      const userId = crypto.getRandomValues(new Uint8Array(16));
+      const credential = await navigator.credentials.create({
+        publicKey: {
+          challenge,
+          rp: { name: "Assistência Tomasoni" },
+          user: {
+            id: userId,
+            name: currentUserEmail,
+            displayName: currentUserName || displayUserName(currentUserEmail)
+          },
+          pubKeyCredParams: [
+            { type: "public-key", alg: -7 },
+            { type: "public-key", alg: -257 }
+          ],
+          authenticatorSelection: { userVerification: "required" },
+          timeout: 60000
+        }
+      }) as PublicKeyCredential | null;
+
+      if (!credential) throw new Error("Credencial não criada.");
+      window.localStorage.setItem(BIOMETRIC_EMAIL_KEY, currentUserEmail);
+      window.localStorage.setItem(BIOMETRIC_CREDENTIAL_KEY, bufferToBase64Url(credential.rawId));
+      window.localStorage.setItem(BIOMETRIC_PROMPT_DISMISSED_KEY, "1");
+      setBiometricPromptOpen(false);
+      setMessage("Biometria habilitada para este dispositivo.");
+    } catch {
+      setMessage("Não foi possível habilitar a biometria neste dispositivo.");
+    }
+  }
+
+  async function confirmBiometricAccess() {
+    const credentialId = window.localStorage.getItem(BIOMETRIC_CREDENTIAL_KEY);
+    if (!credentialId || !canUseWebAuthn()) {
+      setMessage("Biometria indisponível. Acesse novamente com o código enviado ao e-mail.");
+      await signOut();
+      return;
+    }
+
+    try {
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
+      const credential = await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          allowCredentials: [{ id: base64UrlToBuffer(credentialId), type: "public-key" }],
+          userVerification: "required",
+          timeout: 60000
+        }
+      });
+
+      if (!credential) throw new Error("Biometria cancelada.");
+      storeAuthConfirmation();
+      setBiometricRequired(false);
+      setIsAuthenticated(true);
+      setMessage("Acesso renovado por biometria.");
+      await loadData();
+    } catch {
+      setMessage("Biometria não confirmada. Acesse novamente com o código enviado ao e-mail.");
+      await signOut();
+    }
   }
 
   function downloadMachinesBackup() {
@@ -1277,6 +1549,11 @@ export default function Home() {
       return;
     }
 
+    await supabase
+      .from("authorized_users")
+      .update({ name: displayName })
+      .eq("email", currentUserEmail.toLowerCase());
+
     setCurrentUserName(displayName);
     setProfileModalOpen(false);
     setMessage("Usuário atualizado com sucesso.");
@@ -1377,6 +1654,11 @@ export default function Home() {
   }
 
   function startNewService() {
+    if (!currentUserCanEmitReports) {
+      setMessage("Seu perfil não tem permissão para emitir relatórios.");
+      return;
+    }
+
     setSignatureExpanded(false);
     setEditingServiceRecord(null);
     setSelectedServiceRecord(null);
@@ -1446,13 +1728,17 @@ export default function Home() {
       });
   }, [historyFilter, historySort, selectedMachine]);
 
-  const sortedTechnicians = useMemo(() => {
-    return [...technicians].sort((a, b) => {
-      const direction = technicianSort.direction === "asc" ? 1 : -1;
-      const result = technicianSort.key === "name" ? compareText(a.name, b.name) : compareText(a.email, b.email);
+  const sortedUsers = useMemo(() => {
+    return [...authorizedUsers].sort((a, b) => {
+      const direction = userSort.direction === "asc" ? 1 : -1;
+      const result = userSort.key === "name"
+        ? compareText(a.name, b.name)
+        : userSort.key === "email"
+          ? compareText(a.email, b.email)
+          : compareText(a.role, b.role);
       return result * direction;
     });
-  }, [technicianSort, technicians]);
+  }, [authorizedUsers, userSort]);
 
   function toggleMachineSort(key: MachineSortKey) {
     setMachineSort((current) => ({ key, direction: nextDirection(current.key === key, current.direction) }));
@@ -1462,8 +1748,8 @@ export default function Home() {
     setHistorySort((current) => ({ key, direction: nextDirection(current.key === key, current.direction) }));
   }
 
-  function toggleTechnicianSort(key: TechnicianSortKey) {
-    setTechnicianSort((current) => ({ key, direction: nextDirection(current.key === key, current.direction) }));
+  function toggleUserSort(key: UserSortKey) {
+    setUserSort((current) => ({ key, direction: nextDirection(current.key === key, current.direction) }));
   }
 
   function updateMachineForm<K extends keyof MachineFormState>(key: K, value: MachineFormState[K]) {
@@ -1512,16 +1798,50 @@ export default function Home() {
 
   async function saveMachine(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!currentUserCanEditMachine) {
+      setMessage("Seu usuário não tem permissão para alterar cadastros de máquinas.");
+      return;
+    }
+
+    const normalizedCode = machineForm.code.trim().toUpperCase();
+    const normalizedSerial = machineForm.serial.trim().toUpperCase();
+    const normalizedMechanicalList = machineForm.mechanical_list.trim().toUpperCase();
+    const normalizedSoftwareCode = machineForm.software_code.trim().toUpperCase();
+    const validationErrors = [
+      validateCodePattern(normalizedCode, /^T665-\d{3,5}$/, "Código da máquina"),
+      validateCodePattern(normalizedSoftwareCode, /^T665-\d{3,5}$/, "Código do software"),
+      validateCodePattern(normalizedSerial, /^(500-\d{3}|500-\d{3}\/\d{2})$/, "Número de série"),
+      validateCodePattern(normalizedMechanicalList, /^(500-\d{3}|T-0\d{3})$/, "Lista mecânica"),
+      validateMonthYear(machineForm.manufacture_month, "Fabricação")
+    ].filter(Boolean);
+
+    const duplicate = machines.find((machine) => machine.id !== editingMachineId && (
+      (normalizedCode && machine.code?.trim().toUpperCase() === normalizedCode)
+      || (normalizedSerial && machine.serial?.trim().toUpperCase() === normalizedSerial)
+      || (normalizedMechanicalList && machine.mechanical_list?.trim().toUpperCase() === normalizedMechanicalList)
+      || (normalizedSoftwareCode && machine.software_code?.trim().toUpperCase() === normalizedSoftwareCode)
+    ));
+
+    if (duplicate) {
+      setMessage(`Já existe uma máquina cadastrada com código, série, mecânica ou software informado: ${displayMachineCode(duplicate)}.`);
+      return;
+    }
+
+    if (validationErrors.length) {
+      setMessage(validationErrors[0]);
+      return;
+    }
+
     const payload = {
-      code: machineForm.code.trim().toUpperCase() || null,
+      code: normalizedCode || null,
       model: machineForm.model.trim() || null,
       client: machineForm.client.trim() || null,
       unit_city: machineForm.unit_city.trim() || null,
-      serial: machineForm.serial.trim() || null,
+      serial: normalizedSerial || null,
       description: machineForm.description.trim() || null,
       manufacture_month: normalizeMonthYear(machineForm.manufacture_month),
-      mechanical_list: machineForm.mechanical_list.trim() || null,
-      software_code: machineForm.software_code.trim().toUpperCase() || null,
+      mechanical_list: normalizedMechanicalList || null,
+      software_code: normalizedSoftwareCode || null,
       ip_range: machineForm.ip_range.trim() || null,
       vm: machineForm.vm.trim() || null,
       software_version: machineForm.software_version.trim() || null,
@@ -1559,26 +1879,84 @@ export default function Home() {
     setView("registry");
   }
 
-  async function saveTechnician(event: FormEvent<HTMLFormElement>) {
+  async function saveUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    if (!currentUserCanManageUsers) {
+      setMessage("Seu usuário não tem permissão para cadastrar ou alterar usuários.");
+      return;
+    }
+
     const payload = {
-      name: String(form.get("name") ?? "").trim(),
-      email: String(form.get("email") ?? "").trim() || null
+      name: userForm.name.trim(),
+      email: userForm.email.trim().toLowerCase(),
+      role: userForm.role
     };
 
-    const { error } = editingTechnicianId
-      ? await supabase.from("technicians").update(payload).eq("id", editingTechnicianId)
-      : await supabase.from("technicians").insert(payload);
+    if (!payload.name || !payload.email) {
+      setMessage("Informe nome e e-mail do usuário.");
+      return;
+    }
+
+    if (!isCorporateEmail(payload.email)) {
+      setMessage("Cadastre apenas e-mails corporativos da Tomasoni.");
+      return;
+    }
+
+    const { error } = editingUserId
+      ? await supabase.from("authorized_users").update(payload).eq("id", editingUserId)
+      : await supabase.from("authorized_users").insert(payload);
 
     if (error) {
       setMessage(dataMessage(error.message));
       return;
     }
 
-    setEditingTechnicianId("");
+    setEditingUserId("");
     setMessage("Técnico salvo com sucesso.");
+    setUserForm(EMPTY_USER_FORM);
     event.currentTarget.reset();
+    await loadData();
+  }
+
+  async function saveTravelSchedule(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!currentUserCanEditSchedule) {
+      setMessage("Seu usuário tem acesso apenas para visualizar o cronograma.");
+      return;
+    }
+
+    const validationErrors = [
+      validateDayMonth(travelForm.start_date, "Data de início"),
+      validateDayMonth(travelForm.end_date, "Data de fim")
+    ].filter(Boolean);
+
+    if (validationErrors.length) {
+      setMessage(validationErrors[0]);
+      return;
+    }
+
+    const payload = {
+      start_date: travelForm.start_date.trim(),
+      end_date: travelForm.end_date.trim(),
+      code: travelForm.code.trim().toUpperCase() || null,
+      client: travelForm.client.trim() || null,
+      technicians: travelForm.technicians.trim() || null,
+      status: travelForm.status.trim() || null,
+      reason: travelForm.reason.trim() || null
+    };
+
+    const { error } = editingTravelId
+      ? await supabase.from("travel_schedules").update(payload).eq("id", editingTravelId)
+      : await supabase.from("travel_schedules").insert({ ...payload, created_by: currentUserId });
+
+    if (error) {
+      setMessage(dataMessage(error.message));
+      return;
+    }
+
+    setEditingTravelId("");
+    setTravelForm(EMPTY_TRAVEL_FORM);
+    setMessage("Cronograma salvo com sucesso.");
     await loadData();
   }
 
@@ -1621,6 +1999,11 @@ export default function Home() {
 
   async function saveService(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!currentUserCanEmitReports) {
+      setMessage("Seu perfil não tem permissão para emitir relatórios.");
+      return;
+    }
+
     const isEditingService = Boolean(editingServiceRecord);
     const formElement = event.currentTarget;
     const form = new FormData(event.currentTarget);
@@ -1638,6 +2021,18 @@ export default function Home() {
     }
 
     const selectedServiceType = normalizeServiceType(String(form.get("service_type") ?? serviceType));
+    const serviceStart = String(form.get("service_start") ?? "").trim();
+    const serviceEnd = String(form.get("service_end") ?? "").trim();
+    const serviceDateErrors = [
+      validateDayMonth(serviceStart, "Início de atendimento"),
+      validateDayMonth(serviceEnd, "Fim de atendimento")
+    ].filter(Boolean);
+
+    if (serviceDateErrors.length) {
+      setMessage(serviceDateErrors[0]);
+      return;
+    }
+
     const loggedTechnicianName = currentUserName || displayUserName(currentUserEmail);
     const payload = {
       machine_id: machine.id,
@@ -1646,6 +2041,8 @@ export default function Home() {
       technician_email: currentUserEmail || null,
       service_type: selectedServiceType,
       service_date: String(form.get("service_date") ?? ""),
+      service_start: serviceStart || null,
+      service_end: serviceEnd || null,
       equipment: String(form.get("equipment") ?? "").trim() || null,
       issue_summary: String(form.get("issue_summary") ?? "").trim() || null,
       request: String(form.get("request") ?? "").trim(),
@@ -1717,10 +2114,37 @@ export default function Home() {
     await loadData();
   }
 
-  async function deleteTechnician(id: string) {
+  async function deleteUser(id: string) {
+    if (!currentUserCanManageUsers) {
+      setMessage("Seu usuário não tem permissão para excluir usuários.");
+      return;
+    }
     if (!confirm("Excluir este técnico?")) return;
-    const { error } = await supabase.from("technicians").delete().eq("id", id);
+    const { error } = await supabase.from("authorized_users").delete().eq("id", id);
     setMessage(error ? dataMessage(error.message) : "Técnico excluído.");
+    await loadData();
+  }
+
+  async function deleteTravelSchedule(id: string) {
+    if (!currentUserCanEditSchedule) {
+      setMessage("Seu usuário tem acesso apenas para visualizar o cronograma.");
+      return;
+    }
+    if (!confirm("Excluir este item do cronograma?")) return;
+    const { error } = await supabase.from("travel_schedules").delete().eq("id", id);
+    setMessage(error ? dataMessage(error.message) : "Item do cronograma excluído.");
+    await loadData();
+  }
+
+  async function deleteServiceRecord(record: ServiceRecord) {
+    if (!currentUserHasFullAccess) {
+      setMessage("Apenas usuários com acesso total podem excluir atendimentos.");
+      return;
+    }
+    if (!confirm("Excluir este atendimento?")) return;
+    const { error } = await supabase.from("service_records").delete().eq("id", record.id);
+    setMessage(error ? dataMessage(error.message) : "Atendimento excluído.");
+    setSelectedServiceRecord(null);
     await loadData();
   }
 
@@ -1733,6 +2157,21 @@ export default function Home() {
           <Image src="/tomasoni-logo-transparent.png" alt="Tomasoni" width={300} height={80} priority />
           <h1>Configuração pendente</h1>
           <p>Preencha `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` no arquivo `.env.local` ou nas variáveis de ambiente da Vercel.</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (biometricRequired) {
+    return (
+      <main className="login-page">
+        <section className="login-card">
+          <Image className="login-logo" src="/tomasoni-logo-transparent.png" alt="Tomasoni" width={300} height={80} priority />
+          <h1>Confirmar acesso</h1>
+          <p>Use a biometria deste dispositivo para renovar a confirmação de acesso.</p>
+          <button className="button primary" type="button" onClick={() => void confirmBiometricAccess()}>Confirmar por biometria</button>
+          <button className="link-button auth-secondary-action" type="button" onClick={() => void signOut()}>Entrar com código</button>
+          {message !== DEFAULT_MESSAGE && <span className="form-message">{message}</span>}
         </section>
       </main>
     );
@@ -1768,7 +2207,8 @@ export default function Home() {
         <nav className="side-nav">
           <button className={`nav-item ${view === "home" ? "active" : ""}`} onClick={() => setView("home")}>Tela inicial</button>
           <button className={`nav-item ${view === "overview" ? "active" : ""}`} onClick={() => setView("overview")}>Visão geral</button>
-          <button className={`nav-item ${view === "registry" ? "active" : ""}`} onClick={() => { setRegistryTab("machines"); setView("registry"); }}>Cadastro</button>
+          <button className={`nav-item ${view === "schedule" ? "active" : ""}`} onClick={() => setView("schedule")}>Cronograma</button>
+          {(currentUserCanEditMachine || currentUserCanManageUsers) && <button className={`nav-item ${view === "registry" ? "active" : ""}`} onClick={() => { setRegistryTab("machines"); setView("registry"); }}>Cadastro</button>}
         </nav>
         <div className="user-menu">
           <button className="user-menu-trigger" type="button" onClick={() => setUserMenuOpen((open) => !open)} aria-expanded={userMenuOpen}>
@@ -1797,7 +2237,7 @@ export default function Home() {
           <div className="topbar-actions">
             <button className="icon-button utility-action" type="button" title="Ajuda da tela" aria-label="Ajuda da tela" onClick={() => setHelpOpen(true)}><HelpIcon /></button>
             <button className="icon-button utility-action" type="button" title={theme === "dark" ? "Modo claro" : "Modo escuro"} aria-label={theme === "dark" ? "Modo claro" : "Modo escuro"} onClick={toggleTheme}>{theme === "dark" ? <SunIcon /> : <MoonIcon />}</button>
-            <button className="icon-button add-action" type="button" title="Novo atendimento" aria-label="Novo atendimento" onClick={startNewService}><PlusIcon /></button>
+            {currentUserCanEmitReports && <button className="icon-button add-action" type="button" title="Novo atendimento" aria-label="Novo atendimento" onClick={startNewService}><PlusIcon /></button>}
           </div>
         </header>
 
@@ -2040,6 +2480,66 @@ export default function Home() {
           </section>
         )}
 
+        {view === "schedule" && (
+          <section className="view active schedule-page">
+            {currentUserCanEditSchedule && (
+              <form className="form-panel" onSubmit={saveTravelSchedule}>
+                <div className="section-header">
+                  <h2>{editingTravelId ? "Alterar viagem" : "Registrar viagem"}</h2>
+                  <div className="actions-row">
+                    {editingTravelId && <button className="button ghost" type="button" onClick={() => { setEditingTravelId(""); setTravelForm(EMPTY_TRAVEL_FORM); }}>Cancelar</button>}
+                    <button className="icon-button save-action" title="Salvar cronograma" aria-label="Salvar cronograma"><SaveIcon /></button>
+                  </div>
+                </div>
+                <div className="fields-grid">
+                  <label>Data de início<input value={travelForm.start_date} onChange={(event) => setTravelForm((current) => ({ ...current, start_date: event.target.value }))} placeholder="dd/mm ou A definir" /></label>
+                  <label>Data de fim<input value={travelForm.end_date} onChange={(event) => setTravelForm((current) => ({ ...current, end_date: event.target.value }))} placeholder="dd/mm ou A definir" /></label>
+                  <label>Código<input value={travelForm.code} onChange={(event) => setTravelForm((current) => ({ ...current, code: event.target.value }))} placeholder="T665-xxx" maxLength={10} /></label>
+                  <label>Cliente<input value={travelForm.client} onChange={(event) => setTravelForm((current) => ({ ...current, client: event.target.value }))} /></label>
+                  <label>Técnicos<input value={travelForm.technicians} onChange={(event) => setTravelForm((current) => ({ ...current, technicians: event.target.value }))} placeholder="Nomes separados por vírgula" /></label>
+                  <label>Status<select value={travelForm.status} onChange={(event) => setTravelForm((current) => ({ ...current, status: event.target.value }))}>
+                    {TRAVEL_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select></label>
+                  <label className="wide">Motivo<textarea rows={3} value={travelForm.reason} onChange={(event) => setTravelForm((current) => ({ ...current, reason: event.target.value }))} maxLength={1200} /></label>
+                </div>
+              </form>
+            )}
+
+            <section className="table-panel">
+              <div className="section-header"><h2>Cronograma de viagens</h2><span>{travelSchedules.length} registros</span></div>
+              <div className="table-wrap">
+                <table className="compact-table schedule-table">
+                  <thead><tr><th>Início</th><th>Fim</th><th>Código</th><th>Cliente</th><th>Técnicos</th><th>Status</th><th>Motivo</th><th>Ações</th></tr></thead>
+                  <tbody>{travelSchedules.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.start_date || "-"}</td>
+                      <td>{item.end_date || "-"}</td>
+                      <td>{item.code || "-"}</td>
+                      <td>{item.client || "-"}</td>
+                      <td>{item.technicians || "-"}</td>
+                      <td><span className="soft-pill">{item.status || "-"}</span></td>
+                      <td>{item.reason || "-"}</td>
+                      <td>
+                        {currentUserCanEditSchedule ? (
+                          <div className="row-actions">
+                            <button className="icon-button menu-trigger" type="button" title="Ações" aria-label="Ações do cronograma" onClick={() => setOpenActionMenu(openActionMenu === `travel-${item.id}` ? "" : `travel-${item.id}`)}><MoreIcon /></button>
+                            {openActionMenu === `travel-${item.id}` && (
+                              <div className="row-menu">
+                                <button type="button" onClick={() => { setEditingTravelId(item.id); setTravelForm({ start_date: item.start_date ?? "", end_date: item.end_date ?? "", code: item.code ?? "", client: item.client ?? "", technicians: item.technicians ?? "", status: item.status ?? "A definir", reason: item.reason ?? "" }); setOpenActionMenu(""); }}><EditIcon /> Alterar</button>
+                                <button className="danger" type="button" onClick={() => { void deleteTravelSchedule(item.id); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>
+                              </div>
+                            )}
+                          </div>
+                        ) : "-"}
+                      </td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+        )}
+
         {view === "machineDetail" && selectedMachine && (
           <section className="machine-dashboard view active">
             <section className="machine-hero">
@@ -2179,6 +2679,8 @@ export default function Home() {
               <label>Equipamento<input name="equipment" placeholder="CLP, IHM, servo, inversor" defaultValue={editingServiceRecord?.equipment ?? ""} /></label>
               <label>Técnico responsável<input value={currentUserName || displayUserName(currentUserEmail)} readOnly /></label>
               <label>Data<input name="service_date" type="date" required defaultValue={editingServiceRecord?.service_date ?? new Date().toISOString().slice(0, 10)} /></label>
+              <label>Início do atendimento<input name="service_start" placeholder="dd/mm" pattern="\d{2}/\d{2}" defaultValue={editingServiceRecord?.service_start ?? ""} /></label>
+              <label>Fim do atendimento<input name="service_end" placeholder="dd/mm" pattern="\d{2}/\d{2}" defaultValue={editingServiceRecord?.service_end ?? ""} /></label>
               <label>Tipo de atendimento<select name="service_type" value={serviceType} onChange={(event) => updateServiceType(event.target.value as ServiceType)}>
                 {SERVICE_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
               </select></label>
@@ -2235,6 +2737,10 @@ export default function Home() {
             <section className="table-panel">
               <div className="section-header">
                 <h2>Cadastro</h2>
+                <div className="segmented-tabs">
+                  <button className={registryTab === "machines" ? "active" : ""} type="button" onClick={() => setRegistryTab("machines")}>Máquinas</button>
+                  {currentUserCanManageUsers && <button className={registryTab === "users" ? "active" : ""} type="button" onClick={() => setRegistryTab("users")}>Usuários</button>}
+                </div>
               </div>
             </section>
 
@@ -2251,25 +2757,26 @@ export default function Home() {
                   <section className="form-card">
                     <h3>Dados da máquina</h3>
                     <div className="fields-grid">
-                      <label>Código<input value={machineForm.code} onChange={(event) => updateMachineForm("code", event.target.value)} placeholder="Número do projeto" /></label>
-                      <label>Modelo<input value={machineForm.model} onChange={(event) => updateMachineForm("model", event.target.value)} placeholder="Onduladeira, Dryend, ICV..." /></label>
-                      <label className="wide">Descrição<textarea rows={3} value={machineForm.description} onChange={(event) => updateMachineForm("description", event.target.value)} placeholder="Detalhe o modelo da máquina, configuração ou observações do equipamento" /></label>
-                      <label>Cliente<input value={machineForm.client} onChange={(event) => updateMachineForm("client", event.target.value)} placeholder="Nome da empresa" /></label>
-                      <label>Localização<input value={machineForm.unit_city} onChange={(event) => updateMachineForm("unit_city", event.target.value)} placeholder="Cidade - Estado" /></label>
-                      <label>Mecânica<input value={machineForm.mechanical_list} onChange={(event) => updateMachineForm("mechanical_list", event.target.value)} placeholder="Lista mecânica" /></label>
-                      <label>Código do software<input value={machineForm.software_code} onChange={(event) => updateMachineForm("software_code", event.target.value)} placeholder="Código do software da máquina" /></label>
-                      <label>VM<input value={machineForm.vm} onChange={(event) => updateMachineForm("vm", event.target.value)} placeholder="VM onde o software está alocado" /></label>
-                      <label>Faixa de IP<input value={machineForm.ip_range} onChange={(event) => updateMachineForm("ip_range", event.target.value)} placeholder="Ex.: 189.1.87.xxx" /></label>
-                      <label>Número de série<input value={machineForm.serial} onChange={(event) => updateMachineForm("serial", event.target.value)} /></label>
-                      <label>Fabricação<input value={machineForm.manufacture_month} onChange={(event) => updateMachineForm("manufacture_month", event.target.value)} placeholder="mm/aa" pattern="\d{2}/\d{2}" /></label>
-                      <label>Software<input value={machineForm.software_version} onChange={(event) => updateMachineForm("software_version", event.target.value)} placeholder="TIA Vx, Scout..." /></label>
+                      <label>Código<input disabled={machineMainFieldsDisabled} value={machineForm.code} onChange={(event) => updateMachineForm("code", event.target.value)} placeholder="T665-xxx" maxLength={10} /></label>
+                      <label>Modelo<input disabled={machineMainFieldsDisabled} value={machineForm.model} onChange={(event) => updateMachineForm("model", event.target.value)} placeholder="Onduladeira, Dryend, ICV..." maxLength={120} /></label>
+                      <label className="wide">Descrição<textarea disabled={machineMainFieldsDisabled} rows={4} value={machineForm.description} onChange={(event) => updateMachineForm("description", event.target.value)} placeholder="Detalhe o modelo da máquina, configuração ou observações do equipamento" maxLength={4000} /></label>
+                      <label>Cliente<input disabled={machineMainFieldsDisabled} value={machineForm.client} onChange={(event) => updateMachineForm("client", event.target.value)} placeholder="Nome da empresa" maxLength={160} /></label>
+                      <label>Localização<input disabled={machineMainFieldsDisabled} list="city-suggestions" value={machineForm.unit_city} onChange={(event) => updateMachineForm("unit_city", event.target.value)} placeholder="Cidade - UF ou Cidade - PAIS" maxLength={160} /></label>
+                      <datalist id="city-suggestions">{citySuggestions.map((city) => <option key={city} value={city} />)}</datalist>
+                      <label>Mecânica<input disabled={machineMainFieldsDisabled} value={machineForm.mechanical_list} onChange={(event) => updateMachineForm("mechanical_list", event.target.value)} placeholder="500-xxx ou T-0xxx" maxLength={10} /></label>
+                      <label>Código do software<input disabled={machineMainFieldsDisabled} value={machineForm.software_code} onChange={(event) => updateMachineForm("software_code", event.target.value)} placeholder="T665-xxx" maxLength={10} /></label>
+                      <label>VM<input disabled={machineMainFieldsDisabled} value={machineForm.vm} onChange={(event) => updateMachineForm("vm", event.target.value)} placeholder="VM onde o software está alocado" maxLength={120} /></label>
+                      <label>Faixa de IP<input disabled={machineMainFieldsDisabled} value={machineForm.ip_range} onChange={(event) => updateMachineForm("ip_range", event.target.value)} placeholder="Ex.: 189.1.87.xxx" maxLength={120} /></label>
+                      <label>Número de série<input disabled={machineMainFieldsDisabled} value={machineForm.serial} onChange={(event) => updateMachineForm("serial", event.target.value)} placeholder="500-xxx ou 500-697/22" maxLength={12} /></label>
+                      <label>Fabricação<input disabled={machineMainFieldsDisabled} value={machineForm.manufacture_month} onChange={(event) => updateMachineForm("manufacture_month", event.target.value)} placeholder="mm/aa" pattern="\d{2}/\d{2}" maxLength={5} /></label>
+                      <label>Software<input disabled={machineMainFieldsDisabled} value={machineForm.software_version} onChange={(event) => updateMachineForm("software_version", event.target.value)} placeholder="TIA Vx, Scout..." maxLength={120} /></label>
                     </div>
                   </section>
 
                   <section className="form-card">
                     <h3>Informações de Acesso</h3>
                     <div className="fields-grid">
-                      <label>Acesso remoto<select value={machineForm.remote_access} onChange={(event) => updateMachineForm("remote_access", event.target.value as RemoteAccess)}>
+                      <label>Acesso remoto<select disabled={machineMainFieldsDisabled} value={machineForm.remote_access} onChange={(event) => updateMachineForm("remote_access", event.target.value as RemoteAccess)}>
                         {REMOTE_ACCESS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                       </select></label>
                     </div>
@@ -2278,7 +2785,7 @@ export default function Home() {
                     <>
                       {machineForm.remote_access === "VNC" && (
                         <div className="fields-grid">
-                          <label>IP de acesso<input value={machineForm.vnc_ip} onChange={(event) => updateMachineForm("vnc_ip", event.target.value)} /></label>
+                          <label>IP de acesso<input disabled={machineMainFieldsDisabled} value={machineForm.vnc_ip} onChange={(event) => updateMachineForm("vnc_ip", event.target.value)} /></label>
                           <label>Senha<input type="text" value={machineForm.vnc_password} onChange={(event) => updateMachineForm("vnc_password", event.target.value)} /></label>
                           <label>Usuário VM<input value={machineForm.vnc_user} onChange={(event) => updateMachineForm("vnc_user", event.target.value)} /></label>
                           <label>Senha VM<input type="text" value={machineForm.vnc_vm_password} onChange={(event) => updateMachineForm("vnc_vm_password", event.target.value)} /></label>
@@ -2287,7 +2794,7 @@ export default function Home() {
                       )}
                       {machineForm.remote_access === "SINEMA" && (
                         <div className="fields-grid">
-                          <label>Device Name<input value={machineForm.sinema_url} onChange={(event) => updateMachineForm("sinema_url", event.target.value)} /></label>
+                          <label>Device Name<input disabled={machineMainFieldsDisabled} value={machineForm.sinema_url} onChange={(event) => updateMachineForm("sinema_url", event.target.value)} /></label>
                           <label>Subnet Name<input value={machineForm.sinema_user} onChange={(event) => updateMachineForm("sinema_user", event.target.value)} /></label>
                           <label className="wide">Observações<textarea rows={3} value={machineForm.sinema_notes} onChange={(event) => updateMachineForm("sinema_notes", event.target.value)} /></label>
                         </div>
@@ -2342,33 +2849,45 @@ export default function Home() {
               </>
             )}
 
-            {registryTab === "technicians" && (
+            {registryTab === "users" && currentUserCanManageUsers && (
               <>
-                <form className="form-panel" onSubmit={saveTechnician}>
-                  <div className="section-header"><h2>{editingTechnicianId ? "Alterar técnico" : "Cadastrar técnico"}</h2><button className="icon-button save-action" title="Salvar técnico" aria-label="Salvar técnico"><SaveIcon /></button></div>
+                <form className="form-panel" onSubmit={saveUser}>
+                  <div className="section-header">
+                    <h2>{editingUserId ? "Alterar usuário" : "Cadastrar usuário"}</h2>
+                    <div className="actions-row">
+                      {editingUserId && <button className="button ghost" type="button" onClick={() => { setEditingUserId(""); setUserForm(EMPTY_USER_FORM); }}>Cancelar</button>}
+                      <button className="icon-button save-action" title="Salvar usuário" aria-label="Salvar usuário"><SaveIcon /></button>
+                    </div>
+                  </div>
                   <div className="fields-grid">
-                    <label>Nome<input name="name" required /></label>
-                    <label>E-mail<input name="email" type="email" /></label>
+                    <label>Usuário<input value={userForm.name} onChange={(event) => setUserForm((current) => ({ ...current, name: event.target.value }))} /></label>
+                    <label>E-mail<input value={userForm.email} onChange={(event) => setUserForm((current) => ({ ...current, email: event.target.value }))} type="email" /></label>
+                    <label>Perfil / Setor<select value={userForm.role} onChange={(event) => setUserForm((current) => ({ ...current, role: event.target.value as UserRole }))}>
+                      {USER_ROLE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                    </select></label>
                   </div>
                 </form>
                 <section className="table-panel">
                   <div className="table-wrap">
                     <table className="compact-table">
                       <thead><tr>
-                        <th><button className="sort-header" type="button" onClick={() => toggleTechnicianSort("name")}>Nome <span>{sortMark(technicianSort.key === "name", technicianSort.direction)}</span></button></th>
-                        <th><button className="sort-header" type="button" onClick={() => toggleTechnicianSort("email")}>E-mail <span>{sortMark(technicianSort.key === "email", technicianSort.direction)}</span></button></th>
+                        <th><button className="sort-header" type="button" onClick={() => toggleUserSort("name")}>Usuário <span>{sortMark(userSort.key === "name", userSort.direction)}</span></button></th>
+                        <th><button className="sort-header" type="button" onClick={() => toggleUserSort("email")}>E-mail <span>{sortMark(userSort.key === "email", userSort.direction)}</span></button></th>
+                        <th><button className="sort-header" type="button" onClick={() => toggleUserSort("role")}>Perfil / Setor <span>{sortMark(userSort.key === "role", userSort.direction)}</span></button></th>
                         <th>Ações</th>
                       </tr></thead>
-                      <tbody>{sortedTechnicians.map((technician) => (
-                        <tr key={technician.id}>
-                          <td>{technician.name}</td>
-                          <td>{technician.email || "-"}</td>
+                      <tbody>{sortedUsers.map((user) => (
+                        <tr key={user.id}>
+                          <td>{user.name}</td>
+                          <td>{user.email}</td>
+                          <td>{user.role}</td>
                           <td>
                             <div className="row-actions">
-                              <button className="icon-button menu-trigger" type="button" title="Ações" aria-label={`Ações do técnico ${technician.name}`} onClick={() => setOpenActionMenu(openActionMenu === `technician-${technician.id}` ? "" : `technician-${technician.id}`)}><MoreIcon /></button>
-                              {openActionMenu === `technician-${technician.id}` && (
+                              <button className="icon-button menu-trigger" type="button" title="Ações" aria-label={`Ações do usuário ${user.name}`} onClick={() => setOpenActionMenu(openActionMenu === `user-${user.id}` ? "" : `user-${user.id}`)}><MoreIcon /></button>
+                              {openActionMenu === `user-${user.id}` && (
                                 <div className="row-menu">
-                                  <button className="danger" type="button" onClick={() => { void deleteTechnician(technician.id); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>
+                                  <button type="button" onClick={() => { setEditingUserId(user.id); setUserForm({ name: user.name, email: user.email, role: user.role }); setOpenActionMenu(""); }}><EditIcon /> Alterar</button>
+                                  <button className="danger" type="button" onClick={() => { void deleteUser(user.id); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>
                                 </div>
                               )}
                             </div>
@@ -2413,6 +2932,9 @@ export default function Home() {
                 <button className="icon-button download" type="button" title="Baixar PDF" aria-label="Baixar PDF" onClick={() => downloadServicePdf(selectedMachine, selectedServiceRecord)}><PdfDownloadIcon /></button>
                 {selectedServiceRecord.created_by === currentUserId && (
                   <button className="button primary" type="button" onClick={() => startServiceEdit(selectedServiceRecord)}>Editar atendimento</button>
+                )}
+                {currentUserHasFullAccess && (
+                  <button className="button danger" type="button" onClick={() => void deleteServiceRecord(selectedServiceRecord)}>Excluir atendimento</button>
                 )}
               </div>
             </section>
@@ -2459,6 +2981,24 @@ export default function Home() {
                     <p>{body}</p>
                   </article>
                 ))}
+              </div>
+            </section>
+          </div>
+        )}
+
+        {biometricPromptOpen && (
+          <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="biometric-modal-title" onClick={() => setBiometricPromptOpen(false)}>
+            <section className="modal-card profile-card" onClick={(event) => event.stopPropagation()}>
+              <div className="section-header">
+                <div>
+                  <p className="eyebrow">Segurança do dispositivo</p>
+                  <h2 id="biometric-modal-title">Habilitar biometria</h2>
+                </div>
+              </div>
+              <p>Depois de habilitar, este dispositivo poderá renovar a confirmação de acesso com biometria quando o prazo de 7 dias vencer.</p>
+              <div className="modal-actions">
+                <button className="button ghost" type="button" onClick={() => { window.localStorage.setItem(BIOMETRIC_PROMPT_DISMISSED_KEY, "1"); setBiometricPromptOpen(false); }}>Agora não</button>
+                <button className="button primary" type="button" onClick={() => void enableBiometricAuth()}>Habilitar biometria</button>
               </div>
             </section>
           </div>

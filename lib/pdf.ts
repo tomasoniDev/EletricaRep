@@ -209,9 +209,11 @@ function drawServiceData(doc: jsPDF, record: ServiceRecord) {
   labelValue(doc, "Data do atendimento", formatDate(record.service_date), MARGIN, 361, col);
   labelValue(doc, "Tipo de atendimento", record.service_type ?? "Acesso remoto", MARGIN + col + 12, 361, col);
   labelValue(doc, "Equipamento", record.equipment, MARGIN + (col + 12) * 2, 361, col);
-  labelValue(doc, "Motivo breve", record.issue_summary, MARGIN, 400, CONTENT_WIDTH);
+  labelValue(doc, "Início", record.service_start, MARGIN, 400, col);
+  labelValue(doc, "Fim", record.service_end, MARGIN + col + 12, 400, col);
+  labelValue(doc, "Motivo breve", record.issue_summary, MARGIN, 439, CONTENT_WIDTH);
 
-  let y = 455;
+  let y = 492;
   y = flowTextSection(doc, "Solicitação do cliente / problema relatado", record.request, y);
   y = flowTextSection(doc, "Diagnóstico", record.diagnosis, y);
   y = flowTextSection(doc, "Serviço realizado", record.service_done, y);

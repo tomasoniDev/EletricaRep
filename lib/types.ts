@@ -58,6 +58,31 @@ export type Technician = {
   updated_at: string;
 };
 
+export type UserRole = "Admin" | "Diretoria" | "Engenharia" | "Montagem" | "Comercial";
+
+export type AuthorizedUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TravelSchedule = {
+  id: string;
+  start_date: string;
+  end_date: string;
+  code: string | null;
+  client: string | null;
+  technicians: string | null;
+  status: string | null;
+  reason: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Profile = {
   user_id: string;
   email: string;
@@ -74,6 +99,8 @@ export type ServiceRecord = {
   technician_email: string | null;
   service_type: "Acesso remoto" | "Visita técnica" | null;
   service_date: string;
+  service_start: string | null;
+  service_end: string | null;
   equipment: string | null;
   issue_summary: string | null;
   request: string;
