@@ -276,7 +276,7 @@ button { cursor: pointer; }
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex: 0 0 auto;
 }
 
@@ -526,21 +526,27 @@ input:focus, textarea:focus, select:focus {
 
 .icon-button.add-action,
 .icon-button.save-action {
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
   background: transparent;
   color: var(--primary-dark);
   box-shadow: none;
 }
 
-.icon-button.add-action {
-  width: 48px;
-  height: 48px;
+.topbar-actions .icon-button {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+}
+
+.topbar-actions .icon-button svg {
+  width: 24px;
+  height: 24px;
 }
 
 .icon-button.add-action svg {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   stroke-width: 2.6;
 }
 
@@ -590,20 +596,24 @@ input:focus, textarea:focus, select:focus {
 
 .segmented-control {
   display: inline-flex;
-  gap: 4px;
+  gap: 6px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface-2);
-  padding: 4px;
+  padding: 5px;
 }
 
 .segmented-control button {
-  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
   border: 0;
   border-radius: 999px;
   background: transparent;
   color: var(--muted);
-  padding: 0 14px;
+  padding: 0 16px;
   font-weight: 800;
 }
 
@@ -611,6 +621,16 @@ input:focus, textarea:focus, select:focus {
 .segmented-control button:hover {
   background: var(--surface);
   color: var(--primary-dark);
+}
+
+.segmented-control button.active {
+  box-shadow: 0 8px 22px rgba(18, 104, 216, 0.12);
+}
+
+.segmented-control svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
 }
 
 .fields-grid {
@@ -1870,12 +1890,16 @@ tbody tr:hover { background: var(--surface-2); }
   .auth-links { justify-content: center; }
   .fields-grid { grid-template-columns: 1fr; }
   .button { width: 100%; }
-  .icon-button,
-  .topbar .icon-button,
   .signature-actions .button,
   .row-menu .button,
   .card-title .button {
     width: auto;
+  }
+  .topbar-actions .icon-button,
+  .icon-button.save-action,
+  .icon-button.add-action {
+    width: 42px;
+    height: 42px;
   }
   .signature-panel .section-header {
     gap: 12px;

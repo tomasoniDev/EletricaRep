@@ -673,8 +673,9 @@ function PlusIcon() {
 function SaveIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24">
-      <path d="M5 4h12l2 2v14H5z" />
-      <path d="M8 4v6h8V4M8 20v-6h8v6" />
+      <path d="M7 3h7l4 4v14H7z" />
+      <path d="M14 3v5h4" />
+      <path d="m9 14 2 2 4-5" />
     </svg>
   );
 }
@@ -2757,9 +2758,9 @@ export default function Home() {
             <section className="table-panel">
               <div className="section-header">
                 <h2>Cadastro</h2>
-                <div className="segmented-tabs">
-                  <button className={registryTab === "machines" ? "active" : ""} type="button" onClick={() => setRegistryTab("machines")}>Máquinas</button>
-                  {currentUserCanManageUsers && <button className={registryTab === "users" ? "active" : ""} type="button" onClick={() => setRegistryTab("users")}>Usuários</button>}
+                <div className="segmented-control" aria-label="Tipo de cadastro">
+                  <button className={registryTab === "machines" ? "active" : ""} type="button" onClick={() => setRegistryTab("machines")}><DetailIcon type="software" /> Máquinas</button>
+                  {currentUserCanManageUsers && <button className={registryTab === "users" ? "active" : ""} type="button" onClick={() => setRegistryTab("users")}><DetailIcon type="client" /> Usuários</button>}
                 </div>
               </div>
             </section>
