@@ -2223,7 +2223,7 @@ export default function Home() {
             <span className="avatar">{initialsFromEmail(currentUserEmail)}</span>
             <span className="user-meta">
               <strong>{currentUserName || displayUserName(currentUserEmail)}</strong>
-              <small>{currentUserEmail || "Sessão ativa"}</small>
+              <small>{currentUserRole || "Usuário autorizado"}</small>
             </span>
             <MoreIcon />
           </button>
