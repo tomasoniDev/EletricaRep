@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, MouseEvent as ReactMouseEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { downloadServicePdf, servicePdfBase64, servicePdfFileName } from "@/lib/pdf";
@@ -16,6 +16,7 @@ type RemoteAccess = "SINEMA" | "VNC" | "Sem acesso remoto";
 type ServiceType = "Acesso remoto" | "Visita técnica";
 type ThemeMode = "light" | "dark";
 type ContractType = "Seg-Sex" | "Seg-Sab" | "Garantia";
+type ActionMenuPosition = { top: number; right: number };
 type LeafletLayerTarget = LeafletMap | LeafletLayerGroup;
 type LeafletMap = {
   fitBounds: (bounds: [number, number][], options?: Record<string, unknown>) => LeafletMap;
@@ -839,6 +840,7 @@ export default function Home() {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [openActionMenu, setOpenActionMenu] = useState("");
+  const [actionMenuPosition, setActionMenuPosition] = useState<ActionMenuPosition | null>(null);
 
   useEffect(() => {
     const storedTheme = window.localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light";
@@ -959,6 +961,7 @@ export default function Home() {
 
   useEffect(() => {
     setOpenActionMenu("");
+    setActionMenuPosition(null);
     setUserMenuOpen(false);
   }, [view, registryTab]);
 
@@ -973,7 +976,10 @@ export default function Home() {
       if (!target) return;
 
       if (!target.closest(".user-menu")) setUserMenuOpen(false);
-      if (!target.closest(".row-actions")) setOpenActionMenu("");
+      if (!target.closest(".row-actions") && !target.closest(".row-menu")) {
+        setOpenActionMenu("");
+        setActionMenuPosition(null);
+      }
     }
 
     document.addEventListener("mousedown", closeFloatingLayers);
@@ -1805,6 +1811,22 @@ export default function Home() {
     setUserSort((current) => ({ key, direction: nextDirection(current.key === key, current.direction) }));
   }
 
+  function toggleActionMenu(id: string, event: ReactMouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+
+    if (openActionMenu === id) {
+      setOpenActionMenu("");
+      setActionMenuPosition(null);
+      return;
+    }
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const right = Math.max(12, window.innerWidth - rect.right);
+    const top = Math.min(rect.bottom + 6, window.innerHeight - 220);
+    setActionMenuPosition({ top: Math.max(12, top), right });
+    setOpenActionMenu(id);
+  }
+
   function updateMachineForm<K extends keyof MachineFormState>(key: K, value: MachineFormState[K]) {
     setMachineForm((current) => {
       const next = { ...current, [key]: value };
@@ -2195,8 +2217,8 @@ export default function Home() {
   }
 
   async function deleteServiceRecord(record: ServiceRecord) {
-    if (!currentUserHasFullAccess) {
-      setMessage("Apenas usuários com acesso total podem excluir atendimentos.");
+    if (!currentUserHasFullAccess && record.created_by !== currentUserId) {
+      setMessage("Este atendimento só pode ser excluído pelo autor ou por usuário com acesso total.");
       return;
     }
     if (!confirm("Excluir este atendimento?")) return;
@@ -2696,11 +2718,12 @@ export default function Home() {
                         <td>{record.issue_summary || "-"}</td>
                         <td>
                           <div className="row-actions" onClick={(event) => event.stopPropagation()}>
-                            <button className="icon-button menu-trigger" type="button" title="Ações" aria-label="Ações do atendimento" onClick={() => setOpenActionMenu(openActionMenu === `service-${record.id}` ? "" : `service-${record.id}`)}><MoreIcon /></button>
+                            <button className="icon-button menu-trigger" type="button" title="Ações" aria-label="Ações do atendimento" onClick={(event) => toggleActionMenu(`service-${record.id}`, event)}><MoreIcon /></button>
                             {openActionMenu === `service-${record.id}` && (
-                              <div className="row-menu">
+                              <div className="row-menu floating-row-menu" style={actionMenuPosition ?? undefined}>
                                 <button type="button" onClick={() => { downloadServicePdf(selectedMachine, record); setOpenActionMenu(""); }}><PdfDownloadIcon /> Baixar PDF</button>
                                 {record.created_by === currentUserId && <button type="button" onClick={() => { startServiceEdit(record); setOpenActionMenu(""); }}><EditIcon /> Editar</button>}
+                                {(record.created_by === currentUserId || currentUserHasFullAccess) && <button className="danger" type="button" onClick={() => { void deleteServiceRecord(record); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>}
                               </div>
                             )}
                           </div>
@@ -2878,9 +2901,9 @@ export default function Home() {
                           <td>{machine.remote_access || machine.access_method || "Sem acesso remoto"}</td>
                           <td>
                             <div className="row-actions">
-                              <button className="icon-button menu-trigger" type="button" title="Ações" aria-label={`Ações da máquina ${displayMachineCode(machine)}`} onClick={() => setOpenActionMenu(openActionMenu === `machine-${machine.id}` ? "" : `machine-${machine.id}`)}><MoreIcon /></button>
+                              <button className="icon-button menu-trigger" type="button" title="Ações" aria-label={`Ações da máquina ${displayMachineCode(machine)}`} onClick={(event) => toggleActionMenu(`machine-${machine.id}`, event)}><MoreIcon /></button>
                               {openActionMenu === `machine-${machine.id}` && (
-                                <div className="row-menu">
+                                <div className="row-menu floating-row-menu" style={actionMenuPosition ?? undefined}>
                                   <button type="button" onClick={() => { setEditingMachineId(machine.id); setRegistryTab("machines"); setOpenActionMenu(""); }}><EditIcon /> Alterar cadastro</button>
                                   <button className="danger" type="button" onClick={() => { void deleteMachine(machine.id); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>
                                 </div>
@@ -2929,9 +2952,9 @@ export default function Home() {
                           <td>{user.role}</td>
                           <td>
                             <div className="row-actions">
-                              <button className="icon-button menu-trigger" type="button" title="Ações" aria-label={`Ações do usuário ${user.name}`} onClick={() => setOpenActionMenu(openActionMenu === `user-${user.id}` ? "" : `user-${user.id}`)}><MoreIcon /></button>
+                              <button className="icon-button menu-trigger" type="button" title="Ações" aria-label={`Ações do usuário ${user.name}`} onClick={(event) => toggleActionMenu(`user-${user.id}`, event)}><MoreIcon /></button>
                               {openActionMenu === `user-${user.id}` && (
-                                <div className="row-menu">
+                                <div className="row-menu floating-row-menu" style={actionMenuPosition ?? undefined}>
                                   <button type="button" onClick={() => { setEditingUserId(user.id); setUserForm({ name: user.name, email: user.email, role: user.role }); setOpenActionMenu(""); }}><EditIcon /> Alterar</button>
                                   <button className="danger" type="button" onClick={() => { void deleteUser(user.id); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>
                                 </div>
@@ -2979,7 +3002,7 @@ export default function Home() {
                 {selectedServiceRecord.created_by === currentUserId && (
                   <button className="button primary" type="button" onClick={() => startServiceEdit(selectedServiceRecord)}>Editar atendimento</button>
                 )}
-                {currentUserHasFullAccess && (
+                {(currentUserHasFullAccess || selectedServiceRecord.created_by === currentUserId) && (
                   <button className="button danger" type="button" onClick={() => void deleteServiceRecord(selectedServiceRecord)}>Excluir atendimento</button>
                 )}
               </div>
