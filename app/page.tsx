@@ -421,7 +421,7 @@ function canEditSchedule(role?: UserRole | null) {
 function validateCodePattern(value: string, pattern: RegExp, label: string) {
   const normalized = value.trim().toUpperCase();
   if (!normalized) return "";
-  return pattern.test(normalized) ? "" : `${label} fora do padrão esperado.`;
+  return pattern.test(normalized) ? "" : `${label} deve estar no padrão esperado ou ficar vazio.`;
 }
 
 function validateDayMonth(value: string, label: string) {
