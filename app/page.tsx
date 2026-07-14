@@ -2508,7 +2508,7 @@ export default function Home() {
                   <label>Status<select value={travelForm.status} onChange={(event) => setTravelForm((current) => ({ ...current, status: event.target.value }))}>
                     {TRAVEL_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                   </select></label>
-                  <label className="wide">Motivo<textarea rows={3} value={travelForm.reason} onChange={(event) => setTravelForm((current) => ({ ...current, reason: event.target.value }))} maxLength={1200} /></label>
+                  <label className="wide">Motivo<textarea rows={3} value={travelForm.reason} onChange={(event) => setTravelForm((current) => ({ ...current, reason: event.target.value }))} /></label>
                 </div>
               </form>
             )}
@@ -2517,7 +2517,7 @@ export default function Home() {
               <div className="section-header"><h2>Cronograma de viagens</h2><span>{travelSchedules.length} registros</span></div>
               <div className="table-wrap">
                 <table className="compact-table schedule-table">
-                  <thead><tr><th>Início</th><th>Fim</th><th>Código</th><th>Cliente</th><th>Técnicos</th><th>Status</th><th>Motivo</th><th>Ações</th></tr></thead>
+                  <thead><tr><th>Início</th><th>Fim</th><th>Código</th><th>Cliente</th><th>Técnicos</th><th>Status</th><th>Motivo</th></tr></thead>
                   <tbody>{travelSchedules.map((item) => (
                     <tr key={item.id}>
                       <td>{item.start_date || "-"}</td>
@@ -2527,19 +2527,6 @@ export default function Home() {
                       <td>{item.technicians || "-"}</td>
                       <td><span className="soft-pill">{item.status || "-"}</span></td>
                       <td>{item.reason || "-"}</td>
-                      <td>
-                        {currentUserCanEditSchedule ? (
-                          <div className="row-actions">
-                            <button className="icon-button menu-trigger" type="button" title="Ações" aria-label="Ações do cronograma" onClick={() => setOpenActionMenu(openActionMenu === `travel-${item.id}` ? "" : `travel-${item.id}`)}><MoreIcon /></button>
-                            {openActionMenu === `travel-${item.id}` && (
-                              <div className="row-menu">
-                                <button type="button" onClick={() => { setEditingTravelId(item.id); setTravelForm({ start_date: item.start_date ?? "", end_date: item.end_date ?? "", code: item.code ?? "", client: item.client ?? "", technicians: item.technicians ?? "", status: item.status ?? "A definir", reason: item.reason ?? "" }); setOpenActionMenu(""); }}><EditIcon /> Alterar</button>
-                                <button className="danger" type="button" onClick={() => { void deleteTravelSchedule(item.id); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>
-                              </div>
-                            )}
-                          </div>
-                        ) : "-"}
-                      </td>
                     </tr>
                   ))}</tbody>
                 </table>

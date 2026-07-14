@@ -1474,6 +1474,41 @@ table {
 
 .compact-table { min-width: 520px; }
 
+.schedule-table {
+  min-width: 960px;
+  table-layout: fixed;
+}
+
+.schedule-table th:nth-child(1),
+.schedule-table td:nth-child(1),
+.schedule-table th:nth-child(2),
+.schedule-table td:nth-child(2) { width: 9%; }
+
+.schedule-table th:nth-child(3),
+.schedule-table td:nth-child(3) { width: 11%; }
+
+.schedule-table th:nth-child(4),
+.schedule-table td:nth-child(4) { width: 15%; }
+
+.schedule-table th:nth-child(5),
+.schedule-table td:nth-child(5) { width: 20%; }
+
+.schedule-table th:nth-child(6),
+.schedule-table td:nth-child(6) { width: 12%; }
+
+.schedule-table th:nth-child(7),
+.schedule-table td:nth-child(7) { width: 24%; }
+
+.schedule-table td {
+  vertical-align: top;
+}
+
+.schedule-table td:nth-child(5),
+.schedule-table td:nth-child(7) {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 th, td {
   border-bottom: 1px solid var(--line);
   padding: 12px;
