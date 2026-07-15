@@ -644,7 +644,9 @@ function authMessage(error: unknown) {
 
 function dataMessage(error: string) {
   const normalized = error.toLowerCase();
-  if (normalized.includes("support_contracts") || normalized.includes("relation") || normalized.includes("schema cache")) return "Estrutura de contratos não encontrada no Supabase. Aplique as migrations 020_support_contracts_permissions.sql e 021_add_support_contract_status.sql e tente novamente.";
+  if (normalized.includes("status") && normalized.includes("schema cache")) return "A coluna de status dos contratos ainda não foi reconhecida pela API do Supabase. Aplique a migration 022_refresh_support_contract_status_schema.sql e tente novamente.";
+  if (normalized.includes("support_contracts") || normalized.includes("relation") || normalized.includes("schema cache")) return "Estrutura de contratos não encontrada no Supabase. Aplique as migrations 020_support_contracts_permissions.sql, 021_add_support_contract_status.sql e 022_refresh_support_contract_status_schema.sql e tente novamente.";
+  if (normalized.includes("support_contracts_status_check")) return "Status de contrato inválido no banco. Aplique a migration 022_refresh_support_contract_status_schema.sql e tente novamente.";
   if (normalized.includes("duplicate") || normalized.includes("unique")) return "Já existe um cadastro com estes dados.";
   if (normalized.includes("permission") || normalized.includes("row-level security")) return "Seu usuário não tem permissão para executar esta ação.";
   if (normalized.includes("network") || normalized.includes("fetch")) return "Falha de conexão. Verifique a internet e tente novamente.";
