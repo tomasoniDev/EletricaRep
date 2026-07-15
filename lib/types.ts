@@ -83,6 +83,20 @@ export type TravelSchedule = {
   updated_at: string;
 };
 
+export type SupportContract = {
+  id: string;
+  machine_id: string | null;
+  code: string | null;
+  client: string | null;
+  serial: string | null;
+  contract_type: string | null;
+  active: boolean | null;
+  support_contract_until: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Profile = {
   user_id: string;
   email: string;

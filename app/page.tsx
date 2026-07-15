@@ -4,10 +4,11 @@ import { FormEvent, MouseEvent as ReactMouseEvent, PointerEvent, useEffect, useM
 import Image from "next/image";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { downloadServicePdf, servicePdfBase64, servicePdfFileName } from "@/lib/pdf";
-import type { AuthorizedUser, Machine, Profile, ServiceRecord, TravelSchedule, UserRole } from "@/lib/types";
+import type { AuthorizedUser, Machine, Profile, ServiceRecord, SupportContract, TravelSchedule, UserRole } from "@/lib/types";
 
 type View = "home" | "overview" | "machineDetail" | "service" | "registry" | "schedule";
 type RegistryTab = "machines" | "users";
+type ScheduleTab = "travel" | "contracts";
 type SortDirection = "asc" | "desc";
 type MachineSortKey = "code" | "model" | "client" | "unit_city" | "serial" | "software_version" | "vm" | "last_service";
 type HistorySortKey = "service_date" | "equipment" | "technician_name" | "issue_summary";
@@ -67,9 +68,6 @@ type MachineFormState = {
   sinema_user: string;
   sinema_password: string;
   sinema_notes: string;
-  support_contract_active: string;
-  support_contract_type: string;
-  support_contract_until: string;
 };
 
 type AuthorizedUserFormState = {
@@ -86,6 +84,16 @@ type TravelScheduleFormState = {
   technicians: string;
   status: string;
   reason: string;
+};
+
+type SupportContractFormState = {
+  machine_id: string;
+  code: string;
+  client: string;
+  serial: string;
+  contract_type: string;
+  support_contract_until: string;
+  active: string;
 };
 
 const ALLOWED_EMAIL_DOMAINS = ["tomasoni.ind.br", "tomasoni.in.br"];
@@ -156,10 +164,7 @@ const EMPTY_MACHINE_FORM: MachineFormState = {
   sinema_url: "",
   sinema_user: "",
   sinema_password: "",
-  sinema_notes: "",
-  support_contract_active: "",
-  support_contract_type: "",
-  support_contract_until: ""
+  sinema_notes: ""
 };
 const EMPTY_USER_FORM: AuthorizedUserFormState = {
   name: "",
@@ -174,6 +179,15 @@ const EMPTY_TRAVEL_FORM: TravelScheduleFormState = {
   technicians: "",
   status: "A definir",
   reason: ""
+};
+const EMPTY_CONTRACT_FORM: SupportContractFormState = {
+  machine_id: "",
+  code: "",
+  client: "",
+  serial: "",
+  contract_type: "",
+  support_contract_until: "",
+  active: "Sim"
 };
 
 function formatDate(value?: string | null) {
@@ -225,6 +239,31 @@ function displayMachineCode(machine?: Pick<Machine, "code" | "model" | "client">
   return machine?.code?.trim() || machine?.model?.trim() || machine?.client?.trim() || "Máquina sem código";
 }
 
+function normalizeLookup(value?: string | null) {
+  return value?.trim().toUpperCase() ?? "";
+}
+
+function contractMatchesMachine(contract: SupportContract, machine: Machine) {
+  const contractSerial = normalizeLookup(contract.serial);
+  const machineSerial = normalizeLookup(machine.serial);
+  if (contractSerial && machineSerial && contractSerial === machineSerial) return true;
+  if (contract.machine_id && contract.machine_id === machine.id) return true;
+  const contractCode = normalizeLookup(contract.code);
+  const machineCode = normalizeLookup(machine.code);
+  return Boolean(contractCode && machineCode && contractCode === machineCode);
+}
+
+function sortContractsByRelevance(a: SupportContract, b: SupportContract) {
+  const activeDiff = Number(Boolean(b.active)) - Number(Boolean(a.active));
+  if (activeDiff) return activeDiff;
+  return compareDate(b.support_contract_until, a.support_contract_until);
+}
+
+function latestContractForMachine(contracts: SupportContract[], machine?: Machine | null) {
+  if (!machine) return undefined;
+  return contracts.filter((contract) => contractMatchesMachine(contract, machine)).sort(sortContractsByRelevance)[0];
+}
+
 function machineFormFromMachine(machine?: Machine | null): MachineFormState {
   if (!machine) return EMPTY_MACHINE_FORM;
   return {
@@ -249,10 +288,7 @@ function machineFormFromMachine(machine?: Machine | null): MachineFormState {
     sinema_url: machine.sinema_url ?? "",
     sinema_user: machine.sinema_user ?? "",
     sinema_password: machine.sinema_password ?? "",
-    sinema_notes: machine.sinema_notes ?? "",
-    support_contract_active: machine.support_contract_active === null || machine.support_contract_active === undefined ? "" : machine.support_contract_active ? "Sim" : "Não",
-    support_contract_type: machine.support_contract_type ?? "",
-    support_contract_until: machine.support_contract_until ?? ""
+    sinema_notes: machine.sinema_notes ?? ""
   };
 }
 
@@ -404,11 +440,11 @@ function canManageUsers(role?: UserRole | null) {
 }
 
 function canEditMachine(role?: UserRole | null) {
-  return hasFullAccess(role) || role === "Engenharia" || role === "Comercial";
+  return hasFullAccess(role) || role === "Engenharia";
 }
 
-function canEditMachineContractsOnly(role?: UserRole | null) {
-  return role === "Comercial";
+function canManageContracts(role?: UserRole | null) {
+  return hasFullAccess(role) || role === "Comercial";
 }
 
 function canEmitReports(role?: UserRole | null) {
@@ -815,6 +851,7 @@ export default function Home() {
   const [machines, setMachines] = useState<Machine[]>([]);
   const [authorizedUsers, setAuthorizedUsers] = useState<AuthorizedUser[]>([]);
   const [travelSchedules, setTravelSchedules] = useState<TravelSchedule[]>([]);
+  const [supportContracts, setSupportContracts] = useState<SupportContract[]>([]);
   const [currentUserRole, setCurrentUserRole] = useState<UserRole | null>(null);
   const [selectedMachineId, setSelectedMachineId] = useState("");
   const [message, setMessage] = useState(DEFAULT_MESSAGE);
@@ -828,6 +865,9 @@ export default function Home() {
   const [userForm, setUserForm] = useState<AuthorizedUserFormState>(EMPTY_USER_FORM);
   const [editingTravelId, setEditingTravelId] = useState("");
   const [travelForm, setTravelForm] = useState<TravelScheduleFormState>(EMPTY_TRAVEL_FORM);
+  const [scheduleTab, setScheduleTab] = useState<ScheduleTab>("travel");
+  const [editingContractId, setEditingContractId] = useState("");
+  const [contractForm, setContractForm] = useState<SupportContractFormState>(EMPTY_CONTRACT_FORM);
   const [citySuggestions, setCitySuggestions] = useState<string[]>([]);
   const [selectedServiceRecord, setSelectedServiceRecord] = useState<ServiceRecord | null>(null);
   const [editingServiceRecord, setEditingServiceRecord] = useState<ServiceRecord | null>(null);
@@ -994,15 +1034,23 @@ export default function Home() {
   const currentUserHasFullAccess = hasFullAccess(currentUserRole);
   const currentUserCanManageUsers = canManageUsers(currentUserRole);
   const currentUserCanEditMachine = canEditMachine(currentUserRole);
-  const currentUserContractsOnly = canEditMachineContractsOnly(currentUserRole);
+  const currentUserCanManageContracts = canManageContracts(currentUserRole);
   const currentUserCanEmitReports = canEmitReports(currentUserRole);
   const currentUserCanEditSchedule = canEditSchedule(currentUserRole);
-  const machineMainFieldsDisabled = !currentUserCanEditMachine || currentUserContractsOnly;
+  const machineMainFieldsDisabled = !currentUserCanEditMachine;
   const selectedMachineAccess = normalizeRemoteAccess(selectedMachine?.remote_access ?? selectedMachine?.access_method);
-  const selectedMachineContractDays = daysUntil(selectedMachine?.support_contract_until);
+  const selectedMachineContract = latestContractForMachine(supportContracts, selectedMachine);
+  const selectedMachineContractDays = daysUntil(selectedMachineContract?.support_contract_until);
   const selectedMachineRecentHistory = [...(selectedMachine?.service_records ?? [])]
     .sort((a, b) => compareDate(b.service_date, a.service_date))
     .slice(0, 5);
+
+  useEffect(() => {
+    if (!currentUserCanManageContracts && scheduleTab !== "travel") {
+      setScheduleTab("travel");
+    }
+  }, [currentUserCanManageContracts, scheduleTab]);
+
   const overviewData = useMemo(() => {
     const today = new Date();
     const currentMonth = monthKey(today);
@@ -1010,13 +1058,16 @@ export default function Home() {
     const serviceEntries = machines.flatMap((machine) => (machine.service_records ?? []).map((record) => ({ machine, record })));
     const machinesWithRemote = machines.filter((machine) => machineHasRemoteAccess(normalizeRemoteAccess(machine.remote_access ?? machine.access_method)));
     const machinesWithoutService = machines.filter((machine) => !lastServiceDate(machine));
-    const activeContracts = machines.filter((machine) => machine.support_contract_active);
-    const expiringContracts = activeContracts.filter((machine) => {
-      const days = daysUntil(machine.support_contract_until);
+    const machineContracts = machines
+      .map((machine) => latestContractForMachine(supportContracts, machine))
+      .filter((contract): contract is SupportContract => Boolean(contract));
+    const activeContracts = machineContracts.filter((contract) => contract.active);
+    const expiringContracts = activeContracts.filter((contract) => {
+      const days = daysUntil(contract.support_contract_until);
       return days !== null && days >= 0 && days <= 90;
     });
-    const expiredContracts = activeContracts.filter((machine) => {
-      const days = daysUntil(machine.support_contract_until);
+    const expiredContracts = activeContracts.filter((contract) => {
+      const days = daysUntil(contract.support_contract_until);
       return days !== null && days < 0;
     });
     const staleMachines = machines.filter((machine) => {
@@ -1102,7 +1153,7 @@ export default function Home() {
       geoCities: [...machinesByCity.values()]
         .map((item) => ({ ...item, value: item.machines.length }))
         .sort((a, b) => b.value - a.value || compareText(`${a.city}-${a.state}`, `${b.city}-${b.state}`)),
-      byContractType: countBy(activeContracts, (machine) => machine.support_contract_type || "Tipo não informado"),
+      byContractType: countBy(activeContracts, (contract) => contract.contract_type || "Tipo não informado"),
       byServiceType: countBy(serviceEntries, ({ record }) => normalizeServiceType(record.service_type)),
       byClient: countBy(machines, (machine) => machine.client?.trim() || "Cliente não informado").slice(0, 8),
       byClientServices: countBy(serviceEntries, ({ machine }) => machine.client?.trim() || "Cliente não informado").slice(0, 8),
@@ -1115,7 +1166,7 @@ export default function Home() {
       machineAttention,
       recentServices
     };
-  }, [machines]);
+  }, [machines, supportContracts]);
 
   useEffect(() => {
     if (view !== "overview" || !overviewMapRef.current) {
@@ -1325,6 +1376,19 @@ export default function Home() {
       .order("created_at", { ascending: false });
 
     setTravelSchedules((scheduleRows ?? []) as TravelSchedule[]);
+
+    const { data: contractRows, error: contractError } = await supabase
+      .from("support_contracts")
+      .select("*")
+      .order("support_contract_until", { ascending: true });
+
+    if (contractError) {
+      setMessage(dataMessage(contractError.message || ""));
+      setSupportContracts([]);
+      return;
+    }
+
+    setSupportContracts((contractRows ?? []) as SupportContract[]);
   }
 
   async function signIn(event: FormEvent<HTMLFormElement>) {
@@ -1842,9 +1906,6 @@ export default function Home() {
           next.sinema_user = "";
           next.sinema_password = "";
           next.sinema_notes = "";
-          next.support_contract_active = "";
-          next.support_contract_type = "";
-          next.support_contract_until = "";
         }
 
         if (value === "SINEMA") {
@@ -1861,10 +1922,6 @@ export default function Home() {
           next.sinema_password = "";
           next.sinema_notes = "";
         }
-      }
-
-      if (key === "support_contract_active" && value !== "Sim") {
-        next.support_contract_type = "";
       }
 
       return next;
@@ -1930,10 +1987,7 @@ export default function Home() {
       sinema_url: machineForm.remote_access === "SINEMA" ? machineForm.sinema_url.trim() || null : null,
       sinema_user: machineForm.remote_access === "SINEMA" ? machineForm.sinema_user.trim() || null : null,
       sinema_password: null,
-      sinema_notes: machineForm.remote_access === "SINEMA" ? machineForm.sinema_notes.trim() || null : null,
-      support_contract_active: showRemoteAccess ? machineForm.support_contract_active === "Sim" : null,
-      support_contract_type: showRemoteAccess && machineForm.support_contract_active === "Sim" ? machineForm.support_contract_type.trim() || null : null,
-      support_contract_until: showRemoteAccess ? machineForm.support_contract_until.trim() || null : null
+      sinema_notes: machineForm.remote_access === "SINEMA" ? machineForm.sinema_notes.trim() || null : null
     };
 
     const { data, error } = editingMachineId
@@ -2037,6 +2091,73 @@ export default function Home() {
     setEditingTravelId("");
     setTravelForm(EMPTY_TRAVEL_FORM);
     setMessage("Cronograma salvo com sucesso.");
+    await loadData();
+  }
+
+  function updateContractMachine(machineId: string) {
+    const machine = machines.find((item) => item.id === machineId);
+    setContractForm((current) => ({
+      ...current,
+      machine_id: machineId,
+      code: machine?.code ?? current.code,
+      client: machine?.client ?? current.client,
+      serial: machine?.serial ?? current.serial
+    }));
+  }
+
+  async function saveSupportContract(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!currentUserCanManageContracts) {
+      setMessage("Seu usuário não tem permissão para cadastrar ou alterar contratos.");
+      return;
+    }
+
+    const payload = {
+      machine_id: contractForm.machine_id || null,
+      code: contractForm.code.trim().toUpperCase() || null,
+      client: contractForm.client.trim() || null,
+      serial: contractForm.serial.trim().toUpperCase() || null,
+      contract_type: contractForm.contract_type.trim() || null,
+      active: contractForm.active === "Sim",
+      support_contract_until: contractForm.support_contract_until || null
+    };
+
+    const { error } = editingContractId
+      ? await supabase.from("support_contracts").update(payload).eq("id", editingContractId)
+      : await supabase.from("support_contracts").insert({ ...payload, created_by: currentUserId });
+
+    if (error) {
+      setMessage(dataMessage(error.message));
+      return;
+    }
+
+    setEditingContractId("");
+    setContractForm(EMPTY_CONTRACT_FORM);
+    setMessage("Contrato salvo com sucesso.");
+    await loadData();
+  }
+
+  function editSupportContract(contract: SupportContract) {
+    setEditingContractId(contract.id);
+    setContractForm({
+      machine_id: contract.machine_id ?? "",
+      code: contract.code ?? "",
+      client: contract.client ?? "",
+      serial: contract.serial ?? "",
+      contract_type: contract.contract_type ?? "",
+      support_contract_until: contract.support_contract_until ?? "",
+      active: contract.active ? "Sim" : "Não"
+    });
+  }
+
+  async function deleteSupportContract(id: string) {
+    if (!currentUserCanManageContracts) {
+      setMessage("Seu usuário não tem permissão para excluir contratos.");
+      return;
+    }
+    if (!confirm("Excluir este contrato?")) return;
+    const { error } = await supabase.from("support_contracts").delete().eq("id", id);
+    setMessage(error ? dataMessage(error.message) : "Contrato excluído.");
     await loadData();
   }
 
@@ -2562,7 +2683,19 @@ export default function Home() {
 
         {view === "schedule" && (
           <section className="view active schedule-page">
-            {currentUserCanEditSchedule && (
+            {currentUserCanManageContracts && (
+              <section className="table-panel">
+                <div className="section-header">
+                  <h2>Cronograma</h2>
+                  <div className="segmented-control" aria-label="Tipo de registro">
+                    <button className={scheduleTab === "travel" ? "active" : ""} type="button" onClick={() => setScheduleTab("travel")}>Registro de viagens</button>
+                    <button className={scheduleTab === "contracts" ? "active" : ""} type="button" onClick={() => setScheduleTab("contracts")}>Contratos</button>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {scheduleTab === "travel" && currentUserCanEditSchedule && (
               <form className="form-panel" onSubmit={saveTravelSchedule}>
                 <div className="section-header">
                   <h2>{editingTravelId ? "Alterar viagem" : "Registrar viagem"}</h2>
@@ -2585,6 +2718,73 @@ export default function Home() {
               </form>
             )}
 
+            {scheduleTab === "contracts" && currentUserCanManageContracts && (
+              <>
+                <form className="form-panel" onSubmit={saveSupportContract}>
+                  <div className="section-header">
+                    <h2>{editingContractId ? "Alterar contrato" : "Registrar contrato"}</h2>
+                    <div className="actions-row">
+                      {editingContractId && <button className="button ghost" type="button" onClick={() => { setEditingContractId(""); setContractForm(EMPTY_CONTRACT_FORM); }}>Cancelar</button>}
+                      <button className="icon-button save-action" title="Salvar contrato" aria-label="Salvar contrato"><SaveIcon /></button>
+                    </div>
+                  </div>
+                  <div className="fields-grid">
+                    <label>Máquina<select value={contractForm.machine_id} onChange={(event) => updateContractMachine(event.target.value)}>
+                      <option value="">Selecionar máquina, se aplicável</option>
+                      {machines.map((machine) => <option key={machine.id} value={machine.id}>{displayMachineCode(machine)} - {machine.client || "Cliente não informado"}</option>)}
+                    </select></label>
+                    <label>Código<input value={contractForm.code} onChange={(event) => setContractForm((current) => ({ ...current, code: event.target.value }))} placeholder="T665-xxx" maxLength={10} /></label>
+                    <label>Cliente<input list="client-suggestions" value={contractForm.client} onChange={(event) => setContractForm((current) => ({ ...current, client: event.target.value }))} /></label>
+                    <label>Número de série<input value={contractForm.serial} onChange={(event) => setContractForm((current) => ({ ...current, serial: event.target.value }))} placeholder="500-xxx ou 500-697/22" maxLength={12} /></label>
+                    <label>Contrato ativo<select value={contractForm.active} onChange={(event) => setContractForm((current) => ({ ...current, active: event.target.value }))}>
+                      <option value="Sim">Sim</option>
+                      <option value="Não">Não</option>
+                    </select></label>
+                    <label>Tipo de contrato<select value={contractForm.contract_type} onChange={(event) => setContractForm((current) => ({ ...current, contract_type: event.target.value }))}>
+                      <option value="">Selecione</option>
+                      {CONTRACT_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                    </select></label>
+                    <label>Final de vigência<input type="date" value={contractForm.support_contract_until} onChange={(event) => setContractForm((current) => ({ ...current, support_contract_until: event.target.value }))} /></label>
+                  </div>
+                </form>
+
+                <section className="table-panel">
+                  <div className="section-header"><h2>Contratos cadastrados</h2><span>{supportContracts.length} registros</span></div>
+                  <div className="table-wrap">
+                    <table className="compact-table schedule-table">
+                      <thead><tr><th>Código</th><th>Cliente</th><th>Número de série</th><th>Tipo</th><th>Status</th><th>Fim da vigência</th><th>Prazo</th><th>Ações</th></tr></thead>
+                      <tbody>{supportContracts.map((contract) => {
+                        const remainingDays = daysUntil(contract.support_contract_until);
+                        return (
+                          <tr key={contract.id}>
+                            <td>{contract.code || "-"}</td>
+                            <td>{contract.client || "-"}</td>
+                            <td>{contract.serial || "-"}</td>
+                            <td>{contract.contract_type || "-"}</td>
+                            <td><span className={`soft-pill ${contract.active ? "" : "danger-pill"}`}>{contract.active ? "Ativo" : "Inativo"}</span></td>
+                            <td>{formatDate(contract.support_contract_until)}</td>
+                            <td>{remainingDays === null ? "-" : remainingDays >= 0 ? `${remainingDays} dias` : `Vencido há ${Math.abs(remainingDays)} dias`}</td>
+                            <td>
+                              <div className="row-actions">
+                                <button className="icon-button menu-trigger" type="button" title="Ações" aria-label={`Ações do contrato ${contract.code || contract.serial || contract.id}`} onClick={(event) => toggleActionMenu(`contract-${contract.id}`, event)}><MoreIcon /></button>
+                                {openActionMenu === `contract-${contract.id}` && (
+                                  <div className="row-menu floating-row-menu" style={actionMenuPosition ?? undefined}>
+                                    <button type="button" onClick={() => { editSupportContract(contract); setOpenActionMenu(""); }}><EditIcon /> Alterar contrato</button>
+                                    <button className="danger" type="button" onClick={() => { void deleteSupportContract(contract.id); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}</tbody>
+                    </table>
+                  </div>
+                </section>
+              </>
+            )}
+
+            {scheduleTab === "travel" && (
             <section className="table-panel">
               <div className="section-header"><h2>Cronograma de viagens</h2><span>{travelSchedules.length} registros</span></div>
               <div className="table-wrap">
@@ -2604,6 +2804,7 @@ export default function Home() {
                 </table>
               </div>
             </section>
+            )}
           </section>
         )}
 
@@ -2624,15 +2825,15 @@ export default function Home() {
                   <div className="metric-wide"><DetailIcon type="detail" /><p><span>Descrição</span><strong>{selectedMachine.description || "-"}</strong></p></div>
                 </div>
               </div>
-              <aside className={`contract-card ${selectedMachine.support_contract_active ? "active" : "inactive"}`}>
-                <DetailIcon type={selectedMachine.support_contract_active ? "check" : "alert"} />
-                <strong>{selectedMachine.support_contract_active ? "Contrato Ativo" : "Sem contrato ativo"}</strong>
-                {selectedMachine.support_contract_active && (
+              <aside className={`contract-card ${selectedMachineContract?.active ? "active" : "inactive"}`}>
+                <DetailIcon type={selectedMachineContract?.active ? "check" : "alert"} />
+                <strong>{selectedMachineContract?.active ? "Contrato Ativo" : "Sem contrato ativo"}</strong>
+                {selectedMachineContract?.active && (
                   <>
                     <span>Tipo de contrato</span>
-                    <b>{selectedMachine.support_contract_type || "-"}</b>
+                    <b>{selectedMachineContract.contract_type || "-"}</b>
                     <span>Fim da vigência</span>
-                    <em>{formatDate(selectedMachine.support_contract_until)}</em>
+                    <em>{formatDate(selectedMachineContract.support_contract_until)}</em>
                     {selectedMachineContractDays !== null && <small>{selectedMachineContractDays >= 0 ? `Faltam ${selectedMachineContractDays} dias` : `Vencido há ${Math.abs(selectedMachineContractDays)} dias`}</small>}
                   </>
                 )}
@@ -2692,7 +2893,7 @@ export default function Home() {
               <div className="card-title"><DetailIcon type="mechanical" /><h3>Ações rápidas</h3></div>
               <div className="quick-action-grid">
                 <button type="button" onClick={startNewService}><PlusIcon /><span>Novo atendimento</span></button>
-                <button type="button" onClick={() => { setEditingMachineId(selectedMachine.id); setRegistryTab("machines"); setView("registry"); }}><EditIcon /><span>Alterar cadastro</span></button>
+                {currentUserCanEditMachine && <button type="button" onClick={() => { setEditingMachineId(selectedMachine.id); setRegistryTab("machines"); setView("registry"); }}><EditIcon /><span>Alterar cadastro</span></button>}
                 <button type="button" onClick={() => selectedMachineRecentHistory[0] && downloadServicePdf(selectedMachine, selectedMachineRecentHistory[0])} disabled={!selectedMachineRecentHistory.length}><PdfDownloadIcon /><span>Baixar último PDF</span></button>
               </div>
             </section>
@@ -2814,6 +3015,7 @@ export default function Home() {
 
             {registryTab === "machines" && (
               <>
+                {currentUserCanEditMachine && (
                 <form className="machine-form" onSubmit={saveMachine}>
                   <div className="section-header">
                     <h2>{editingMachineId ? "Alterar máquina" : "Cadastrar máquina"}</h2>
@@ -2868,22 +3070,11 @@ export default function Home() {
                           <label className="wide">Observações<textarea rows={3} value={machineForm.sinema_notes} onChange={(event) => updateMachineForm("sinema_notes", event.target.value)} /></label>
                         </div>
                       )}
-                      <div className="fields-grid support-grid">
-                        <label>Contrato de assistência técnica ativo<select value={machineForm.support_contract_active} onChange={(event) => updateMachineForm("support_contract_active", event.target.value)}>
-                          <option value="">Selecione</option>
-                          <option value="Sim">Sim</option>
-                          <option value="Não">Não</option>
-                        </select></label>
-                        <label>Tipo de contrato<select value={machineForm.support_contract_type} onChange={(event) => updateMachineForm("support_contract_type", event.target.value)}>
-                          <option value="">Selecione</option>
-                          {CONTRACT_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-                        </select></label>
-                        <label>Final de vigência do contrato<input type="date" value={machineForm.support_contract_until} onChange={(event) => updateMachineForm("support_contract_until", event.target.value)} /></label>
-                      </div>
                     </>
                   )}
                   </section>
                 </form>
+                )}
 
                 <section className="table-panel">
                   <div className="section-header"><h2>Máquinas cadastradas</h2><span>{registryMachines.length} registros</span></div>
@@ -2900,7 +3091,7 @@ export default function Home() {
                           <td>{formatMonthYear(machine.manufacture_month)}</td>
                           <td>{machine.remote_access || machine.access_method || "Sem acesso remoto"}</td>
                           <td>
-                            <div className="row-actions">
+                            {currentUserCanEditMachine ? <div className="row-actions">
                               <button className="icon-button menu-trigger" type="button" title="Ações" aria-label={`Ações da máquina ${displayMachineCode(machine)}`} onClick={(event) => toggleActionMenu(`machine-${machine.id}`, event)}><MoreIcon /></button>
                               {openActionMenu === `machine-${machine.id}` && (
                                 <div className="row-menu floating-row-menu" style={actionMenuPosition ?? undefined}>
@@ -2908,7 +3099,7 @@ export default function Home() {
                                   <button className="danger" type="button" onClick={() => { void deleteMachine(machine.id); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>
                                 </div>
                               )}
-                            </div>
+                            </div> : "-"}
                           </td>
                         </tr>
                       ))}</tbody>
