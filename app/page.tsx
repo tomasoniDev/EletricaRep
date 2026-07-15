@@ -609,7 +609,7 @@ function validateIpv4Like(value: string, label: string, options: { allowWildcard
   const octets = address.split(".");
   if (octets.length !== 4) return `${label} deve estar no formato IPv4, como 189.1.87.xxx ou 189.1.87.200.`;
   const valid = octets.every((octet, index) => {
-    if (options.allowWildcard && index === 3 && (octet === "xxx" || octet === "*")) return true;
+    if (options.allowWildcard && index === 3 && (/^x{1,3}$/.test(octet) || octet === "*")) return true;
     return isValidIpv4Octet(octet);
   });
   return valid ? "" : `${label} possui IPv4 inválido.`;
