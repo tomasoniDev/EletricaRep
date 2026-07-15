@@ -18,6 +18,7 @@ type RemoteAccess = "SINEMA" | "VNC" | "Sem acesso remoto";
 type ServiceType = "Acesso remoto" | "Visita técnica";
 type ThemeMode = "light" | "dark";
 type ContractType = "Seg-Sex" | "Seg-Sab" | "Garantia";
+type ContractStatus = "Ativo" | "Inativo" | "Em negociação";
 type ActionMenuPosition = { top: number; right: number };
 type LeafletLayerTarget = LeafletMap | LeafletLayerGroup;
 type LeafletMap = {
@@ -94,7 +95,7 @@ type SupportContractFormState = {
   serial: string;
   contract_type: string;
   support_contract_until: string;
-  active: string;
+  status: ContractStatus;
 };
 
 const ALLOWED_EMAIL_DOMAINS = ["tomasoni.ind.br", "tomasoni.in.br"];
@@ -110,6 +111,7 @@ const THEME_KEY = "tomasoni-servicecore-theme";
 const REMOTE_ACCESS_OPTIONS: RemoteAccess[] = ["Sem acesso remoto", "SINEMA", "VNC"];
 const SERVICE_TYPE_OPTIONS: ServiceType[] = ["Acesso remoto", "Visita técnica"];
 const CONTRACT_TYPE_OPTIONS: ContractType[] = ["Seg-Sex", "Seg-Sab", "Garantia"];
+const CONTRACT_STATUS_OPTIONS: ContractStatus[] = ["Ativo", "Em negociação", "Inativo"];
 const USER_ROLE_OPTIONS: UserRole[] = ["Admin", "Diretoria", "Engenharia", "Montagem", "Comercial"];
 const TRAVEL_STATUS_OPTIONS = ["A definir", "Planejado", "Em andamento", "Concluido", "Cancelado"];
 const LEAFLET_CSS_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
@@ -188,7 +190,7 @@ const EMPTY_CONTRACT_FORM: SupportContractFormState = {
   serial: "",
   contract_type: "",
   support_contract_until: "",
-  active: "Sim"
+  status: "Ativo"
 };
 function formatDate(value?: string | null) {
   if (!value) return "-";
@@ -253,9 +255,26 @@ function contractMatchesMachine(contract: SupportContract, machine: Machine) {
   return Boolean(contractCode && machineCode && contractCode === machineCode);
 }
 
+function contractStatus(contract?: SupportContract | null): ContractStatus {
+  if (!contract) return "Inativo";
+  if (contract.status === "Ativo" || contract.status === "Inativo" || contract.status === "Em negociação") {
+    return contract.status;
+  }
+  return contract.active ? "Ativo" : "Inativo";
+}
+
+function isActiveContract(contract?: SupportContract | null) {
+  return contractStatus(contract) === "Ativo";
+}
+
+function isNegotiatingContract(contract?: SupportContract | null) {
+  return contractStatus(contract) === "Em negociação";
+}
+
 function sortContractsByRelevance(a: SupportContract, b: SupportContract) {
-  const activeDiff = Number(Boolean(b.active)) - Number(Boolean(a.active));
-  if (activeDiff) return activeDiff;
+  const statusWeight: Record<ContractStatus, number> = { "Ativo": 3, "Em negociação": 2, "Inativo": 1 };
+  const statusDiff = statusWeight[contractStatus(b)] - statusWeight[contractStatus(a)];
+  if (statusDiff) return statusDiff;
   return compareDate(b.support_contract_until, a.support_contract_until);
 }
 
@@ -625,7 +644,7 @@ function authMessage(error: unknown) {
 
 function dataMessage(error: string) {
   const normalized = error.toLowerCase();
-  if (normalized.includes("support_contracts") || normalized.includes("relation") || normalized.includes("schema cache")) return "Tabela de contratos não encontrada no Supabase. Aplique a migration 020_support_contracts_permissions.sql e tente novamente.";
+  if (normalized.includes("support_contracts") || normalized.includes("relation") || normalized.includes("schema cache")) return "Estrutura de contratos não encontrada no Supabase. Aplique as migrations 020_support_contracts_permissions.sql e 021_add_support_contract_status.sql e tente novamente.";
   if (normalized.includes("duplicate") || normalized.includes("unique")) return "Já existe um cadastro com estes dados.";
   if (normalized.includes("permission") || normalized.includes("row-level security")) return "Seu usuário não tem permissão para executar esta ação.";
   if (normalized.includes("network") || normalized.includes("fetch")) return "Falha de conexão. Verifique a internet e tente novamente.";
@@ -1073,6 +1092,8 @@ export default function Home() {
   const machineMainFieldsDisabled = !currentUserCanEditMachine;
   const selectedMachineAccess = normalizeRemoteAccess(selectedMachine?.remote_access ?? selectedMachine?.access_method);
   const selectedMachineContract = latestContractForMachine(supportContracts, selectedMachine);
+  const selectedMachineContractStatus = contractStatus(selectedMachineContract);
+  const selectedMachineHasContractInfo = selectedMachineContractStatus === "Ativo" || selectedMachineContractStatus === "Em negociação";
   const selectedMachineContractDays = daysUntil(selectedMachineContract?.support_contract_until);
   const selectedMachineRecentHistory = [...(selectedMachine?.service_records ?? [])]
     .sort((a, b) => compareDate(b.service_date, a.service_date))
@@ -1100,7 +1121,8 @@ export default function Home() {
     const machineContracts = machines
       .map((machine) => latestContractForMachine(supportContracts, machine))
       .filter((contract): contract is SupportContract => Boolean(contract));
-    const activeContracts = machineContracts.filter((contract) => contract.active);
+    const activeContracts = machineContracts.filter(isActiveContract);
+    const negotiatingContracts = machineContracts.filter(isNegotiatingContract);
     const expiringContracts = activeContracts.filter((contract) => {
       const days = daysUntil(contract.support_contract_until);
       return days !== null && days >= 0 && days <= 90;
@@ -1177,6 +1199,7 @@ export default function Home() {
       totalServices: serviceEntries.length,
       servicesThisMonth: serviceEntries.filter(({ record }) => record.service_date?.startsWith(currentMonth)).length,
       activeContracts: activeContracts.length,
+      negotiatingContracts: negotiatingContracts.length,
       expiringContracts: expiringContracts.length,
       expiredContracts: expiredContracts.length,
       remoteCoverage: percent(machinesWithRemote.length, machines.length),
@@ -2181,7 +2204,8 @@ export default function Home() {
       client: contractForm.client.trim() || null,
       serial: contractForm.serial.trim().toUpperCase() || null,
       contract_type: contractForm.contract_type.trim() || null,
-      active: contractForm.active === "Sim",
+      status: contractForm.status,
+      active: contractForm.status === "Ativo",
       support_contract_until: contractForm.support_contract_until || null
     };
 
@@ -2210,7 +2234,7 @@ export default function Home() {
       serial: contract.serial ?? "",
       contract_type: contract.contract_type ?? "",
       support_contract_until: contract.support_contract_until ?? "",
-      active: contract.active ? "Sim" : "Não"
+      status: contractStatus(contract)
     });
   }
 
@@ -2579,6 +2603,7 @@ export default function Home() {
                 <div className="card-title"><DetailIcon type="check" /><h3>Contratos</h3></div>
                 <div className="contract-summary-list">
                   <div><span>Ativos</span><strong>{overviewData.activeContracts}</strong></div>
+                  <div><span>Em negociação</span><strong>{overviewData.negotiatingContracts}</strong></div>
                   <div><span>A vencer em 90 dias</span><strong>{overviewData.expiringContracts}</strong></div>
                   <div><span>Vencidos</span><strong>{overviewData.expiredContracts}</strong></div>
                 </div>
@@ -2800,9 +2825,8 @@ export default function Home() {
                     <label>Código<input value={contractForm.code} onChange={(event) => setContractForm((current) => ({ ...current, code: event.target.value }))} placeholder="T665-xxx" maxLength={10} /></label>
                     <label>Cliente<input list="client-suggestions" value={contractForm.client} onChange={(event) => setContractForm((current) => ({ ...current, client: event.target.value }))} /></label>
                     <label>Número de série<input value={contractForm.serial} onChange={(event) => setContractForm((current) => ({ ...current, serial: event.target.value }))} placeholder="500-xxx ou 500-697/22" maxLength={12} /></label>
-                    <label>Contrato ativo<select value={contractForm.active} onChange={(event) => setContractForm((current) => ({ ...current, active: event.target.value }))}>
-                      <option value="Sim">Sim</option>
-                      <option value="Não">Não</option>
+                    <label>Status do contrato<select value={contractForm.status} onChange={(event) => setContractForm((current) => ({ ...current, status: event.target.value as ContractStatus }))}>
+                      {CONTRACT_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                     </select></label>
                     <label>Tipo de contrato<select value={contractForm.contract_type} onChange={(event) => setContractForm((current) => ({ ...current, contract_type: event.target.value }))}>
                       <option value="">Selecione</option>
@@ -2819,13 +2843,14 @@ export default function Home() {
                       <thead><tr><th>Código</th><th>Cliente</th><th>Número de série</th><th>Tipo</th><th>Status</th><th>Fim da vigência</th><th>Prazo</th><th>Ações</th></tr></thead>
                       <tbody>{supportContracts.map((contract) => {
                         const remainingDays = daysUntil(contract.support_contract_until);
+                        const status = contractStatus(contract);
                         return (
                           <tr key={contract.id}>
                             <td>{contract.code || "-"}</td>
                             <td>{contract.client || "-"}</td>
                             <td>{contract.serial || "-"}</td>
                             <td>{contract.contract_type || "-"}</td>
-                            <td><span className={`soft-pill ${contract.active ? "" : "danger-pill"}`}>{contract.active ? "Ativo" : "Inativo"}</span></td>
+                            <td><span className={`soft-pill ${status === "Inativo" ? "danger-pill" : status === "Em negociação" ? "warning-pill" : ""}`}>{status}</span></td>
                             <td>{formatDate(contract.support_contract_until)}</td>
                             <td>{remainingDays === null ? "-" : remainingDays >= 0 ? `${remainingDays} dias` : `Vencido há ${Math.abs(remainingDays)} dias`}</td>
                             <td>
@@ -2959,10 +2984,10 @@ export default function Home() {
                   <div className="metric-wide"><DetailIcon type="detail" /><p><span>Descrição</span><strong>{selectedMachine.description || "-"}</strong></p></div>
                 </div>
               </div>
-              <aside className={`contract-card ${selectedMachineContract?.active ? "active" : "inactive"}`}>
-                <DetailIcon type={selectedMachineContract?.active ? "check" : "alert"} />
-                <strong>{selectedMachineContract?.active ? "Contrato Ativo" : "Sem contrato ativo"}</strong>
-                {selectedMachineContract?.active && (
+              <aside className={`contract-card ${selectedMachineContractStatus === "Ativo" ? "active" : selectedMachineContractStatus === "Em negociação" ? "negotiating" : "inactive"}`}>
+                <DetailIcon type={selectedMachineContractStatus === "Ativo" ? "check" : selectedMachineContractStatus === "Em negociação" ? "history" : "alert"} />
+                <strong>{selectedMachineContractStatus === "Ativo" ? "Contrato Ativo" : selectedMachineContractStatus === "Em negociação" ? "Em negociação" : "Sem contrato ativo"}</strong>
+                {selectedMachineHasContractInfo && selectedMachineContract && (
                   <>
                     <span>Tipo de contrato</span>
                     <b>{selectedMachineContract.contract_type || "-"}</b>

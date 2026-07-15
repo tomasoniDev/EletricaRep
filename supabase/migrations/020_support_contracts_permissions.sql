@@ -5,6 +5,7 @@ create table if not exists public.support_contracts (
   client text,
   serial text,
   contract_type text check (contract_type is null or contract_type in ('Seg-Sex', 'Seg-Sab', 'Garantia')),
+  status text check (status is null or status in ('Ativo', 'Inativo', 'Em negociação')),
   active boolean,
   support_contract_until date,
   created_by uuid references auth.users(id) default auth.uid(),
@@ -43,6 +44,7 @@ insert into public.support_contracts (
   client,
   serial,
   contract_type,
+  status,
   active,
   support_contract_until
 )
@@ -52,6 +54,11 @@ select
   client,
   serial,
   support_contract_type,
+  case
+    when support_contract_active is true then 'Ativo'
+    when support_contract_active is false then 'Inativo'
+    else null
+  end,
   support_contract_active,
   support_contract_until
 from public.machines machine

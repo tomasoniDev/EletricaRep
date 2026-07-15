@@ -807,6 +807,16 @@ input:focus, textarea:focus, select:focus {
   font-weight: 750;
 }
 
+.soft-pill.warning-pill {
+  background: color-mix(in srgb, #d98200 14%, var(--surface-2));
+  color: #b76b00;
+}
+
+.soft-pill.danger-pill {
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface-2));
+  color: var(--danger);
+}
+
 .machine-metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -881,6 +891,10 @@ input:focus, textarea:focus, select:focus {
   background: linear-gradient(145deg, rgba(165, 60, 53, 0.1), rgba(100, 106, 115, 0.12));
 }
 
+.contract-card.negotiating {
+  background: linear-gradient(145deg, rgba(217, 130, 0, 0.14), rgba(18, 104, 216, 0.08));
+}
+
 .contract-card svg {
   width: 34px;
   height: 34px;
@@ -891,6 +905,10 @@ input:focus, textarea:focus, select:focus {
   stroke: var(--danger);
 }
 
+.contract-card.negotiating svg {
+  stroke: #d98200;
+}
+
 .contract-card strong {
   color: #0f9b5f;
   font-size: 1.08rem;
@@ -899,6 +917,10 @@ input:focus, textarea:focus, select:focus {
 
 .contract-card.inactive strong {
   color: var(--danger);
+}
+
+.contract-card.negotiating strong {
+  color: #b76b00;
 }
 
 .contract-card span,
@@ -922,6 +944,10 @@ input:focus, textarea:focus, select:focus {
 
 .contract-card.inactive em {
   color: var(--danger);
+}
+
+.contract-card.negotiating em {
+  color: #b76b00;
 }
 
 .dashboard-grid {
@@ -1076,7 +1102,7 @@ input:focus, textarea:focus, select:focus {
 
 .contract-summary-list {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 

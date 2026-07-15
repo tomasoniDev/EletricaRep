@@ -90,6 +90,7 @@ export type SupportContract = {
   client: string | null;
   serial: string | null;
   contract_type: string | null;
+  status: "Ativo" | "Inativo" | "Em negociação" | null;
   active: boolean | null;
   support_contract_until: string | null;
   created_by: string | null;
