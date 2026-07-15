@@ -58,7 +58,7 @@ export type Technician = {
   updated_at: string;
 };
 
-export type UserRole = "Admin" | "Diretoria" | "Engenharia" | "Montagem" | "Comercial";
+export type UserRole = "Admin" | "Diretoria" | "Coordenador" | "Engenharia" | "Montagem" | "Comercial";
 
 export type AuthorizedUser = {
   id: string;

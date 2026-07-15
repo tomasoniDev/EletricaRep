@@ -117,7 +117,7 @@ const SOFTWARE_OPTIONS = [
   ...Array.from({ length: 5 }, (_, index) => `Scout 4.${index + 4}`)
 ];
 const VM_OPTIONS = Array.from({ length: 9 }, (_, index) => `V${index + 13}`);
-const USER_ROLE_OPTIONS: UserRole[] = ["Admin", "Diretoria", "Engenharia", "Montagem", "Comercial"];
+const USER_ROLE_OPTIONS: UserRole[] = ["Admin", "Diretoria", "Coordenador", "Engenharia", "Montagem", "Comercial"];
 const TRAVEL_STATUS_OPTIONS = ["A definir", "Planejado", "Em andamento", "Concluido", "Cancelado"];
 const LEAFLET_CSS_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
 const LEAFLET_JS_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
@@ -535,11 +535,11 @@ function hasFullAccess(role?: UserRole | null) {
 }
 
 function canManageUsers(role?: UserRole | null) {
-  return hasFullAccess(role);
+  return hasFullAccess(role) || role === "Coordenador";
 }
 
 function canEditMachine(role?: UserRole | null) {
-  return hasFullAccess(role) || role === "Engenharia";
+  return hasFullAccess(role) || role === "Engenharia" || role === "Coordenador";
 }
 
 function canManageContracts(role?: UserRole | null) {
@@ -836,7 +836,7 @@ function helpSections(view: View, registryTab: RegistryTab) {
     ["Usuário", "Cadastre o nome que será exibido no sistema e associado aos registros feitos por essa conta."],
     ["E-mail", "Informe o e-mail corporativo autorizado. Apenas e-mails cadastrados conseguem validar o acesso ao app."],
     ["Perfil / setor", "Escolha o perfil correto para liberar apenas as telas e ações compatíveis com o setor do usuário."],
-    ["Permissões", "Admin e Diretoria têm acesso total. Engenharia, Montagem e Comercial seguem restrições específicas de cadastro, cronograma, contratos e relatórios."],
+    ["Permissões", "Admin e Diretoria têm acesso total. Coordenador segue as permissões de Engenharia e também pode cadastrar usuários. Engenharia, Montagem e Comercial seguem restrições específicas de cadastro, cronograma, contratos e relatórios."],
     ["Ações", "Use o menu de ações da tabela para editar dados do usuário ou remover acessos que não devem mais entrar no sistema."]
   ];
 }
