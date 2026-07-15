@@ -10,7 +10,7 @@ type View = "home" | "overview" | "machineDetail" | "service" | "registry" | "sc
 type RegistryTab = "machines" | "users";
 type ScheduleTab = "travel" | "contracts";
 type SortDirection = "asc" | "desc";
-type MachineSortKey = "code" | "model" | "client" | "unit_city" | "serial" | "software_version" | "vm" | "last_service";
+type MachineSortKey = "code" | "model" | "client" | "unit_city" | "serial" | "software_version" | "manufacture_month" | "vm" | "last_service";
 type HistorySortKey = "service_date" | "equipment" | "technician_name" | "issue_summary";
 type UserSortKey = "name" | "email" | "role";
 type TravelSortKey = "start_date" | "end_date" | "code" | "client" | "technicians" | "status" | "reason" | "updated_at";
@@ -254,6 +254,13 @@ function formatMonthYear(value?: string | null) {
   if (/^\d{2}\/\d{4}$/.test(value)) return value;
   if (!year || !month) return value;
   return `${month}/${year}`;
+}
+
+function monthYearSortValue(value?: string | null) {
+  const formatted = formatMonthYear(value);
+  const match = formatted.match(/^(\d{2})\/(\d{4})$/);
+  if (!match) return Number.MAX_SAFE_INTEGER;
+  return Number(match[2]) * 100 + Number(match[1]);
 }
 
 function normalizeMonthYear(value: string) {
@@ -1955,6 +1962,7 @@ export default function Home() {
         if (machineSort.key === "unit_city") result = compareText(a.unit_city, b.unit_city);
         if (machineSort.key === "serial") result = compareText(a.serial, b.serial);
         if (machineSort.key === "software_version") result = compareText(a.software_version, b.software_version);
+        if (machineSort.key === "manufacture_month") result = monthYearSortValue(a.manufacture_month) - monthYearSortValue(b.manufacture_month);
         if (machineSort.key === "vm") result = compareText(a.vm, b.vm);
 
         return result * direction;
@@ -2853,6 +2861,7 @@ export default function Home() {
                     <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("model")}>Modelo <span>{sortMark(machineSort.key === "model", machineSort.direction)}</span></button></th>
                     <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("client")}>Cliente <span>{sortMark(machineSort.key === "client", machineSort.direction)}</span></button></th>
                     <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("unit_city")}>Unidade / Cidade <span>{sortMark(machineSort.key === "unit_city", machineSort.direction)}</span></button></th>
+                    <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("manufacture_month")}>Fabricação <span>{sortMark(machineSort.key === "manufacture_month", machineSort.direction)}</span></button></th>
                     <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("vm")}>VM <span>{sortMark(machineSort.key === "vm", machineSort.direction)}</span></button></th>
                     <th><button className="sort-header" type="button" onClick={() => toggleMachineSort("last_service")}>Último atendimento <span>{sortMark(machineSort.key === "last_service", machineSort.direction)}</span></button></th>
                   </tr></thead>
@@ -2863,6 +2872,7 @@ export default function Home() {
                         <td>{machine.model || "-"}</td>
                         <td>{machine.client || "-"}</td>
                         <td>{machine.unit_city || "-"}</td>
+                        <td>{formatMonthYear(machine.manufacture_month)}</td>
                         <td>{machine.vm || "-"}</td>
                         <td>{formatDate(lastServiceDate(machine))}</td>
                       </tr>
