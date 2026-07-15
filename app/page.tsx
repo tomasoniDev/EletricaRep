@@ -112,6 +112,11 @@ const REMOTE_ACCESS_OPTIONS: RemoteAccess[] = ["Sem acesso remoto", "SINEMA", "V
 const SERVICE_TYPE_OPTIONS: ServiceType[] = ["Acesso remoto", "Visita técnica"];
 const CONTRACT_TYPE_OPTIONS: ContractType[] = ["Seg-Sex", "Seg-Sab", "Garantia"];
 const CONTRACT_STATUS_OPTIONS: ContractStatus[] = ["Ativo", "Em negociação", "Inativo"];
+const SOFTWARE_OPTIONS = [
+  ...Array.from({ length: 9 }, (_, index) => `TIA Portal V${index + 13}`),
+  ...Array.from({ length: 5 }, (_, index) => `Scout 4.${index + 4}`)
+];
+const VM_OPTIONS = Array.from({ length: 9 }, (_, index) => `V${index + 13}`);
 const USER_ROLE_OPTIONS: UserRole[] = ["Admin", "Diretoria", "Engenharia", "Montagem", "Comercial"];
 const TRAVEL_STATUS_OPTIONS = ["A definir", "Planejado", "Em andamento", "Concluido", "Cancelado"];
 const LEAFLET_CSS_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
@@ -194,8 +199,42 @@ const EMPTY_CONTRACT_FORM: SupportContractFormState = {
 };
 function formatDate(value?: string | null) {
   if (!value) return "-";
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(value)) return value;
   const [year, month, day] = value.split("-");
+  if (!year || !month || !day) return value;
   return `${day}/${month}/${year}`;
+}
+
+function onlyDigits(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+function formatFullDateInput(value: string) {
+  const digits = onlyDigits(value).slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function formatDayMonthInput(value: string) {
+  const digits = onlyDigits(value).slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+}
+
+function formatMonthYearInput(value: string) {
+  const digits = onlyDigits(value).slice(0, 6);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+}
+
+function normalizeFullDate(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const match = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return trimmed;
+  return `${match[3]}-${match[2]}-${match[1]}`;
 }
 
 function daysUntil(value?: string | null) {
@@ -210,15 +249,19 @@ function daysUntil(value?: string | null) {
 function formatMonthYear(value?: string | null) {
   if (!value) return "-";
   const [year, month] = value.split("-");
-  if (/^\d{2}\/\d{2}$/.test(value)) return value;
+  const shortMatch = value.match(/^(\d{2})\/(\d{2})$/);
+  if (shortMatch) return `${shortMatch[1]}/20${shortMatch[2]}`;
+  if (/^\d{2}\/\d{4}$/.test(value)) return value;
   if (!year || !month) return value;
-  return `${month}/${year.slice(-2)}`;
+  return `${month}/${year}`;
 }
 
 function normalizeMonthYear(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return null;
-  const match = trimmed.match(/^(\d{2})\/(\d{2})$/);
+  const shortMatch = trimmed.match(/^(\d{2})\/(\d{2})$/);
+  if (shortMatch) return `${shortMatch[1]}/20${shortMatch[2]}`;
+  const match = trimmed.match(/^(\d{2})\/(\d{4})$/);
   if (!match) return trimmed;
   return `${match[1]}/${match[2]}`;
 }
@@ -292,7 +335,7 @@ function machineFormFromMachine(machine?: Machine | null): MachineFormState {
     ip_range: machine.ip_range ?? "",
     vm: machine.vm ?? "",
     serial: machine.serial ?? "",
-    description: machine.description ?? "",
+    description: (machine.description ?? "").slice(0, 160),
     model: machine.model ?? "",
     client: machine.client ?? "",
     unit_city: machine.unit_city ?? "",
@@ -523,14 +566,53 @@ function validateDayMonth(value: string, label: string) {
   return "";
 }
 
+function validateFullDate(value: string, label: string) {
+  const normalized = value.trim();
+  if (!normalized) return "";
+  const match = normalized.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return `${label} deve estar no formato dd/mm/aaaa.`;
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  if (month < 1 || month > 12) return `${label} possui mês inválido.`;
+  if (year < 1900 || year > 2099) return `${label} possui ano inválido.`;
+  const maxDay = new Date(year, month, 0).getDate();
+  if (day < 1 || day > maxDay) return `${label} possui dia inválido para o mês informado.`;
+  return "";
+}
+
 function validateMonthYear(value: string, label: string) {
   const normalized = value.trim();
   if (!normalized) return "";
-  const match = normalized.match(/^(\d{2})\/(\d{2})$/);
-  if (!match) return `${label} deve estar no formato mm/aa.`;
+  const match = normalized.match(/^(\d{2})\/(\d{4})$/);
+  if (!match) return `${label} deve estar no formato mm/aaaa.`;
   const month = Number(match[1]);
   if (month < 1 || month > 12) return `${label} possui mês inválido.`;
   return "";
+}
+
+function isValidIpv4Octet(value: string) {
+  if (!/^\d{1,3}$/.test(value)) return false;
+  const number = Number(value);
+  return number >= 0 && number <= 255;
+}
+
+function validateIpv4Like(value: string, label: string, options: { allowWildcard?: boolean; allowPort?: boolean } = {}) {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return "";
+  const [address, suffix] = normalized.split(/[/:]/);
+  const separatorMatch = normalized.match(/[/:]/);
+  if (suffix && (!options.allowPort || !/^\d{1,5}$/.test(suffix) || Number(suffix) < 1 || Number(suffix) > 65535)) {
+    return `${label} possui porta inválida.`;
+  }
+  if (!suffix && separatorMatch) return `${label} possui formato de IP inválido.`;
+  const octets = address.split(".");
+  if (octets.length !== 4) return `${label} deve estar no formato IPv4, como 189.1.87.xxx ou 189.1.87.200.`;
+  const valid = octets.every((octet, index) => {
+    if (options.allowWildcard && index === 3 && (octet === "xxx" || octet === "*")) return true;
+    return isValidIpv4Octet(octet);
+  });
+  return valid ? "" : `${label} possui IPv4 inválido.`;
 }
 
 let leafletLoadPromise: Promise<LeafletNamespace> | null = null;
@@ -696,9 +778,9 @@ function helpSections(view: View, registryTab: RegistryTab) {
       ["Mecânica", "Lista mecânica ou referência do projeto mecânico."],
       ["Código do software", "Número do software da máquina. Ele é usado nos indicadores por VM."],
       ["VM", "Nome ou identificação da VM onde o software está alocado."],
-      ["Faixa de IP", "Faixa reservada pela engenharia para a máquina ou software."],
-      ["Fabricação", "Mês e ano no formato mm/aa."],
-      ["Software", "Plataforma ou versão principal, como TIA V19, Scout ou equivalente."],
+      ["Faixa de IP", "Faixa reservada pela engenharia no padrão IPv4, como 189.1.87.xxx."],
+      ["Fabricação", "Mês e ano no formato mm/aaaa."],
+      ["Software", "Selecione a versão padronizada de TIA Portal ou Scout."],
       ["Acesso remoto", "Escolha SINEMA, VNC ou sem acesso remoto. Os campos adicionais aparecem conforme a opção."],
       ["Contrato", "Preencha somente quando houver contrato ativo ou informação de vigência relevante."]
     ];
@@ -2016,7 +2098,9 @@ export default function Home() {
       validateCodePattern(normalizedSoftwareCode, /^T665-\d{3,5}$/, "Código do software"),
       validateCodePattern(normalizedSerial, /^(500-\d{3}|500-\d{3}\/\d{2})$/, "Número de série"),
       validateCodePattern(normalizedMechanicalList, /^(500-\d{3}|T-0\d{3})$/, "Lista mecânica"),
-      validateMonthYear(machineForm.manufacture_month, "Fabricação")
+      validateMonthYear(machineForm.manufacture_month, "Fabricação"),
+      validateIpv4Like(machineForm.ip_range, "Faixa de IP", { allowWildcard: true }),
+      validateIpv4Like(machineForm.vnc_ip, "IP de acesso VNC", { allowPort: true })
     ].filter(Boolean);
 
     const duplicate = machines.find((machine) => machine.id !== editingMachineId && (
@@ -2042,7 +2126,7 @@ export default function Home() {
       client: machineForm.client.trim() || null,
       unit_city: machineForm.unit_city.trim() || null,
       serial: normalizedSerial || null,
-      description: machineForm.description.trim() || null,
+      description: machineForm.description.trim().slice(0, 160) || null,
       manufacture_month: normalizeMonthYear(machineForm.manufacture_month),
       mechanical_list: normalizedMechanicalList || null,
       software_code: normalizedSoftwareCode || null,
@@ -2210,6 +2294,11 @@ export default function Home() {
     }
 
     setMessage("Salvando contrato...");
+    const contractDateError = validateFullDate(contractForm.support_contract_until, "Final de vigência");
+    if (contractDateError) {
+      setMessage(contractDateError);
+      return;
+    }
 
     const payload = {
       machine_id: contractForm.machine_id || null,
@@ -2219,7 +2308,7 @@ export default function Home() {
       contract_type: contractForm.contract_type.trim() || null,
       status: contractForm.status,
       active: contractForm.status === "Ativo",
-      support_contract_until: contractForm.support_contract_until || null
+      support_contract_until: normalizeFullDate(contractForm.support_contract_until) || null
     };
 
     const { error } = editingContractId
@@ -2246,7 +2335,7 @@ export default function Home() {
       client: contract.client ?? "",
       serial: contract.serial ?? "",
       contract_type: contract.contract_type ?? "",
-      support_contract_until: contract.support_contract_until ?? "",
+      support_contract_until: formatDate(contract.support_contract_until) === "-" ? "" : formatDate(contract.support_contract_until),
       status: contractStatus(contract)
     });
   }
@@ -2323,9 +2412,11 @@ export default function Home() {
     }
 
     const selectedServiceType = normalizeServiceType(String(form.get("service_type") ?? serviceType));
+    const serviceDate = String(form.get("service_date") ?? "").trim();
     const serviceStart = String(form.get("service_start") ?? "").trim();
     const serviceEnd = String(form.get("service_end") ?? "").trim();
     const serviceDateErrors = [
+      validateFullDate(serviceDate, "Data do atendimento"),
       validateDayMonth(serviceStart, "Início de atendimento"),
       validateDayMonth(serviceEnd, "Fim de atendimento")
     ].filter(Boolean);
@@ -2342,7 +2433,7 @@ export default function Home() {
       technician_name: loggedTechnicianName,
       technician_email: currentUserEmail || null,
       service_type: selectedServiceType,
-      service_date: String(form.get("service_date") ?? ""),
+      service_date: normalizeFullDate(serviceDate),
       service_start: serviceStart || null,
       service_end: serviceEnd || null,
       equipment: String(form.get("equipment") ?? "").trim() || null,
@@ -2807,8 +2898,8 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="fields-grid">
-                  <label>Data de início<input value={travelForm.start_date} onChange={(event) => setTravelForm((current) => ({ ...current, start_date: event.target.value }))} placeholder="dd/mm ou A definir" /></label>
-                  <label>Data de fim<input value={travelForm.end_date} onChange={(event) => setTravelForm((current) => ({ ...current, end_date: event.target.value }))} placeholder="dd/mm ou A definir" /></label>
+                  <label>Data de início<input value={travelForm.start_date} onChange={(event) => setTravelForm((current) => ({ ...current, start_date: /^a/i.test(event.target.value) ? event.target.value : formatDayMonthInput(event.target.value) }))} placeholder="dd/mm ou A definir" maxLength={10} /></label>
+                  <label>Data de fim<input value={travelForm.end_date} onChange={(event) => setTravelForm((current) => ({ ...current, end_date: /^a/i.test(event.target.value) ? event.target.value : formatDayMonthInput(event.target.value) }))} placeholder="dd/mm ou A definir" maxLength={10} /></label>
                   <label>Código<input value={travelForm.code} onChange={(event) => setTravelForm((current) => ({ ...current, code: event.target.value }))} placeholder="T665-xxx" maxLength={10} /></label>
                   <label>Cliente<input list="client-suggestions" value={travelForm.client} onChange={(event) => setTravelForm((current) => ({ ...current, client: event.target.value }))} /></label>
                   <label>Técnicos<input value={travelForm.technicians} onChange={(event) => setTravelForm((current) => ({ ...current, technicians: event.target.value }))} placeholder="Nomes separados por vírgula" /></label>
@@ -2848,7 +2939,7 @@ export default function Home() {
                       <option value="">Selecione</option>
                       {CONTRACT_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                     </select></label>
-                    <label>Final de vigência<input type="date" value={contractForm.support_contract_until} onChange={(event) => setContractForm((current) => ({ ...current, support_contract_until: event.target.value }))} /></label>
+                    <label>Final de vigência<input value={contractForm.support_contract_until} onChange={(event) => setContractForm((current) => ({ ...current, support_contract_until: formatFullDateInput(event.target.value) }))} placeholder="dd/mm/aaaa" maxLength={10} /></label>
                   </div>
                 </form>
 
@@ -3122,9 +3213,9 @@ export default function Home() {
               <label>Máquina<select name="machine_id" required defaultValue={editingServiceRecord?.machine_id ?? serviceMachine?.id}>{machines.map((machine) => <option key={machine.id} value={machine.id}>{displayMachineCode(machine)}</option>)}</select></label>
               <label>Equipamento<input name="equipment" placeholder="CLP, IHM, servo, inversor" defaultValue={editingServiceRecord?.equipment ?? ""} /></label>
               <label>Técnico responsável<input value={currentUserName || displayUserName(currentUserEmail)} readOnly /></label>
-              <label>Data<input name="service_date" type="date" required defaultValue={editingServiceRecord?.service_date ?? new Date().toISOString().slice(0, 10)} /></label>
-              <label>Início do atendimento<input name="service_start" placeholder="dd/mm" pattern="\d{2}/\d{2}" defaultValue={editingServiceRecord?.service_start ?? ""} /></label>
-              <label>Fim do atendimento<input name="service_end" placeholder="dd/mm" pattern="\d{2}/\d{2}" defaultValue={editingServiceRecord?.service_end ?? ""} /></label>
+              <label>Data<input name="service_date" required placeholder="dd/mm/aaaa" maxLength={10} defaultValue={formatDate(editingServiceRecord?.service_date ?? new Date().toISOString().slice(0, 10))} onChange={(event) => { event.currentTarget.value = formatFullDateInput(event.currentTarget.value); }} /></label>
+              <label>Início do atendimento<input name="service_start" placeholder="dd/mm" pattern="\d{2}/\d{2}" maxLength={5} defaultValue={editingServiceRecord?.service_start ?? ""} onChange={(event) => { event.currentTarget.value = formatDayMonthInput(event.currentTarget.value); }} /></label>
+              <label>Fim do atendimento<input name="service_end" placeholder="dd/mm" pattern="\d{2}/\d{2}" maxLength={5} defaultValue={editingServiceRecord?.service_end ?? ""} onChange={(event) => { event.currentTarget.value = formatDayMonthInput(event.currentTarget.value); }} /></label>
               <label>Tipo de atendimento<select name="service_type" value={serviceType} onChange={(event) => updateServiceType(event.target.value as ServiceType)}>
                 {SERVICE_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
               </select></label>
@@ -3204,18 +3295,26 @@ export default function Home() {
                     <div className="fields-grid">
                       <label>Código<input disabled={machineMainFieldsDisabled} value={machineForm.code} onChange={(event) => updateMachineForm("code", event.target.value)} placeholder="T665-xxx" maxLength={10} /></label>
                       <label>Modelo<input disabled={machineMainFieldsDisabled} value={machineForm.model} onChange={(event) => updateMachineForm("model", event.target.value)} placeholder="Onduladeira, Dryend, ICV..." maxLength={120} /></label>
-                      <label className="wide">Descrição<textarea disabled={machineMainFieldsDisabled} rows={4} value={machineForm.description} onChange={(event) => updateMachineForm("description", event.target.value)} placeholder="Detalhe o modelo da máquina, configuração ou observações do equipamento" maxLength={4000} /></label>
+                      <label className="wide">Descrição<input disabled={machineMainFieldsDisabled} value={machineForm.description} onChange={(event) => updateMachineForm("description", event.target.value)} placeholder="Descrição curta do modelo da máquina" maxLength={160} /></label>
                       <label>Cliente<input disabled={machineMainFieldsDisabled} list="client-suggestions" value={machineForm.client} onChange={(event) => updateMachineForm("client", event.target.value)} placeholder="Nome da empresa" maxLength={160} /></label>
                       <datalist id="client-suggestions">{clientSuggestions.map((client) => <option key={client} value={client} />)}</datalist>
                       <label>Localização<input disabled={machineMainFieldsDisabled} list="city-suggestions" value={machineForm.unit_city} onChange={(event) => updateMachineForm("unit_city", event.target.value)} placeholder="Cidade - UF ou Cidade - PAIS" maxLength={160} /></label>
                       <datalist id="city-suggestions">{citySuggestions.map((city) => <option key={city} value={city} />)}</datalist>
                       <label>Mecânica<input disabled={machineMainFieldsDisabled} value={machineForm.mechanical_list} onChange={(event) => updateMachineForm("mechanical_list", event.target.value)} placeholder="500-xxx ou T-0xxx" maxLength={10} /></label>
                       <label>Código do software<input disabled={machineMainFieldsDisabled} value={machineForm.software_code} onChange={(event) => updateMachineForm("software_code", event.target.value)} placeholder="T665-xxx" maxLength={10} /></label>
-                      <label>VM<input disabled={machineMainFieldsDisabled} value={machineForm.vm} onChange={(event) => updateMachineForm("vm", event.target.value)} placeholder="VM onde o software está alocado" maxLength={120} /></label>
-                      <label>Faixa de IP<input disabled={machineMainFieldsDisabled} value={machineForm.ip_range} onChange={(event) => updateMachineForm("ip_range", event.target.value)} placeholder="Ex.: 189.1.87.xxx" maxLength={120} /></label>
+                      <label>VM<select disabled={machineMainFieldsDisabled} value={machineForm.vm} onChange={(event) => updateMachineForm("vm", event.target.value)}>
+                        <option value="">Selecione</option>
+                        {machineForm.vm && !VM_OPTIONS.includes(machineForm.vm) && <option value={machineForm.vm}>{machineForm.vm}</option>}
+                        {VM_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                      </select></label>
+                      <label>Faixa de IP<input disabled={machineMainFieldsDisabled} value={machineForm.ip_range} onChange={(event) => updateMachineForm("ip_range", event.target.value)} placeholder="Ex.: 189.1.87.xxx" maxLength={15} /></label>
                       <label>Número de série<input disabled={machineMainFieldsDisabled} value={machineForm.serial} onChange={(event) => updateMachineForm("serial", event.target.value)} placeholder="500-xxx ou 500-697/22" maxLength={12} /></label>
-                      <label>Fabricação<input disabled={machineMainFieldsDisabled} value={machineForm.manufacture_month} onChange={(event) => updateMachineForm("manufacture_month", event.target.value)} placeholder="mm/aa" pattern="\d{2}/\d{2}" maxLength={5} /></label>
-                      <label>Software<input disabled={machineMainFieldsDisabled} value={machineForm.software_version} onChange={(event) => updateMachineForm("software_version", event.target.value)} placeholder="TIA Vx, Scout..." maxLength={120} /></label>
+                      <label>Fabricação<input disabled={machineMainFieldsDisabled} value={machineForm.manufacture_month} onChange={(event) => updateMachineForm("manufacture_month", formatMonthYearInput(event.target.value))} placeholder="mm/aaaa" pattern="\d{2}/\d{4}" maxLength={7} /></label>
+                      <label>Software<select disabled={machineMainFieldsDisabled} value={machineForm.software_version} onChange={(event) => updateMachineForm("software_version", event.target.value)}>
+                        <option value="">Selecione</option>
+                        {machineForm.software_version && !SOFTWARE_OPTIONS.includes(machineForm.software_version) && <option value={machineForm.software_version}>{machineForm.software_version}</option>}
+                        {SOFTWARE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                      </select></label>
                     </div>
                   </section>
 
@@ -3231,7 +3330,7 @@ export default function Home() {
                     <>
                       {machineForm.remote_access === "VNC" && (
                         <div className="fields-grid">
-                          <label>IP de acesso<input disabled={machineMainFieldsDisabled} value={machineForm.vnc_ip} onChange={(event) => updateMachineForm("vnc_ip", event.target.value)} /></label>
+                          <label>IP de acesso<input disabled={machineMainFieldsDisabled} value={machineForm.vnc_ip} onChange={(event) => updateMachineForm("vnc_ip", event.target.value)} placeholder="Ex.: 189.1.87.200/5906" maxLength={21} /></label>
                           <label>Senha<input type="text" value={machineForm.vnc_password} onChange={(event) => updateMachineForm("vnc_password", event.target.value)} /></label>
                           <label>Usuário VM<input value={machineForm.vnc_user} onChange={(event) => updateMachineForm("vnc_user", event.target.value)} /></label>
                           <label>Senha VM<input type="text" value={machineForm.vnc_vm_password} onChange={(event) => updateMachineForm("vnc_vm_password", event.target.value)} /></label>

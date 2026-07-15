@@ -805,6 +805,10 @@ input:focus, textarea:focus, select:focus {
   color: var(--primary);
   padding: 0 14px;
   font-weight: 750;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .soft-pill.warning-pill {
@@ -873,7 +877,7 @@ input:focus, textarea:focus, select:focus {
 }
 
 .machine-metrics .metric-wide strong {
-  white-space: normal;
+  white-space: nowrap;
 }
 
 .contract-card {
@@ -1366,7 +1370,10 @@ input:focus, textarea:focus, select:focus {
   color: var(--text);
   font-weight: 650;
   text-align: right;
-  overflow-wrap: anywhere;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .history-list {
@@ -1923,6 +1930,7 @@ tbody tr:hover { background: var(--surface-2); }
   }
   .spec-list dd {
     text-align: left;
+    max-width: 100%;
   }
   .segmented-control { width: 100%; }
   .segmented-control button { flex: 1; }
