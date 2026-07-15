@@ -1545,18 +1545,6 @@ table {
   white-space: pre-wrap;
 }
 
-.filter-row th {
-  padding-top: 8px;
-}
-
-.filter-row input {
-  min-height: 34px;
-  padding: 7px 9px;
-  border-radius: 6px;
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
 th, td {
   border-bottom: 1px solid var(--line);
   padding: 12px;

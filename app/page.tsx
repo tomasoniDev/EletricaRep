@@ -13,7 +13,7 @@ type SortDirection = "asc" | "desc";
 type MachineSortKey = "code" | "model" | "client" | "unit_city" | "serial" | "software_version" | "vm" | "last_service";
 type HistorySortKey = "service_date" | "equipment" | "technician_name" | "issue_summary";
 type UserSortKey = "name" | "email" | "role";
-type TravelFilterKey = "start_date" | "end_date" | "code" | "client" | "technicians" | "status" | "reason";
+type TravelSortKey = "start_date" | "end_date" | "code" | "client" | "technicians" | "status" | "reason" | "updated_at";
 type RemoteAccess = "SINEMA" | "VNC" | "Sem acesso remoto";
 type ServiceType = "Acesso remoto" | "Visita técnica";
 type ThemeMode = "light" | "dark";
@@ -96,8 +96,6 @@ type SupportContractFormState = {
   support_contract_until: string;
   active: string;
 };
-
-type TravelFilterState = Record<TravelFilterKey, string>;
 
 const ALLOWED_EMAIL_DOMAINS = ["tomasoni.ind.br", "tomasoni.in.br"];
 const BACKUP_ALLOWED_EMAIL = "lucas.lessa@tomasoni.ind.br";
@@ -192,16 +190,6 @@ const EMPTY_CONTRACT_FORM: SupportContractFormState = {
   support_contract_until: "",
   active: "Sim"
 };
-const EMPTY_TRAVEL_FILTERS: TravelFilterState = {
-  start_date: "",
-  end_date: "",
-  code: "",
-  client: "",
-  technicians: "",
-  status: "",
-  reason: ""
-};
-
 function formatDate(value?: string | null) {
   if (!value) return "-";
   const [year, month, day] = value.split("-");
@@ -394,13 +382,19 @@ function dayMonthOrderValue(value?: string | null, fallback = Number.MAX_SAFE_IN
   return Number(match[2]) * 100 + Number(match[1]);
 }
 
-function travelField(item: TravelSchedule, key: TravelFilterKey) {
-  return String(item[key] ?? "");
+function compareTravelValue(first: TravelSchedule, second: TravelSchedule, key: TravelSortKey) {
+  if (key === "start_date" || key === "end_date") {
+    return dayMonthOrderValue(first[key]) - dayMonthOrderValue(second[key]);
+  }
+  if (key === "updated_at") {
+    return compareDate(first.updated_at || first.created_at, second.updated_at || second.created_at);
+  }
+  return compareText(String(first[key] ?? ""), String(second[key] ?? ""));
 }
 
-function matchesTravelFilters(item: TravelSchedule, filters: TravelFilterState) {
-  return (Object.entries(filters) as [TravelFilterKey, string][])
-    .every(([key, value]) => !value.trim() || travelField(item, key).toLowerCase().includes(value.trim().toLowerCase()));
+function compareTravelBySort(first: TravelSchedule, second: TravelSchedule, sort: { key: TravelSortKey; direction: SortDirection }) {
+  const result = compareTravelValue(first, second, sort.key);
+  return sort.direction === "asc" ? result : -result;
 }
 
 function nextDirection(isSameColumn: boolean, currentDirection: SortDirection) {
@@ -905,8 +899,8 @@ export default function Home() {
   const [scheduleTab, setScheduleTab] = useState<ScheduleTab>("travel");
   const [editingContractId, setEditingContractId] = useState("");
   const [contractForm, setContractForm] = useState<SupportContractFormState>(EMPTY_CONTRACT_FORM);
-  const [travelFilters, setTravelFilters] = useState<TravelFilterState>(EMPTY_TRAVEL_FILTERS);
-  const [completedTravelFilters, setCompletedTravelFilters] = useState<TravelFilterState>(EMPTY_TRAVEL_FILTERS);
+  const [travelSort, setTravelSort] = useState<{ key: TravelSortKey; direction: SortDirection }>({ key: "start_date", direction: "asc" });
+  const [completedTravelSort, setCompletedTravelSort] = useState<{ key: TravelSortKey; direction: SortDirection }>({ key: "updated_at", direction: "desc" });
   const [citySuggestions, setCitySuggestions] = useState<string[]>([]);
   const [selectedServiceRecord, setSelectedServiceRecord] = useState<ServiceRecord | null>(null);
   const [editingServiceRecord, setEditingServiceRecord] = useState<ServiceRecord | null>(null);
@@ -1085,12 +1079,10 @@ export default function Home() {
     .slice(0, 5);
   const openTravelSchedules = travelSchedules
     .filter((item) => !isCompletedTravel(item))
-    .filter((item) => matchesTravelFilters(item, travelFilters))
-    .sort((a, b) => dayMonthOrderValue(a.start_date) - dayMonthOrderValue(b.start_date) || compareText(a.client, b.client));
+    .sort((a, b) => compareTravelBySort(a, b, travelSort) || compareText(a.client, b.client));
   const completedTravelSchedules = travelSchedules
     .filter(isCompletedTravel)
-    .filter((item) => matchesTravelFilters(item, completedTravelFilters))
-    .sort((a, b) => compareDate(b.updated_at || b.created_at, a.updated_at || a.created_at));
+    .sort((a, b) => compareTravelBySort(a, b, completedTravelSort) || compareText(a.client, b.client));
 
   useEffect(() => {
     if (!currentUserCanManageContracts && scheduleTab !== "travel") {
@@ -1430,8 +1422,8 @@ export default function Home() {
       .order("support_contract_until", { ascending: true });
 
     if (contractError) {
-      setMessage(dataMessage(contractError.message || ""));
       setSupportContracts([]);
+      console.warn("Tabela de contratos indisponível", contractError);
       return;
     }
 
@@ -1920,6 +1912,14 @@ export default function Home() {
 
   function toggleUserSort(key: UserSortKey) {
     setUserSort((current) => ({ key, direction: nextDirection(current.key === key, current.direction) }));
+  }
+
+  function toggleTravelSort(key: TravelSortKey) {
+    setTravelSort((current) => ({ key, direction: nextDirection(current.key === key, current.direction) }));
+  }
+
+  function toggleCompletedTravelSort(key: TravelSortKey) {
+    setCompletedTravelSort((current) => ({ key, direction: nextDirection(current.key === key, current.direction) }));
   }
 
   function toggleActionMenu(id: string, event: ReactMouseEvent<HTMLButtonElement>) {
@@ -2854,12 +2854,15 @@ export default function Home() {
               <div className="table-wrap">
                 <table className="compact-table schedule-table">
                   <thead>
-                    <tr><th>Início</th><th>Fim</th><th>Código</th><th>Cliente</th><th>Técnicos</th><th>Status</th><th>Motivo</th>{currentUserCanEditSchedule && <th>Ações</th>}</tr>
-                    <tr className="filter-row">
-                      {(["start_date", "end_date", "code", "client", "technicians", "status", "reason"] as TravelFilterKey[]).map((key) => (
-                        <th key={key}><input value={travelFilters[key]} onChange={(event) => setTravelFilters((current) => ({ ...current, [key]: event.target.value }))} placeholder="Filtrar" /></th>
-                      ))}
-                      {currentUserCanEditSchedule && <th />}
+                    <tr>
+                      <th><button className="sort-header" type="button" onClick={() => toggleTravelSort("start_date")}>Início <span>{sortMark(travelSort.key === "start_date", travelSort.direction)}</span></button></th>
+                      <th><button className="sort-header" type="button" onClick={() => toggleTravelSort("end_date")}>Fim <span>{sortMark(travelSort.key === "end_date", travelSort.direction)}</span></button></th>
+                      <th><button className="sort-header" type="button" onClick={() => toggleTravelSort("code")}>Código <span>{sortMark(travelSort.key === "code", travelSort.direction)}</span></button></th>
+                      <th><button className="sort-header" type="button" onClick={() => toggleTravelSort("client")}>Cliente <span>{sortMark(travelSort.key === "client", travelSort.direction)}</span></button></th>
+                      <th><button className="sort-header" type="button" onClick={() => toggleTravelSort("technicians")}>Técnicos <span>{sortMark(travelSort.key === "technicians", travelSort.direction)}</span></button></th>
+                      <th><button className="sort-header" type="button" onClick={() => toggleTravelSort("status")}>Status <span>{sortMark(travelSort.key === "status", travelSort.direction)}</span></button></th>
+                      <th><button className="sort-header" type="button" onClick={() => toggleTravelSort("reason")}>Motivo <span>{sortMark(travelSort.key === "reason", travelSort.direction)}</span></button></th>
+                      {currentUserCanEditSchedule && <th>Ações</th>}
                     </tr>
                   </thead>
                   <tbody>{openTravelSchedules.map((item) => (
@@ -2897,12 +2900,15 @@ export default function Home() {
               <div className="table-wrap">
                 <table className="compact-table schedule-table">
                   <thead>
-                    <tr><th>Início</th><th>Fim</th><th>Código</th><th>Cliente</th><th>Técnicos</th><th>Status</th><th>Motivo</th>{currentUserCanEditSchedule && <th>Ações</th>}</tr>
-                    <tr className="filter-row">
-                      {(["start_date", "end_date", "code", "client", "technicians", "status", "reason"] as TravelFilterKey[]).map((key) => (
-                        <th key={key}><input value={completedTravelFilters[key]} onChange={(event) => setCompletedTravelFilters((current) => ({ ...current, [key]: event.target.value }))} placeholder="Filtrar" /></th>
-                      ))}
-                      {currentUserCanEditSchedule && <th />}
+                    <tr>
+                      <th><button className="sort-header" type="button" onClick={() => toggleCompletedTravelSort("start_date")}>Início <span>{sortMark(completedTravelSort.key === "start_date", completedTravelSort.direction)}</span></button></th>
+                      <th><button className="sort-header" type="button" onClick={() => toggleCompletedTravelSort("end_date")}>Fim <span>{sortMark(completedTravelSort.key === "end_date", completedTravelSort.direction)}</span></button></th>
+                      <th><button className="sort-header" type="button" onClick={() => toggleCompletedTravelSort("code")}>Código <span>{sortMark(completedTravelSort.key === "code", completedTravelSort.direction)}</span></button></th>
+                      <th><button className="sort-header" type="button" onClick={() => toggleCompletedTravelSort("client")}>Cliente <span>{sortMark(completedTravelSort.key === "client", completedTravelSort.direction)}</span></button></th>
+                      <th><button className="sort-header" type="button" onClick={() => toggleCompletedTravelSort("technicians")}>Técnicos <span>{sortMark(completedTravelSort.key === "technicians", completedTravelSort.direction)}</span></button></th>
+                      <th><button className="sort-header" type="button" onClick={() => toggleCompletedTravelSort("status")}>Status <span>{sortMark(completedTravelSort.key === "status", completedTravelSort.direction)}</span></button></th>
+                      <th><button className="sort-header" type="button" onClick={() => toggleCompletedTravelSort("reason")}>Motivo <span>{sortMark(completedTravelSort.key === "reason", completedTravelSort.direction)}</span></button></th>
+                      {currentUserCanEditSchedule && <th>Ações</th>}
                     </tr>
                   </thead>
                   <tbody>{completedTravelSchedules.map((item) => (
