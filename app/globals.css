@@ -1505,7 +1505,7 @@ table {
 .compact-table { min-width: 520px; }
 
 .schedule-table {
-  min-width: 960px;
+  min-width: 1120px;
   table-layout: fixed;
 }
 
@@ -1529,6 +1529,12 @@ table {
 .schedule-table th:nth-child(7),
 .schedule-table td:nth-child(7) { width: 24%; }
 
+.schedule-table th:nth-child(8),
+.schedule-table td:nth-child(8) {
+  width: 8%;
+  text-align: center;
+}
+
 .schedule-table td {
   vertical-align: top;
 }
@@ -1537,6 +1543,18 @@ table {
 .schedule-table td:nth-child(7) {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.filter-row th {
+  padding-top: 8px;
+}
+
+.filter-row input {
+  min-height: 34px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
 th, td {

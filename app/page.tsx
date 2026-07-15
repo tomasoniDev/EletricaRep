@@ -13,6 +13,7 @@ type SortDirection = "asc" | "desc";
 type MachineSortKey = "code" | "model" | "client" | "unit_city" | "serial" | "software_version" | "vm" | "last_service";
 type HistorySortKey = "service_date" | "equipment" | "technician_name" | "issue_summary";
 type UserSortKey = "name" | "email" | "role";
+type TravelFilterKey = "start_date" | "end_date" | "code" | "client" | "technicians" | "status" | "reason";
 type RemoteAccess = "SINEMA" | "VNC" | "Sem acesso remoto";
 type ServiceType = "Acesso remoto" | "Visita técnica";
 type ThemeMode = "light" | "dark";
@@ -95,6 +96,8 @@ type SupportContractFormState = {
   support_contract_until: string;
   active: string;
 };
+
+type TravelFilterState = Record<TravelFilterKey, string>;
 
 const ALLOWED_EMAIL_DOMAINS = ["tomasoni.ind.br", "tomasoni.in.br"];
 const BACKUP_ALLOWED_EMAIL = "lucas.lessa@tomasoni.ind.br";
@@ -188,6 +191,15 @@ const EMPTY_CONTRACT_FORM: SupportContractFormState = {
   contract_type: "",
   support_contract_until: "",
   active: "Sim"
+};
+const EMPTY_TRAVEL_FILTERS: TravelFilterState = {
+  start_date: "",
+  end_date: "",
+  code: "",
+  client: "",
+  technicians: "",
+  status: "",
+  reason: ""
 };
 
 function formatDate(value?: string | null) {
@@ -365,6 +377,30 @@ function compareText(first?: string | null, second?: string | null) {
 
 function compareDate(first?: string | null, second?: string | null) {
   return (first ?? "").localeCompare(second ?? "");
+}
+
+function normalizeStatus(value?: string | null) {
+  return value?.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() ?? "";
+}
+
+function isCompletedTravel(item: TravelSchedule) {
+  return normalizeStatus(item.status) === "concluido";
+}
+
+function dayMonthOrderValue(value?: string | null, fallback = Number.MAX_SAFE_INTEGER) {
+  const normalized = value?.trim() ?? "";
+  const match = normalized.match(/^(\d{2})\/(\d{2})$/);
+  if (!match) return fallback;
+  return Number(match[2]) * 100 + Number(match[1]);
+}
+
+function travelField(item: TravelSchedule, key: TravelFilterKey) {
+  return String(item[key] ?? "");
+}
+
+function matchesTravelFilters(item: TravelSchedule, filters: TravelFilterState) {
+  return (Object.entries(filters) as [TravelFilterKey, string][])
+    .every(([key, value]) => !value.trim() || travelField(item, key).toLowerCase().includes(value.trim().toLowerCase()));
 }
 
 function nextDirection(isSameColumn: boolean, currentDirection: SortDirection) {
@@ -595,6 +631,7 @@ function authMessage(error: unknown) {
 
 function dataMessage(error: string) {
   const normalized = error.toLowerCase();
+  if (normalized.includes("support_contracts") || normalized.includes("relation") || normalized.includes("schema cache")) return "Tabela de contratos não encontrada no Supabase. Aplique a migration 020_support_contracts_permissions.sql e tente novamente.";
   if (normalized.includes("duplicate") || normalized.includes("unique")) return "Já existe um cadastro com estes dados.";
   if (normalized.includes("permission") || normalized.includes("row-level security")) return "Seu usuário não tem permissão para executar esta ação.";
   if (normalized.includes("network") || normalized.includes("fetch")) return "Falha de conexão. Verifique a internet e tente novamente.";
@@ -868,6 +905,8 @@ export default function Home() {
   const [scheduleTab, setScheduleTab] = useState<ScheduleTab>("travel");
   const [editingContractId, setEditingContractId] = useState("");
   const [contractForm, setContractForm] = useState<SupportContractFormState>(EMPTY_CONTRACT_FORM);
+  const [travelFilters, setTravelFilters] = useState<TravelFilterState>(EMPTY_TRAVEL_FILTERS);
+  const [completedTravelFilters, setCompletedTravelFilters] = useState<TravelFilterState>(EMPTY_TRAVEL_FILTERS);
   const [citySuggestions, setCitySuggestions] = useState<string[]>([]);
   const [selectedServiceRecord, setSelectedServiceRecord] = useState<ServiceRecord | null>(null);
   const [editingServiceRecord, setEditingServiceRecord] = useState<ServiceRecord | null>(null);
@@ -1044,6 +1083,14 @@ export default function Home() {
   const selectedMachineRecentHistory = [...(selectedMachine?.service_records ?? [])]
     .sort((a, b) => compareDate(b.service_date, a.service_date))
     .slice(0, 5);
+  const openTravelSchedules = travelSchedules
+    .filter((item) => !isCompletedTravel(item))
+    .filter((item) => matchesTravelFilters(item, travelFilters))
+    .sort((a, b) => dayMonthOrderValue(a.start_date) - dayMonthOrderValue(b.start_date) || compareText(a.client, b.client));
+  const completedTravelSchedules = travelSchedules
+    .filter(isCompletedTravel)
+    .filter((item) => matchesTravelFilters(item, completedTravelFilters))
+    .sort((a, b) => compareDate(b.updated_at || b.created_at, a.updated_at || a.created_at));
 
   useEffect(() => {
     if (!currentUserCanManageContracts && scheduleTab !== "travel") {
@@ -2094,6 +2141,20 @@ export default function Home() {
     await loadData();
   }
 
+  function editTravelSchedule(item: TravelSchedule) {
+    setEditingTravelId(item.id);
+    setTravelForm({
+      start_date: item.start_date ?? "",
+      end_date: item.end_date ?? "",
+      code: item.code ?? "",
+      client: item.client ?? "",
+      technicians: item.technicians ?? "",
+      status: item.status ?? "A definir",
+      reason: item.reason ?? ""
+    });
+    setScheduleTab("travel");
+  }
+
   function updateContractMachine(machineId: string) {
     const machine = machines.find((item) => item.id === machineId);
     setContractForm((current) => ({
@@ -2112,6 +2173,8 @@ export default function Home() {
       return;
     }
 
+    setMessage("Salvando contrato...");
+
     const payload = {
       machine_id: contractForm.machine_id || null,
       code: contractForm.code.trim().toUpperCase() || null,
@@ -2127,6 +2190,7 @@ export default function Home() {
       : await supabase.from("support_contracts").insert({ ...payload, created_by: currentUserId });
 
     if (error) {
+      console.error("Erro ao salvar contrato", error);
       setMessage(dataMessage(error.message));
       return;
     }
@@ -2786,11 +2850,19 @@ export default function Home() {
 
             {scheduleTab === "travel" && (
             <section className="table-panel">
-              <div className="section-header"><h2>Cronograma de viagens</h2><span>{travelSchedules.length} registros</span></div>
+              <div className="section-header"><h2>Cronograma de viagens</h2><span>{openTravelSchedules.length} registros</span></div>
               <div className="table-wrap">
                 <table className="compact-table schedule-table">
-                  <thead><tr><th>Início</th><th>Fim</th><th>Código</th><th>Cliente</th><th>Técnicos</th><th>Status</th><th>Motivo</th></tr></thead>
-                  <tbody>{travelSchedules.map((item) => (
+                  <thead>
+                    <tr><th>Início</th><th>Fim</th><th>Código</th><th>Cliente</th><th>Técnicos</th><th>Status</th><th>Motivo</th>{currentUserCanEditSchedule && <th>Ações</th>}</tr>
+                    <tr className="filter-row">
+                      {(["start_date", "end_date", "code", "client", "technicians", "status", "reason"] as TravelFilterKey[]).map((key) => (
+                        <th key={key}><input value={travelFilters[key]} onChange={(event) => setTravelFilters((current) => ({ ...current, [key]: event.target.value }))} placeholder="Filtrar" /></th>
+                      ))}
+                      {currentUserCanEditSchedule && <th />}
+                    </tr>
+                  </thead>
+                  <tbody>{openTravelSchedules.map((item) => (
                     <tr key={item.id}>
                       <td>{item.start_date || "-"}</td>
                       <td>{item.end_date || "-"}</td>
@@ -2799,6 +2871,62 @@ export default function Home() {
                       <td>{item.technicians || "-"}</td>
                       <td><span className="soft-pill">{item.status || "-"}</span></td>
                       <td>{item.reason || "-"}</td>
+                      {currentUserCanEditSchedule && (
+                        <td>
+                          <div className="row-actions">
+                            <button className="icon-button menu-trigger" type="button" title="Ações" aria-label={`Ações da viagem ${item.code || item.client || item.id}`} onClick={(event) => toggleActionMenu(`travel-${item.id}`, event)}><MoreIcon /></button>
+                            {openActionMenu === `travel-${item.id}` && (
+                              <div className="row-menu floating-row-menu" style={actionMenuPosition ?? undefined}>
+                                <button type="button" onClick={() => { editTravelSchedule(item); setOpenActionMenu(""); }}><EditIcon /> Alterar viagem</button>
+                                <button className="danger" type="button" onClick={() => { void deleteTravelSchedule(item.id); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </section>
+            )}
+
+            {scheduleTab === "travel" && (
+            <section className="table-panel">
+              <div className="section-header"><h2>Viagens concluídas</h2><span>{completedTravelSchedules.length} registros</span></div>
+              <div className="table-wrap">
+                <table className="compact-table schedule-table">
+                  <thead>
+                    <tr><th>Início</th><th>Fim</th><th>Código</th><th>Cliente</th><th>Técnicos</th><th>Status</th><th>Motivo</th>{currentUserCanEditSchedule && <th>Ações</th>}</tr>
+                    <tr className="filter-row">
+                      {(["start_date", "end_date", "code", "client", "technicians", "status", "reason"] as TravelFilterKey[]).map((key) => (
+                        <th key={key}><input value={completedTravelFilters[key]} onChange={(event) => setCompletedTravelFilters((current) => ({ ...current, [key]: event.target.value }))} placeholder="Filtrar" /></th>
+                      ))}
+                      {currentUserCanEditSchedule && <th />}
+                    </tr>
+                  </thead>
+                  <tbody>{completedTravelSchedules.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.start_date || "-"}</td>
+                      <td>{item.end_date || "-"}</td>
+                      <td>{item.code || "-"}</td>
+                      <td>{item.client || "-"}</td>
+                      <td>{item.technicians || "-"}</td>
+                      <td><span className="soft-pill">{item.status || "-"}</span></td>
+                      <td>{item.reason || "-"}</td>
+                      {currentUserCanEditSchedule && (
+                        <td>
+                          <div className="row-actions">
+                            <button className="icon-button menu-trigger" type="button" title="Ações" aria-label={`Ações da viagem concluída ${item.code || item.client || item.id}`} onClick={(event) => toggleActionMenu(`travel-done-${item.id}`, event)}><MoreIcon /></button>
+                            {openActionMenu === `travel-done-${item.id}` && (
+                              <div className="row-menu floating-row-menu" style={actionMenuPosition ?? undefined}>
+                                <button type="button" onClick={() => { editTravelSchedule(item); setOpenActionMenu(""); }}><EditIcon /> Alterar viagem</button>
+                                <button className="danger" type="button" onClick={() => { void deleteTravelSchedule(item.id); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}</tbody>
                 </table>
