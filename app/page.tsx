@@ -2191,6 +2191,17 @@ export default function Home() {
     }));
   }
 
+  function updateContractSerial(serial: string) {
+    const matchingMachine = machines.find((machine) => normalizeLookup(machine.serial) === normalizeLookup(serial));
+    setContractForm((current) => ({
+      ...current,
+      serial,
+      machine_id: matchingMachine?.id ?? "",
+      code: matchingMachine?.code ?? current.code,
+      client: matchingMachine?.client ?? current.client
+    }));
+  }
+
   async function saveSupportContract(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!currentUserCanManageContracts) {
@@ -2820,13 +2831,16 @@ export default function Home() {
                     </div>
                   </div>
                   <div className="fields-grid">
-                    <label>Máquina<select value={contractForm.machine_id} onChange={(event) => updateContractMachine(event.target.value)}>
-                      <option value="">Selecionar máquina, se aplicável</option>
+                    <label>Número de série<input list="contract-serial-suggestions" value={contractForm.serial} onChange={(event) => updateContractSerial(event.target.value)} placeholder="500-xxx ou 500-697/22" maxLength={12} /></label>
+                    <datalist id="contract-serial-suggestions">
+                      {machines.filter((machine) => machine.serial?.trim()).map((machine) => <option key={machine.id} value={machine.serial ?? ""}>{displayMachineCode(machine)} - {machine.client || "Cliente não informado"}</option>)}
+                    </datalist>
+                    <label>Máquina vinculada<select value={contractForm.machine_id} onChange={(event) => updateContractMachine(event.target.value)}>
+                      <option value="">Selecionar manualmente, se necessário</option>
                       {machines.map((machine) => <option key={machine.id} value={machine.id}>{displayMachineCode(machine)} - {machine.client || "Cliente não informado"}</option>)}
                     </select></label>
                     <label>Código<input value={contractForm.code} onChange={(event) => setContractForm((current) => ({ ...current, code: event.target.value }))} placeholder="T665-xxx" maxLength={10} /></label>
                     <label>Cliente<input list="client-suggestions" value={contractForm.client} onChange={(event) => setContractForm((current) => ({ ...current, client: event.target.value }))} /></label>
-                    <label>Número de série<input value={contractForm.serial} onChange={(event) => setContractForm((current) => ({ ...current, serial: event.target.value }))} placeholder="500-xxx ou 500-697/22" maxLength={12} /></label>
                     <label>Status do contrato<select value={contractForm.status} onChange={(event) => setContractForm((current) => ({ ...current, status: event.target.value as ContractStatus }))}>
                       {CONTRACT_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                     </select></label>
