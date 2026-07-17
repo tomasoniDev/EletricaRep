@@ -108,7 +108,6 @@ type SupportContractFormState = {
 };
 
 const ALLOWED_EMAIL_DOMAINS = ["tomasoni.ind.br", "tomasoni.in.br"];
-const BACKUP_ALLOWED_EMAIL = "lucas.lessa@tomasoni.ind.br";
 const DEFAULT_MESSAGE = "Consulte uma máquina pelo código ou selecione uma linha da tabela.";
 const AUTH_CONFIRMED_AT_KEY = "tomasoni-servicecore-auth-confirmed-at";
 const AUTH_CONFIRMATION_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -1251,9 +1250,9 @@ export default function Home() {
   const editingMachine = machines.find((machine) => machine.id === editingMachineId);
   const selectedChat = chatConversations.find((conversation) => conversation.id === selectedChatId) ?? chatConversations[0];
   const showRemoteAccess = machineHasRemoteAccess(machineForm.remote_access);
-  const canDownloadBackup = currentUserEmail.trim().toLowerCase() === BACKUP_ALLOWED_EMAIL;
-  const currentUserCanUseRemoteAccess = currentUserRemoteAccessAllowed;
   const currentUserHasFullAccess = hasFullAccess(currentUserRole);
+  const currentUserCanUseRemoteAccess = currentUserRole === "Admin";
+  const canDownloadBackup = currentUserRole === "Admin";
   const currentUserCanManageUsers = canManageUsers(currentUserRole);
   const currentUserCanEditMachine = canEditMachine(currentUserRole);
   const currentUserCanManageContracts = canManageContracts(currentUserRole);

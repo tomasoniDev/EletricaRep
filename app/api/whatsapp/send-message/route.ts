@@ -22,11 +22,11 @@ async function authorizedUserFromToken(token: string) {
   const admin = createSupabaseAdminClient();
   const { data: authorizedUser } = await admin
     .from("authorized_users")
-    .select("*")
+    .select("name, role")
     .eq("email", userData.user.email.toLowerCase())
     .maybeSingle();
 
-  if (!authorizedUser?.remote_access_allowed) return null;
+  if (authorizedUser?.role !== "Admin") return null;
   return {
     id: userData.user.id,
     email: userData.user.email.toLowerCase(),

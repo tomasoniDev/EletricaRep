@@ -16,11 +16,11 @@ async function authorizedUserFromToken(token: string) {
   const admin = createSupabaseAdminClient();
   const { data: authorizedUser } = await admin
     .from("authorized_users")
-    .select("remote_access_allowed")
+    .select("role")
     .eq("email", userData.user.email.toLowerCase())
     .maybeSingle();
 
-  return authorizedUser?.remote_access_allowed ? userData.user : null;
+  return authorizedUser?.role === "Admin" ? userData.user : null;
 }
 
 function mediaFileName(mediaId: string, mimeType?: string | null, providedName?: string | null) {

@@ -6,9 +6,9 @@ set search_path = public
 as $$
   select exists (
     select 1
-    from public.authorized_users
-    where lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
-      and coalesce(remote_access_allowed, false) = true
+      from public.authorized_users
+      where lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+      and role = 'Admin'
       and (
         lower(email) like '%@tomasoni.ind.br'
         or lower(email) like '%@tomasoni.in.br'
