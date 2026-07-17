@@ -92,6 +92,15 @@ export type ChatConversation = {
   chat_messages?: ChatMessage[];
 };
 
+export type ChatContact = {
+  id: string;
+  phone: string;
+  name: string | null;
+  company: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ChatMessage = {
   id: string;
   conversation_id: string;

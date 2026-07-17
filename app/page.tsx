@@ -4,10 +4,10 @@ import { FormEvent, MouseEvent as ReactMouseEvent, PointerEvent, useEffect, useM
 import Image from "next/image";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { downloadServicePdf, servicePdfBase64, servicePdfFileName } from "@/lib/pdf";
-import type { AuthorizedUser, ChatConversation, ChatMessage, Machine, Profile, ServiceRecord, SupportContract, TravelSchedule, UserRole } from "@/lib/types";
+import type { AuthorizedUser, ChatContact, ChatConversation, ChatMessage, Machine, Profile, ServiceRecord, SupportContract, TravelSchedule, UserRole } from "@/lib/types";
 
 type View = "home" | "overview" | "machineDetail" | "service" | "registry" | "schedule" | "chat";
-type RegistryTab = "machines" | "users";
+type RegistryTab = "machines" | "users" | "clients";
 type ScheduleTab = "travel" | "contracts";
 type SortDirection = "asc" | "desc";
 type MachineSortKey = "code" | "model" | "client" | "unit_city" | "serial" | "software_version" | "manufacture_month" | "vm" | "last_service";
@@ -79,6 +79,12 @@ type AuthorizedUserFormState = {
   email: string;
   role: UserRole;
   remote_access_allowed: boolean;
+};
+
+type ChatContactFormState = {
+  name: string;
+  company: string;
+  phone: string;
 };
 
 type TravelScheduleFormState = {
@@ -183,6 +189,11 @@ const EMPTY_USER_FORM: AuthorizedUserFormState = {
   email: "",
   role: "Montagem",
   remote_access_allowed: false
+};
+const EMPTY_CHAT_CONTACT_FORM: ChatContactFormState = {
+  name: "",
+  company: "",
+  phone: ""
 };
 const EMPTY_TRAVEL_FORM: TravelScheduleFormState = {
   start_date: "",
@@ -755,6 +766,7 @@ function screenLegend(view: View, registryTab: RegistryTab, selectedMachine?: Ma
   if (view === "service") return "Registre um novo atendimento técnico e gere o relatório em PDF.";
   if (view === "schedule") return "Acompanhe o cronograma de viagens e atendimentos planejados.";
   if (registryTab === "machines") return "Cadastre, altere ou exclua máquinas e informações de acesso.";
+  if (registryTab === "clients") return "Consulte e ajuste clientes identificados pelo Acesso Remoto.";
   return "Cadastre e gerencie os usuários autorizados a acessar o sistema.";
 }
 
@@ -766,6 +778,7 @@ function helpText(view: View, registryTab: RegistryTab) {
   if (view === "service") return "Registre o atendimento com tipo, motivo breve e descrições completas. Em visita técnica, colete a assinatura do cliente para incluir no PDF.";
   if (view === "schedule") return "Use o cronograma para planejar viagens, técnicos envolvidos, cliente, código, status e motivo. Datas podem ser dd/mm ou A definir.";
   if (registryTab === "machines") return "Cadastre ou altere máquinas e informações de acesso. Use o menu de ações da tabela para editar ou excluir cadastros.";
+  if (registryTab === "clients") return "Use esta lista para corrigir nome, empresa e telefone dos contatos que abriram chamados pelo Acesso Remoto.";
   return "Cadastre usuários autorizados. O perfil define permissões de cadastro, cronograma, contratos, histórico e relatórios.";
 }
 
@@ -846,6 +859,15 @@ function helpSections(view: View, registryTab: RegistryTab) {
       ["Assumir e transferir", "Um usuário Online pode assumir conversa sem responsável. Para transferir, escolha um usuário Online na janela de transferência."],
       ["Responder", "As respostas são gravadas no histórico. Quando as credenciais oficiais da Meta estiverem configuradas, também serão enviadas ao WhatsApp."],
       ["Encerrar", "Use ao finalizar o chamado para arquivar a conversa e manter o histórico consultável."]
+    ];
+  }
+
+  if (view === "registry" && registryTab === "clients") {
+    return [
+      ["Origem dos clientes", "A lista é formada automaticamente pelos contatos que enviam mensagens ao WhatsApp do Acesso Remoto."],
+      ["Edição manual", "Use quando o cliente responder de forma incompleta ou confusa às mensagens automáticas."],
+      ["Máquinas", "Código de máquina e número de série continuam ligados ao chamado, não ao cadastro fixo do cliente."],
+      ["Exclusão", "Remove o cadastro do cliente, mas não apaga as conversas já registradas no histórico."]
     ];
   }
 
@@ -1039,6 +1061,7 @@ export default function Home() {
   const [travelSchedules, setTravelSchedules] = useState<TravelSchedule[]>([]);
   const [supportContracts, setSupportContracts] = useState<SupportContract[]>([]);
   const [chatConversations, setChatConversations] = useState<ChatConversation[]>([]);
+  const [chatContacts, setChatContacts] = useState<ChatContact[]>([]);
   const [selectedChatId, setSelectedChatId] = useState("");
   const [chatReply, setChatReply] = useState("");
   const [onlineTechnicians, setOnlineTechnicians] = useState<OnlineTechnician[]>([]);
@@ -1056,6 +1079,8 @@ export default function Home() {
   const [editingMachineId, setEditingMachineId] = useState("");
   const [editingUserId, setEditingUserId] = useState("");
   const [userForm, setUserForm] = useState<AuthorizedUserFormState>(EMPTY_USER_FORM);
+  const [editingContact, setEditingContact] = useState<ChatContact | null>(null);
+  const [contactForm, setContactForm] = useState<ChatContactFormState>(EMPTY_CHAT_CONTACT_FORM);
   const [editingTravelId, setEditingTravelId] = useState("");
   const [travelForm, setTravelForm] = useState<TravelScheduleFormState>(EMPTY_TRAVEL_FORM);
   const [scheduleTab, setScheduleTab] = useState<ScheduleTab>("travel");
@@ -1265,6 +1290,19 @@ export default function Home() {
       setScheduleTab("travel");
     }
   }, [currentUserCanManageContracts, scheduleTab]);
+
+  useEffect(() => {
+    if (view !== "registry") return;
+    if (registryTab === "machines" && !currentUserCanEditMachine) {
+      setRegistryTab(currentUserCanUseRemoteAccess ? "clients" : "users");
+    }
+    if (registryTab === "clients" && !currentUserCanUseRemoteAccess) {
+      setRegistryTab(currentUserCanEditMachine ? "machines" : "users");
+    }
+    if (registryTab === "users" && !currentUserCanManageUsers) {
+      setRegistryTab(currentUserCanUseRemoteAccess ? "clients" : "machines");
+    }
+  }, [currentUserCanEditMachine, currentUserCanManageUsers, currentUserCanUseRemoteAccess, registryTab, view]);
 
   useEffect(() => {
     if (view === "chat" && !currentUserCanUseRemoteAccess) {
@@ -1684,6 +1722,18 @@ export default function Home() {
 
     setSupportContracts((contractRows ?? []) as SupportContract[]);
 
+    const { data: contactRows, error: contactError } = await supabase
+      .from("chat_contacts")
+      .select("*")
+      .order("company", { ascending: true });
+
+    if (contactError) {
+      setChatContacts([]);
+      console.warn("Tabela de clientes do acesso remoto indisponível", contactError);
+    } else {
+      setChatContacts((contactRows ?? []) as ChatContact[]);
+    }
+
     const { data: chatRows, error: chatError } = await supabase
       .from("chat_conversations")
       .select("*, chat_messages(*)")
@@ -1789,6 +1839,7 @@ export default function Home() {
     setRemoteAccessStatus("Offline");
     setMachines([]);
     setAuthorizedUsers([]);
+    setChatContacts([]);
     setTravelSchedules([]);
   }
 
@@ -2174,6 +2225,16 @@ export default function Home() {
     });
   }, [authorizedUsers, userSort]);
 
+  const sortedChatContacts = useMemo(() => {
+    return [...chatContacts].sort((a, b) => {
+      const companyCompare = compareText(a.company || "", b.company || "");
+      if (companyCompare) return companyCompare;
+      const nameCompare = compareText(a.name || "", b.name || "");
+      if (nameCompare) return nameCompare;
+      return compareText(a.phone, b.phone);
+    });
+  }, [chatContacts]);
+
   const clientSuggestions = useMemo(() => {
     return Array.from(new Set(
       machines
@@ -2379,6 +2440,56 @@ export default function Home() {
     setMessage("Usuário salvo com sucesso.");
     setUserForm(EMPTY_USER_FORM);
     event.currentTarget.reset();
+    await loadData();
+  }
+
+  function editChatContact(contact: ChatContact) {
+    if (!currentUserCanUseRemoteAccess) {
+      setMessage("Seu usuário não tem permissão para editar clientes do Acesso Remoto.");
+      return;
+    }
+
+    setEditingContact(contact);
+    setContactForm({
+      name: contact.name ?? "",
+      company: contact.company ?? "",
+      phone: contact.phone
+    });
+    setOpenActionMenu("");
+  }
+
+  async function saveChatContact(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!currentUserCanUseRemoteAccess || !editingContact) {
+      setMessage("Seu usuário não tem permissão para editar clientes do Acesso Remoto.");
+      return;
+    }
+
+    const payload = {
+      name: contactForm.name.trim() || null,
+      company: contactForm.company.trim() || null,
+      phone: contactForm.phone.replace(/\D/g, ""),
+      updated_at: new Date().toISOString()
+    };
+
+    if (!payload.phone) {
+      setMessage("Informe um telefone válido para o cliente.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("chat_contacts")
+      .update(payload)
+      .eq("id", editingContact.id);
+
+    if (error) {
+      setMessage(dataMessage(error.message));
+      return;
+    }
+
+    setEditingContact(null);
+    setContactForm(EMPTY_CHAT_CONTACT_FORM);
+    setMessage("Cliente atualizado com sucesso.");
     await loadData();
   }
 
@@ -2692,6 +2803,18 @@ export default function Home() {
     await loadData();
   }
 
+  async function deleteChatContact(id: string) {
+    if (!currentUserCanUseRemoteAccess) {
+      setMessage("Seu usuário não tem permissão para excluir clientes do Acesso Remoto.");
+      return;
+    }
+    if (!confirm("Excluir este cliente do Acesso Remoto? As conversas permanecem no histórico, mas perdem o vínculo com o cadastro do cliente.")) return;
+
+    const { error } = await supabase.from("chat_contacts").delete().eq("id", id);
+    setMessage(error ? dataMessage(error.message) : "Cliente excluído.");
+    await loadData();
+  }
+
   async function deleteTravelSchedule(id: string) {
     if (!currentUserCanEditSchedule) {
       setMessage("Seu usuário tem acesso apenas para visualizar o cronograma.");
@@ -2912,7 +3035,7 @@ export default function Home() {
           <button className={`nav-item ${view === "overview" ? "active" : ""}`} onClick={() => setView("overview")}>Visão geral</button>
           {currentUserCanUseRemoteAccess && <button className={`nav-item ${view === "chat" ? "active" : ""}`} onClick={() => setView("chat")}>Acesso Remoto</button>}
           <button className={`nav-item ${view === "schedule" ? "active" : ""}`} onClick={() => setView("schedule")}>Cronograma</button>
-          {(currentUserCanEditMachine || currentUserCanManageUsers) && <button className={`nav-item ${view === "registry" ? "active" : ""}`} onClick={() => { setRegistryTab("machines"); setView("registry"); }}>Cadastro</button>}
+          {(currentUserCanEditMachine || currentUserCanManageUsers || currentUserCanUseRemoteAccess) && <button className={`nav-item ${view === "registry" ? "active" : ""}`} onClick={() => { setRegistryTab(currentUserCanEditMachine ? "machines" : currentUserCanUseRemoteAccess ? "clients" : "users"); setView("registry"); }}>Cadastro</button>}
         </nav>
         <div className="user-menu">
           <button className="user-menu-trigger" type="button" onClick={() => setUserMenuOpen((open) => !open)} aria-expanded={userMenuOpen}>
@@ -3679,7 +3802,8 @@ export default function Home() {
               <div className="section-header">
                 <h2>Cadastro</h2>
                 <div className="segmented-control" aria-label="Tipo de cadastro">
-                  <button className={registryTab === "machines" ? "active" : ""} type="button" onClick={() => setRegistryTab("machines")}><DetailIcon type="software" /> Máquinas</button>
+                  {currentUserCanEditMachine && <button className={registryTab === "machines" ? "active" : ""} type="button" onClick={() => setRegistryTab("machines")}><DetailIcon type="software" /> Máquinas</button>}
+                  {currentUserCanUseRemoteAccess && <button className={registryTab === "clients" ? "active" : ""} type="button" onClick={() => setRegistryTab("clients")}><DetailIcon type="client" /> Clientes</button>}
                   {currentUserCanManageUsers && <button className={registryTab === "users" ? "active" : ""} type="button" onClick={() => setRegistryTab("users")}><DetailIcon type="client" /> Usuários</button>}
                 </div>
               </div>
@@ -3789,6 +3913,37 @@ export default function Home() {
               </>
             )}
 
+            {registryTab === "clients" && currentUserCanUseRemoteAccess && (
+              <section className="table-panel">
+                <div className="section-header"><h2>Clientes do Acesso Remoto</h2><span>{sortedChatContacts.length} registros</span></div>
+                <div className="table-wrap">
+                  <table className="compact-table">
+                    <thead><tr><th>Cliente</th><th>Empresa</th><th>Telefone</th><th>Última atualização</th><th>Ações</th></tr></thead>
+                    <tbody>{sortedChatContacts.map((contact) => (
+                      <tr key={contact.id}>
+                        <td>{contact.name || "-"}</td>
+                        <td>{contact.company || "-"}</td>
+                        <td>{contact.phone}</td>
+                        <td>{formatDateTime(contact.updated_at)}</td>
+                        <td>
+                          <div className="row-actions">
+                            <button className="icon-button menu-trigger" type="button" title="Ações" aria-label={`Ações do cliente ${contact.name || contact.phone}`} onClick={(event) => toggleActionMenu(`contact-${contact.id}`, event)}><MoreIcon /></button>
+                            {openActionMenu === `contact-${contact.id}` && (
+                              <div className="row-menu floating-row-menu" style={actionMenuPosition ?? undefined}>
+                                <button type="button" onClick={() => editChatContact(contact)}><EditIcon /> Alterar</button>
+                                <button className="danger" type="button" onClick={() => { void deleteChatContact(contact.id); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                  {!sortedChatContacts.length && <p className="empty-state">Nenhum cliente identificado pelo Acesso Remoto ainda.</p>}
+                </div>
+              </section>
+            )}
+
             {registryTab === "users" && currentUserCanManageUsers && (
               <>
                 <form className="form-panel" onSubmit={saveUser}>
@@ -3866,6 +4021,29 @@ export default function Home() {
                 {!availableTransferUsers.length && <p className="empty-state">Nenhum usuário Online disponível para receber transferência.</p>}
               </div>
             </section>
+          </div>
+        )}
+
+        {editingContact && (
+          <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="contact-modal-title" onClick={() => setEditingContact(null)}>
+            <form className="modal-card profile-card" onSubmit={saveChatContact} onClick={(event) => event.stopPropagation()}>
+              <div className="section-header">
+                <div>
+                  <p className="eyebrow">Acesso Remoto</p>
+                  <h2 id="contact-modal-title">Editar cliente</h2>
+                </div>
+                <button className="button ghost" type="button" onClick={() => setEditingContact(null)}>Fechar</button>
+              </div>
+              <div className="fields-grid">
+                <label>Cliente<input value={contactForm.name} onChange={(event) => setContactForm((current) => ({ ...current, name: event.target.value }))} placeholder="Nome do contato" /></label>
+                <label>Empresa<input value={contactForm.company} onChange={(event) => setContactForm((current) => ({ ...current, company: event.target.value }))} placeholder="Empresa do cliente" /></label>
+                <label className="wide">Telefone<input value={contactForm.phone} onChange={(event) => setContactForm((current) => ({ ...current, phone: event.target.value }))} placeholder="5511999999999" /></label>
+              </div>
+              <div className="modal-actions">
+                <button className="button ghost" type="button" onClick={() => setEditingContact(null)}>Cancelar</button>
+                <button className="button primary" type="submit">Salvar cliente</button>
+              </div>
+            </form>
           </div>
         )}
 
