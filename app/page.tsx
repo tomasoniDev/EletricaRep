@@ -890,12 +890,6 @@ function remoteAccessStatusClass(status: RemoteAccessStatus) {
   return "offline";
 }
 
-function remoteAccessStatusDescription(status: RemoteAccessStatus) {
-  if (status === "Online") return "Disponível para receber transferências";
-  if (status === "Ocupado") return "Atende apenas conversas já atribuídas";
-  return "Somente visualização";
-}
-
 function PlusIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24">
@@ -2892,18 +2886,15 @@ export default function Home() {
             <span className="user-meta">
               <strong>{currentUserName || displayUserName(currentUserEmail)}</strong>
               <small>{currentUserRole || "Usuário autorizado"}</small>
+              {currentUserCanUseRemoteAccess && (
+                <span className="remote-status-line">
+                  <span className={`remote-status-dot ${remoteAccessStatusClass(remoteAccessStatus)}`} />
+                  {remoteAccessStatus}
+                </span>
+              )}
             </span>
             <MoreIcon />
           </button>
-          {currentUserCanUseRemoteAccess && (
-            <div className="remote-status-block">
-              <span className={`remote-status-dot ${remoteAccessStatusClass(remoteAccessStatus)}`} />
-              <button type="button" onClick={() => setUserMenuOpen((open) => !open)}>
-                {remoteAccessStatus}
-              </button>
-              <small>{remoteAccessStatusDescription(remoteAccessStatus)}</small>
-            </div>
-          )}
           {userMenuOpen && (
             <div className="user-menu-content">
               {currentUserCanUseRemoteAccess && (

@@ -237,33 +237,15 @@ button { cursor: pointer; }
   background: var(--surface-2);
 }
 
-.remote-status-block {
-  display: grid;
-  grid-template-columns: 10px minmax(0, 1fr);
-  gap: 2px 8px;
+.remote-status-line {
+  display: inline-flex;
   align-items: center;
-  margin-top: 8px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  padding: 8px 10px;
-}
-
-.remote-status-block button {
-  width: max-content;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  padding: 0;
-  font-size: 0.78rem;
-  font-weight: 800;
-}
-
-.remote-status-block small {
-  grid-column: 2;
+  gap: 6px;
   overflow: hidden;
-  color: var(--muted);
-  font-size: 0.68rem;
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
