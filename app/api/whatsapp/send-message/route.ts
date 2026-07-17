@@ -26,7 +26,7 @@ async function authorizedUserFromToken(token: string) {
     .eq("email", userData.user.email.toLowerCase())
     .maybeSingle();
 
-  if (!authorizedUser) return null;
+  if (!authorizedUser?.remote_access_allowed) return null;
   return {
     id: userData.user.id,
     email: userData.user.email.toLowerCase(),

@@ -65,6 +65,7 @@ export type AuthorizedUser = {
   name: string;
   email: string;
   role: UserRole;
+  remote_access_allowed: boolean | null;
   created_at: string;
   updated_at: string;
 };

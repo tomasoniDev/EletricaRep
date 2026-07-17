@@ -20,7 +20,8 @@ type ThemeMode = "light" | "dark";
 type ContractType = "Seg-Sex" | "Seg-Sab" | "Garantia";
 type ContractStatus = "Ativo" | "Inativo" | "Em negociação";
 type ActionMenuPosition = { top: number; right: number };
-type OnlineTechnician = { email: string; name: string; role?: string | null; onlineAt?: string };
+type RemoteAccessStatus = "Online" | "Offline" | "Ocupado";
+type OnlineTechnician = { email: string; name: string; role?: string | null; status?: RemoteAccessStatus; onlineAt?: string };
 type LeafletLayerTarget = LeafletMap | LeafletLayerGroup;
 type LeafletMap = {
   fitBounds: (bounds: [number, number][], options?: Record<string, unknown>) => LeafletMap;
@@ -77,6 +78,7 @@ type AuthorizedUserFormState = {
   name: string;
   email: string;
   role: UserRole;
+  remote_access_allowed: boolean;
 };
 
 type TravelScheduleFormState = {
@@ -109,6 +111,7 @@ const BIOMETRIC_CREDENTIAL_KEY = "tomasoni-servicecore-biometric-credential";
 const BIOMETRIC_PROMPT_DISMISSED_KEY = "tomasoni-servicecore-biometric-dismissed";
 const BIOMETRIC_SESSION_VERIFIED_KEY = "tomasoni-servicecore-biometric-session-verified";
 const THEME_KEY = "tomasoni-servicecore-theme";
+const REMOTE_ACCESS_STATUS_KEY = "tomasoni-servicecore-remote-access-status";
 const REMOTE_ACCESS_OPTIONS: RemoteAccess[] = ["Sem acesso remoto", "SINEMA", "VNC"];
 const SERVICE_TYPE_OPTIONS: ServiceType[] = ["Acesso remoto", "Visita técnica"];
 const CONTRACT_TYPE_OPTIONS: ContractType[] = ["Seg-Sex", "Seg-Sab", "Garantia"];
@@ -178,7 +181,8 @@ const EMPTY_MACHINE_FORM: MachineFormState = {
 const EMPTY_USER_FORM: AuthorizedUserFormState = {
   name: "",
   email: "",
-  role: "Montagem"
+  role: "Montagem",
+  remote_access_allowed: false
 };
 const EMPTY_TRAVEL_FORM: TravelScheduleFormState = {
   start_date: "",
@@ -746,7 +750,7 @@ function dataMessage(error: string) {
 function screenLegend(view: View, registryTab: RegistryTab, selectedMachine?: Machine) {
   if (view === "home") return "Consulte uma máquina pelo código ou selecione uma linha da tabela.";
   if (view === "overview") return "Visão geral da base instalada, contratos, acessos e atendimentos registrados.";
-  if (view === "chat") return "Piloto de atendimento via WhatsApp: receba, assuma, transfira e encerre conversas.";
+  if (view === "chat") return "Acesso Remoto: receba, assuma, transfira e encerre conversas.";
   if (view === "machineDetail") return selectedMachine ? `Dados cadastrais e histórico da máquina ${displayMachineCode(selectedMachine)}.` : "Dados cadastrais e histórico da máquina.";
   if (view === "service") return "Registre um novo atendimento técnico e gere o relatório em PDF.";
   if (view === "schedule") return "Acompanhe o cronograma de viagens e atendimentos planejados.";
@@ -757,7 +761,7 @@ function screenLegend(view: View, registryTab: RegistryTab, selectedMachine?: Ma
 function helpText(view: View, registryTab: RegistryTab) {
   if (view === "home") return "Use o filtro para localizar uma máquina por código, modelo, cliente ou localização. Clique no código da máquina para abrir os dados cadastrais e o histórico de atendimentos.";
   if (view === "overview") return "A visão geral consolida indicadores da base cadastrada, contratos, acesso remoto, localização e volume de atendimentos. Use os rankings para localizar máquinas, clientes e regiões que merecem atenção.";
-  if (view === "chat") return "Use o piloto de chat para validar o fluxo de atendimento via WhatsApp. Conversas recebidas pelo Webhook aparecem na fila, podem ser assumidas por um técnico online, transferidas e encerradas com histórico salvo.";
+  if (view === "chat") return "Use a tela de Acesso Remoto para validar atendimentos recebidos pelo WhatsApp. Conversas podem ser assumidas por usuários Online, transferidas e encerradas com histórico salvo.";
   if (view === "machineDetail") return "Nesta tela ficam os dados técnicos da máquina, informações de acesso remoto e histórico. Clique em um atendimento para ver o registro completo ou use o menu de ações para baixar o PDF.";
   if (view === "service") return "Registre o atendimento com tipo, motivo breve e descrições completas. Em visita técnica, colete a assinatura do cliente para incluir no PDF.";
   if (view === "schedule") return "Use o cronograma para planejar viagens, técnicos envolvidos, cliente, código, status e motivo. Datas podem ser dd/mm ou A definir.";
@@ -838,8 +842,8 @@ function helpSections(view: View, registryTab: RegistryTab) {
   if (view === "chat") {
     return [
       ["Fila de conversas", "Lista mensagens recebidas pelo WhatsApp. Conversas abertas ainda não foram assumidas; atribuídas têm um técnico responsável; encerradas ficam no histórico."],
-      ["Técnicos online", "Mostra quem está com o app aberto na tela de chat. Essa presença é usada para validar a distribuição de plantão."],
-      ["Assumir e transferir", "Um técnico pode assumir a conversa ou transferir para outro técnico online quando necessário."],
+      ["Status do usuário", "O status fica no cartão inferior do perfil: Online recebe transferências, Ocupado responde apenas conversas já atribuídas e Offline apenas visualiza."],
+      ["Assumir e transferir", "Um usuário Online pode assumir conversa sem responsável. Para transferir, escolha um usuário Online na janela de transferência."],
       ["Responder", "As respostas são gravadas no histórico. Quando as credenciais oficiais da Meta estiverem configuradas, também serão enviadas ao WhatsApp."],
       ["Encerrar", "Use ao finalizar o chamado para arquivar a conversa e manter o histórico consultável."]
     ];
@@ -849,6 +853,7 @@ function helpSections(view: View, registryTab: RegistryTab) {
     ["Usuário", "Cadastre o nome que será exibido no sistema e associado aos registros feitos por essa conta."],
     ["E-mail", "Informe o e-mail corporativo autorizado. Apenas e-mails cadastrados conseguem validar o acesso ao app."],
     ["Perfil / setor", "Escolha o perfil correto para liberar apenas as telas e ações compatíveis com o setor do usuário."],
+    ["Acesso Remoto", "Marque esta permissão para liberar a tela de Acesso Remoto e o status de plantão no perfil inferior."],
     ["Permissões", "Admin e Diretoria têm acesso total. Coordenador segue as permissões de Engenharia e também pode cadastrar usuários. Engenharia, Montagem e Comercial seguem restrições específicas de cadastro, cronograma, contratos e relatórios."],
     ["Ações", "Use o menu de ações da tabela para editar dados do usuário ou remover acessos que não devem mais entrar no sistema."]
   ];
@@ -877,6 +882,18 @@ function chatStatusLabel(status: ChatConversation["status"]) {
   if (status === "closed") return "Encerrada";
   if (status === "assigned") return "Em atendimento";
   return "Aberta";
+}
+
+function remoteAccessStatusClass(status: RemoteAccessStatus) {
+  if (status === "Online") return "online";
+  if (status === "Ocupado") return "busy";
+  return "offline";
+}
+
+function remoteAccessStatusDescription(status: RemoteAccessStatus) {
+  if (status === "Online") return "Disponível para receber transferências";
+  if (status === "Ocupado") return "Atende apenas conversas já atribuídas";
+  return "Somente visualização";
 }
 
 function PlusIcon() {
@@ -1023,6 +1040,9 @@ export default function Home() {
   const [selectedChatId, setSelectedChatId] = useState("");
   const [chatReply, setChatReply] = useState("");
   const [onlineTechnicians, setOnlineTechnicians] = useState<OnlineTechnician[]>([]);
+  const [remoteAccessStatus, setRemoteAccessStatus] = useState<RemoteAccessStatus>("Offline");
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [currentUserRemoteAccessAllowed, setCurrentUserRemoteAccessAllowed] = useState(false);
   const [currentUserRole, setCurrentUserRole] = useState<UserRole | null>(null);
   const [selectedMachineId, setSelectedMachineId] = useState("");
   const [message, setMessage] = useState(DEFAULT_MESSAGE);
@@ -1205,6 +1225,7 @@ export default function Home() {
   const selectedChat = chatConversations.find((conversation) => conversation.id === selectedChatId) ?? chatConversations[0];
   const showRemoteAccess = machineHasRemoteAccess(machineForm.remote_access);
   const canDownloadBackup = currentUserEmail.trim().toLowerCase() === BACKUP_ALLOWED_EMAIL;
+  const currentUserCanUseRemoteAccess = currentUserRemoteAccessAllowed;
   const currentUserHasFullAccess = hasFullAccess(currentUserRole);
   const currentUserCanManageUsers = canManageUsers(currentUserRole);
   const currentUserCanEditMachine = canEditMachine(currentUserRole);
@@ -1226,12 +1247,38 @@ export default function Home() {
   const completedTravelSchedules = travelSchedules
     .filter(isCompletedTravel)
     .sort((a, b) => compareTravelBySort(a, b, completedTravelSort) || compareText(a.client, b.client));
+  const selectedChatAssignedToCurrent = Boolean(selectedChat?.assigned_to_email && selectedChat.assigned_to_email.toLowerCase() === currentUserEmail.toLowerCase());
+  const canReplySelectedChat = Boolean(
+    selectedChat
+    && selectedChat.status !== "closed"
+    && currentUserCanUseRemoteAccess
+    && (remoteAccessStatus === "Online" || (remoteAccessStatus === "Ocupado" && selectedChatAssignedToCurrent))
+  );
+  const canAssumeSelectedChat = Boolean(selectedChat && selectedChat.status !== "closed" && !selectedChat.assigned_to_email && currentUserCanUseRemoteAccess && remoteAccessStatus === "Online");
+  const availableTransferUsers = onlineTechnicians.filter((user) => user.status === "Online" && user.email.toLowerCase() !== currentUserEmail.toLowerCase());
+  const canTransferSelectedChat = Boolean(selectedChat && selectedChat.status !== "closed" && canReplySelectedChat && availableTransferUsers.length);
 
   useEffect(() => {
     if (!currentUserCanManageContracts && scheduleTab !== "travel") {
       setScheduleTab("travel");
     }
   }, [currentUserCanManageContracts, scheduleTab]);
+
+  useEffect(() => {
+    if (view === "chat" && !currentUserCanUseRemoteAccess) {
+      setView("home");
+    }
+  }, [currentUserCanUseRemoteAccess, view]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !currentUserEmail || !currentUserCanUseRemoteAccess) {
+      setRemoteAccessStatus("Offline");
+      return;
+    }
+
+    const storedStatus = window.localStorage.getItem(`${REMOTE_ACCESS_STATUS_KEY}:${currentUserEmail.toLowerCase()}`) as RemoteAccessStatus | null;
+    setRemoteAccessStatus(storedStatus === "Online" || storedStatus === "Ocupado" ? storedStatus : "Offline");
+  }, [currentUserCanUseRemoteAccess, currentUserEmail, isAuthenticated]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -1248,7 +1295,10 @@ export default function Home() {
   }, [isAuthenticated]);
 
   useEffect(() => {
-    if (!isAuthenticated || view !== "chat" || !currentUserEmail) return;
+    if (!isAuthenticated || !currentUserCanUseRemoteAccess || !currentUserEmail) {
+      setOnlineTechnicians([]);
+      return;
+    }
 
     const channel = supabase.channel("chat-presence", {
       config: { presence: { key: currentUserEmail } }
@@ -1263,6 +1313,7 @@ export default function Home() {
             email: item.email,
             name: item.name || displayUserName(item.email),
             role: item.role,
+            status: item.status,
             onlineAt: item.onlineAt
           }))
           .filter((item, index, rows) => rows.findIndex((row) => row.email === item.email) === index)
@@ -1270,11 +1321,12 @@ export default function Home() {
         setOnlineTechnicians(nextOnline);
       })
       .subscribe(async (status) => {
-        if (status === "SUBSCRIBED") {
+        if (status === "SUBSCRIBED" && remoteAccessStatus !== "Offline") {
           await channel.track({
             email: currentUserEmail,
             name: currentUserName || displayUserName(currentUserEmail),
             role: currentUserRole,
+            status: remoteAccessStatus,
             onlineAt: new Date().toISOString()
           });
         }
@@ -1285,7 +1337,7 @@ export default function Home() {
       void supabase.removeChannel(channel);
       setOnlineTechnicians([]);
     };
-  }, [currentUserEmail, currentUserName, currentUserRole, isAuthenticated, view]);
+  }, [currentUserCanUseRemoteAccess, currentUserEmail, currentUserName, currentUserRole, isAuthenticated, remoteAccessStatus]);
 
   const overviewData = useMemo(() => {
     const today = new Date();
@@ -1546,11 +1598,13 @@ export default function Home() {
     if (authorizedRow) {
       const authorizedUser = authorizedRow as AuthorizedUser;
       setCurrentUserRole(authorizedUser.role);
+      setCurrentUserRemoteAccessAllowed(Boolean(authorizedUser.remote_access_allowed));
       setCurrentUserName(authorizedUser.name || fallbackName);
       return;
     }
 
     setCurrentUserRole(null);
+    setCurrentUserRemoteAccessAllowed(false);
     const { data, error } = await supabase
       .from("profiles")
       .select("*")
@@ -1729,9 +1783,20 @@ export default function Home() {
     setCurrentUserEmail("");
     setCurrentUserName("");
     setCurrentUserRole(null);
+    setCurrentUserRemoteAccessAllowed(false);
+    setRemoteAccessStatus("Offline");
     setMachines([]);
     setAuthorizedUsers([]);
     setTravelSchedules([]);
+  }
+
+  function updateRemoteAccessStatus(status: RemoteAccessStatus) {
+    setRemoteAccessStatus(status);
+    if (currentUserEmail) {
+      window.localStorage.setItem(`${REMOTE_ACCESS_STATUS_KEY}:${currentUserEmail.toLowerCase()}`, status);
+    }
+    setUserMenuOpen(false);
+    setMessage(`Status de Acesso Remoto alterado para ${status}.`);
   }
 
   function toggleTheme() {
@@ -2280,7 +2345,8 @@ export default function Home() {
     const payload = {
       name: userForm.name.trim(),
       email: userForm.email.trim().toLowerCase(),
-      role: userForm.role
+      role: userForm.role,
+      remote_access_allowed: userForm.remote_access_allowed
     };
 
     if (!payload.name || !payload.email) {
@@ -2659,14 +2725,27 @@ export default function Home() {
   }
 
   async function assignChat(conversation: ChatConversation, userEmail = currentUserEmail) {
+    const normalizedTargetEmail = userEmail.toLowerCase();
+    const assigningToSelf = normalizedTargetEmail === currentUserEmail.toLowerCase();
+
+    if (assigningToSelf && remoteAccessStatus !== "Online") {
+      setMessage("Seu status precisa estar Online para assumir uma conversa sem atribuição.");
+      return;
+    }
+
+    if (!assigningToSelf && !availableTransferUsers.some((user) => user.email.toLowerCase() === normalizedTargetEmail)) {
+      setMessage("Transferência permitida somente para usuários Online.");
+      return;
+    }
+
     const target = authorizedUsers.find((user) => user.email.toLowerCase() === userEmail.toLowerCase());
     const assignedName = target?.name || displayUserName(userEmail);
     const { error } = await supabase
       .from("chat_conversations")
       .update({
         status: "assigned",
-        assigned_to: userEmail.toLowerCase() === currentUserEmail.toLowerCase() ? currentUserId : null,
-        assigned_to_email: userEmail.toLowerCase(),
+        assigned_to: assigningToSelf ? currentUserId : null,
+        assigned_to_email: normalizedTargetEmail,
         assigned_to_name: assignedName,
         updated_at: new Date().toISOString()
       })
@@ -2679,6 +2758,7 @@ export default function Home() {
 
     await addChatSystemMessage(conversation.id, `Conversa atribuída para ${assignedName}.`);
     setMessage(`Conversa atribuída para ${assignedName}.`);
+    setTransferDialogOpen(false);
     await loadData();
   }
 
@@ -2709,6 +2789,10 @@ export default function Home() {
   async function sendChatReply(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedChat) return;
+    if (!canReplySelectedChat) {
+      setMessage("Seu status atual não permite responder esta conversa.");
+      return;
+    }
     const body = chatReply.trim();
     if (!body) return;
 
@@ -2798,7 +2882,7 @@ export default function Home() {
         <nav className="side-nav">
           <button className={`nav-item ${view === "home" ? "active" : ""}`} onClick={() => setView("home")}>Tela inicial</button>
           <button className={`nav-item ${view === "overview" ? "active" : ""}`} onClick={() => setView("overview")}>Visão geral</button>
-          {currentUserCanEmitReports && <button className={`nav-item ${view === "chat" ? "active" : ""}`} onClick={() => setView("chat")}>Chat</button>}
+          {currentUserCanUseRemoteAccess && <button className={`nav-item ${view === "chat" ? "active" : ""}`} onClick={() => setView("chat")}>Acesso Remoto</button>}
           <button className={`nav-item ${view === "schedule" ? "active" : ""}`} onClick={() => setView("schedule")}>Cronograma</button>
           {(currentUserCanEditMachine || currentUserCanManageUsers) && <button className={`nav-item ${view === "registry" ? "active" : ""}`} onClick={() => { setRegistryTab("machines"); setView("registry"); }}>Cadastro</button>}
         </nav>
@@ -2811,8 +2895,24 @@ export default function Home() {
             </span>
             <MoreIcon />
           </button>
+          {currentUserCanUseRemoteAccess && (
+            <div className="remote-status-block">
+              <span className={`remote-status-dot ${remoteAccessStatusClass(remoteAccessStatus)}`} />
+              <button type="button" onClick={() => setUserMenuOpen((open) => !open)}>
+                {remoteAccessStatus}
+              </button>
+              <small>{remoteAccessStatusDescription(remoteAccessStatus)}</small>
+            </div>
+          )}
           {userMenuOpen && (
             <div className="user-menu-content">
+              {currentUserCanUseRemoteAccess && (
+                <>
+                  <button type="button" onClick={() => updateRemoteAccessStatus("Online")}><span className="menu-status-dot online" /> Online</button>
+                  <button type="button" onClick={() => updateRemoteAccessStatus("Ocupado")}><span className="menu-status-dot busy" /> Ocupado</button>
+                  <button type="button" onClick={() => updateRemoteAccessStatus("Offline")}><span className="menu-status-dot offline" /> Offline</button>
+                </>
+              )}
               <button type="button" onClick={editUser}><EditIcon /> Editar Usuário</button>
               {canDownloadBackup && <button type="button" onClick={downloadMachinesBackup}><PdfDownloadIcon /> Backup de máquinas</button>}
               <button type="button" onClick={signOut}><LogOutIcon /> Sair</button>
@@ -2838,12 +2938,12 @@ export default function Home() {
           {message !== DEFAULT_MESSAGE && <span>{message}</span>}
         </section>
 
-        {view === "chat" && currentUserCanEmitReports && (
+        {view === "chat" && currentUserCanUseRemoteAccess && (
           <section className="view active chat-page">
             <section className="chat-shell">
               <aside className="chat-list-panel">
                 <div className="section-header">
-                  <h2>Conversas WhatsApp</h2>
+                  <h2>Acesso Remoto</h2>
                   <span>{chatConversations.length} registros</span>
                 </div>
                 <div className="chat-conversation-list">
@@ -2871,11 +2971,8 @@ export default function Home() {
                         <p>{selectedChat.customer_phone} · {chatStatusLabel(selectedChat.status)}</p>
                       </div>
                       <div className="chat-actions">
-                        {selectedChat.status !== "closed" && <button className="button ghost" type="button" onClick={() => void assignChat(selectedChat)}>Assumir</button>}
-                        <select value={selectedChat.assigned_to_email ?? ""} onChange={(event) => event.target.value && void assignChat(selectedChat, event.target.value)} disabled={selectedChat.status === "closed"}>
-                          <option value="">Transferir para...</option>
-                          {onlineTechnicians.map((user) => <option key={user.email} value={user.email}>{user.name}</option>)}
-                        </select>
+                        {canAssumeSelectedChat && <button className="button ghost" type="button" onClick={() => void assignChat(selectedChat)}>Assumir</button>}
+                        {selectedChat.status !== "closed" && <button className="button ghost" type="button" onClick={() => setTransferDialogOpen(true)} disabled={!canTransferSelectedChat}>Transferir</button>}
                         {selectedChat.status !== "closed" && <button className="button danger-button" type="button" onClick={() => void closeChat(selectedChat)}>Encerrar</button>}
                       </div>
                     </div>
@@ -2898,8 +2995,8 @@ export default function Home() {
                     </div>
 
                     <form className="chat-reply-form" onSubmit={sendChatReply}>
-                      <textarea value={chatReply} onChange={(event) => setChatReply(event.target.value)} placeholder="Digite a resposta ao cliente..." disabled={selectedChat.status === "closed"} />
-                      <button className="button primary" type="submit" disabled={selectedChat.status === "closed" || !chatReply.trim()}>Enviar resposta</button>
+                      <textarea value={chatReply} onChange={(event) => setChatReply(event.target.value)} placeholder="Digite a resposta ao cliente..." disabled={!canReplySelectedChat} />
+                      <button className="button primary" type="submit" disabled={!canReplySelectedChat || !chatReply.trim()}>Enviar resposta</button>
                     </form>
                   </>
                 ) : (
@@ -2910,19 +3007,6 @@ export default function Home() {
                 )}
               </section>
 
-              <aside className="chat-presence-panel">
-                <div className="section-header"><h2>Plantão online</h2><span>{onlineTechnicians.length}</span></div>
-                <div className="online-list">
-                  {onlineTechnicians.map((user) => (
-                    <div key={user.email}>
-                      <span className="presence-dot" />
-                      <strong>{user.name}</strong>
-                      <small>{user.role || "Usuário"}</small>
-                    </div>
-                  ))}
-                  {!onlineTechnicians.length && <p className="empty-state">Abra esta tela em outro usuário para validar presença online.</p>}
-                </div>
-              </aside>
             </section>
           </section>
         )}
@@ -3689,6 +3773,7 @@ export default function Home() {
                     <label>Perfil / Setor<select value={userForm.role} onChange={(event) => setUserForm((current) => ({ ...current, role: event.target.value as UserRole }))}>
                       {USER_ROLE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                     </select></label>
+                    <label className="checkbox-field"><input type="checkbox" checked={userForm.remote_access_allowed} onChange={(event) => setUserForm((current) => ({ ...current, remote_access_allowed: event.target.checked }))} /> Permitir Acesso Remoto</label>
                   </div>
                 </form>
                 <section className="table-panel">
@@ -3698,6 +3783,7 @@ export default function Home() {
                         <th><button className="sort-header" type="button" onClick={() => toggleUserSort("name")}>Usuário <span>{sortMark(userSort.key === "name", userSort.direction)}</span></button></th>
                         <th><button className="sort-header" type="button" onClick={() => toggleUserSort("email")}>E-mail <span>{sortMark(userSort.key === "email", userSort.direction)}</span></button></th>
                         <th><button className="sort-header" type="button" onClick={() => toggleUserSort("role")}>Perfil / Setor <span>{sortMark(userSort.key === "role", userSort.direction)}</span></button></th>
+                        <th>Acesso remoto</th>
                         <th>Ações</th>
                       </tr></thead>
                       <tbody>{sortedUsers.map((user) => (
@@ -3705,12 +3791,13 @@ export default function Home() {
                           <td>{user.name}</td>
                           <td>{user.email}</td>
                           <td>{user.role}</td>
+                          <td>{user.remote_access_allowed ? "Sim" : "Não"}</td>
                           <td>
                             <div className="row-actions">
                               <button className="icon-button menu-trigger" type="button" title="Ações" aria-label={`Ações do usuário ${user.name}`} onClick={(event) => toggleActionMenu(`user-${user.id}`, event)}><MoreIcon /></button>
                               {openActionMenu === `user-${user.id}` && (
                                 <div className="row-menu floating-row-menu" style={actionMenuPosition ?? undefined}>
-                                  <button type="button" onClick={() => { setEditingUserId(user.id); setUserForm({ name: user.name, email: user.email, role: user.role }); setOpenActionMenu(""); }}><EditIcon /> Alterar</button>
+                                  <button type="button" onClick={() => { setEditingUserId(user.id); setUserForm({ name: user.name, email: user.email, role: user.role, remote_access_allowed: Boolean(user.remote_access_allowed) }); setOpenActionMenu(""); }}><EditIcon /> Alterar</button>
                                   <button className="danger" type="button" onClick={() => { void deleteUser(user.id); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>
                                 </div>
                               )}
@@ -3724,6 +3811,30 @@ export default function Home() {
               </>
             )}
           </section>
+        )}
+
+        {transferDialogOpen && selectedChat && (
+          <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="transfer-modal-title" onClick={() => setTransferDialogOpen(false)}>
+            <section className="modal-card transfer-card" onClick={(event) => event.stopPropagation()}>
+              <div className="section-header">
+                <div>
+                  <p className="eyebrow">Acesso Remoto</p>
+                  <h2 id="transfer-modal-title">Transferir conversa</h2>
+                </div>
+                <button className="button ghost" type="button" onClick={() => setTransferDialogOpen(false)}>Fechar</button>
+              </div>
+              <div className="transfer-list">
+                {availableTransferUsers.map((user) => (
+                  <button key={user.email} type="button" onClick={() => void assignChat(selectedChat, user.email)}>
+                    <span className="presence-dot" />
+                    <strong>{user.name}</strong>
+                    <small>{user.role || "Usuário"}</small>
+                  </button>
+                ))}
+                {!availableTransferUsers.length && <p className="empty-state">Nenhum usuário Online disponível para receber transferência.</p>}
+              </div>
+            </section>
+          </div>
         )}
 
         {selectedServiceRecord && selectedMachine && (
