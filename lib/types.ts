@@ -74,6 +74,12 @@ export type ChatConversation = {
   id: string;
   customer_phone: string;
   customer_name: string | null;
+  customer_company: string | null;
+  contact_id: string | null;
+  machine_id: string | null;
+  machine_code: string | null;
+  machine_serial: string | null;
+  identification_status: "pending_customer" | "pending_machine" | "identified" | null;
   status: "open" | "assigned" | "closed";
   assigned_to: string | null;
   assigned_to_email: string | null;
@@ -91,6 +97,12 @@ export type ChatMessage = {
   conversation_id: string;
   direction: "inbound" | "outbound" | "system";
   body: string;
+  message_type: "text" | "image" | "video" | "audio" | "document" | "unknown" | null;
+  media_id: string | null;
+  media_mime_type: string | null;
+  media_sha256: string | null;
+  media_filename: string | null;
+  media_caption: string | null;
   whatsapp_message_id: string | null;
   sender_phone: string | null;
   sender_name: string | null;

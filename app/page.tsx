@@ -884,6 +884,14 @@ function chatStatusLabel(status: ChatConversation["status"]) {
   return "Aberta";
 }
 
+function chatMediaLabel(message: ChatMessage) {
+  if (message.message_type === "image") return "Abrir imagem";
+  if (message.message_type === "video") return "Abrir vídeo";
+  if (message.message_type === "audio") return "Abrir áudio";
+  if (message.message_type === "document") return message.media_filename ? `Abrir ${message.media_filename}` : "Abrir documento";
+  return "Abrir mídia";
+}
+
 function remoteAccessStatusClass(status: RemoteAccessStatus) {
   if (status === "Online") return "online";
   if (status === "Ocupado") return "busy";
@@ -2817,6 +2825,32 @@ export default function Home() {
     await loadData();
   }
 
+  async function openChatMedia(message: ChatMessage) {
+    if (!message.media_id) return;
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) {
+      setMessage("Sessão expirada. Entre novamente para abrir a mídia.");
+      return;
+    }
+
+    const response = await fetch(`/api/whatsapp/media/${encodeURIComponent(message.media_id)}`, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      setMessage(result?.error ?? "Não foi possível abrir a mídia do WhatsApp.");
+      return;
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank", "noopener,noreferrer");
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+
   if (!sessionReady) return <main className="centered">Carregando...</main>;
 
   if (!isSupabaseConfigured) {
@@ -2971,6 +3005,8 @@ export default function Home() {
                     <div className="chat-meta-strip">
                       <span>Responsável: <strong>{selectedChat.assigned_to_name || "Sem responsável"}</strong></span>
                       <span>Última mensagem: <strong>{formatDateTime(selectedChat.last_message_at)}</strong></span>
+                      <span>Empresa: <strong>{selectedChat.customer_company || "-"}</strong></span>
+                      <span>Máquina: <strong>{selectedChat.machine_code || selectedChat.machine_serial || "-"}</strong></span>
                     </div>
 
                     <div className="chat-message-list">
@@ -2981,6 +3017,11 @@ export default function Home() {
                             <small>{formatDateTime(chatMessage.created_at)}</small>
                           </div>
                           <p>{chatMessage.body}</p>
+                          {chatMessage.media_id && (
+                            <button className="chat-media-button" type="button" onClick={() => void openChatMedia(chatMessage)}>
+                              {chatMediaLabel(chatMessage)}
+                            </button>
+                          )}
                         </article>
                       ))}
                     </div>

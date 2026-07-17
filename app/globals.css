@@ -1678,6 +1678,22 @@ input:focus, textarea:focus, select:focus {
   white-space: pre-wrap;
 }
 
+.chat-media-button {
+  width: max-content;
+  margin-top: 10px;
+  border: 1px solid color-mix(in srgb, var(--primary) 36%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+  color: var(--primary);
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.chat-media-button:hover {
+  background: color-mix(in srgb, var(--primary) 14%, var(--surface));
+}
+
 .chat-reply-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
