@@ -4,9 +4,9 @@ import { FormEvent, MouseEvent as ReactMouseEvent, PointerEvent, useEffect, useM
 import Image from "next/image";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { downloadServicePdf, servicePdfBase64, servicePdfFileName } from "@/lib/pdf";
-import type { AuthorizedUser, Machine, Profile, ServiceRecord, SupportContract, TravelSchedule, UserRole } from "@/lib/types";
+import type { AuthorizedUser, ChatConversation, ChatMessage, Machine, Profile, ServiceRecord, SupportContract, TravelSchedule, UserRole } from "@/lib/types";
 
-type View = "home" | "overview" | "machineDetail" | "service" | "registry" | "schedule";
+type View = "home" | "overview" | "machineDetail" | "service" | "registry" | "schedule" | "chat";
 type RegistryTab = "machines" | "users";
 type ScheduleTab = "travel" | "contracts";
 type SortDirection = "asc" | "desc";
@@ -20,6 +20,7 @@ type ThemeMode = "light" | "dark";
 type ContractType = "Seg-Sex" | "Seg-Sab" | "Garantia";
 type ContractStatus = "Ativo" | "Inativo" | "Em negociação";
 type ActionMenuPosition = { top: number; right: number };
+type OnlineTechnician = { email: string; name: string; role?: string | null; onlineAt?: string };
 type LeafletLayerTarget = LeafletMap | LeafletLayerGroup;
 type LeafletMap = {
   fitBounds: (bounds: [number, number][], options?: Record<string, unknown>) => LeafletMap;
@@ -745,6 +746,7 @@ function dataMessage(error: string) {
 function screenLegend(view: View, registryTab: RegistryTab, selectedMachine?: Machine) {
   if (view === "home") return "Consulte uma máquina pelo código ou selecione uma linha da tabela.";
   if (view === "overview") return "Visão geral da base instalada, contratos, acessos e atendimentos registrados.";
+  if (view === "chat") return "Piloto de atendimento via WhatsApp: receba, assuma, transfira e encerre conversas.";
   if (view === "machineDetail") return selectedMachine ? `Dados cadastrais e histórico da máquina ${displayMachineCode(selectedMachine)}.` : "Dados cadastrais e histórico da máquina.";
   if (view === "service") return "Registre um novo atendimento técnico e gere o relatório em PDF.";
   if (view === "schedule") return "Acompanhe o cronograma de viagens e atendimentos planejados.";
@@ -755,6 +757,7 @@ function screenLegend(view: View, registryTab: RegistryTab, selectedMachine?: Ma
 function helpText(view: View, registryTab: RegistryTab) {
   if (view === "home") return "Use o filtro para localizar uma máquina por código, modelo, cliente ou localização. Clique no código da máquina para abrir os dados cadastrais e o histórico de atendimentos.";
   if (view === "overview") return "A visão geral consolida indicadores da base cadastrada, contratos, acesso remoto, localização e volume de atendimentos. Use os rankings para localizar máquinas, clientes e regiões que merecem atenção.";
+  if (view === "chat") return "Use o piloto de chat para validar o fluxo de atendimento via WhatsApp. Conversas recebidas pelo Webhook aparecem na fila, podem ser assumidas por um técnico online, transferidas e encerradas com histórico salvo.";
   if (view === "machineDetail") return "Nesta tela ficam os dados técnicos da máquina, informações de acesso remoto e histórico. Clique em um atendimento para ver o registro completo ou use o menu de ações para baixar o PDF.";
   if (view === "service") return "Registre o atendimento com tipo, motivo breve e descrições completas. Em visita técnica, colete a assinatura do cliente para incluir no PDF.";
   if (view === "schedule") return "Use o cronograma para planejar viagens, técnicos envolvidos, cliente, código, status e motivo. Datas podem ser dd/mm ou A definir.";
@@ -832,6 +835,16 @@ function helpSections(view: View, registryTab: RegistryTab) {
     ];
   }
 
+  if (view === "chat") {
+    return [
+      ["Fila de conversas", "Lista mensagens recebidas pelo WhatsApp. Conversas abertas ainda não foram assumidas; atribuídas têm um técnico responsável; encerradas ficam no histórico."],
+      ["Técnicos online", "Mostra quem está com o app aberto na tela de chat. Essa presença é usada para validar a distribuição de plantão."],
+      ["Assumir e transferir", "Um técnico pode assumir a conversa ou transferir para outro técnico online quando necessário."],
+      ["Responder", "As respostas são gravadas no histórico. Quando as credenciais oficiais da Meta estiverem configuradas, também serão enviadas ao WhatsApp."],
+      ["Encerrar", "Use ao finalizar o chamado para arquivar a conversa e manter o histórico consultável."]
+    ];
+  }
+
   return [
     ["Usuário", "Cadastre o nome que será exibido no sistema e associado aos registros feitos por essa conta."],
     ["E-mail", "Informe o e-mail corporativo autorizado. Apenas e-mails cadastrados conseguem validar o acesso ao app."],
@@ -851,6 +864,19 @@ function initialsFromEmail(value: string) {
   if (!parts.length) return "US";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return `${parts[0][0]}${parts.at(-1)?.[0] ?? ""}`.toUpperCase();
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function chatStatusLabel(status: ChatConversation["status"]) {
+  if (status === "closed") return "Encerrada";
+  if (status === "assigned") return "Em atendimento";
+  return "Aberta";
 }
 
 function PlusIcon() {
@@ -993,6 +1019,10 @@ export default function Home() {
   const [authorizedUsers, setAuthorizedUsers] = useState<AuthorizedUser[]>([]);
   const [travelSchedules, setTravelSchedules] = useState<TravelSchedule[]>([]);
   const [supportContracts, setSupportContracts] = useState<SupportContract[]>([]);
+  const [chatConversations, setChatConversations] = useState<ChatConversation[]>([]);
+  const [selectedChatId, setSelectedChatId] = useState("");
+  const [chatReply, setChatReply] = useState("");
+  const [onlineTechnicians, setOnlineTechnicians] = useState<OnlineTechnician[]>([]);
   const [currentUserRole, setCurrentUserRole] = useState<UserRole | null>(null);
   const [selectedMachineId, setSelectedMachineId] = useState("");
   const [message, setMessage] = useState(DEFAULT_MESSAGE);
@@ -1172,6 +1202,7 @@ export default function Home() {
   const selectedMachine = machines.find((machine) => machine.id === selectedMachineId);
   const serviceMachine = selectedMachine ?? machines[0];
   const editingMachine = machines.find((machine) => machine.id === editingMachineId);
+  const selectedChat = chatConversations.find((conversation) => conversation.id === selectedChatId) ?? chatConversations[0];
   const showRemoteAccess = machineHasRemoteAccess(machineForm.remote_access);
   const canDownloadBackup = currentUserEmail.trim().toLowerCase() === BACKUP_ALLOWED_EMAIL;
   const currentUserHasFullAccess = hasFullAccess(currentUserRole);
@@ -1201,6 +1232,60 @@ export default function Home() {
       setScheduleTab("travel");
     }
   }, [currentUserCanManageContracts, scheduleTab]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const channel = supabase
+      .channel("chat-data")
+      .on("postgres_changes", { event: "*", schema: "public", table: "chat_conversations" }, () => void loadData())
+      .on("postgres_changes", { event: "*", schema: "public", table: "chat_messages" }, () => void loadData())
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || view !== "chat" || !currentUserEmail) return;
+
+    const channel = supabase.channel("chat-presence", {
+      config: { presence: { key: currentUserEmail } }
+    });
+
+    channel
+      .on("presence", { event: "sync" }, () => {
+        const state = channel.presenceState<OnlineTechnician>();
+        const nextOnline = Object.values(state)
+          .flat()
+          .map((item) => ({
+            email: item.email,
+            name: item.name || displayUserName(item.email),
+            role: item.role,
+            onlineAt: item.onlineAt
+          }))
+          .filter((item, index, rows) => rows.findIndex((row) => row.email === item.email) === index)
+          .sort((a, b) => compareText(a.name, b.name));
+        setOnlineTechnicians(nextOnline);
+      })
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await channel.track({
+            email: currentUserEmail,
+            name: currentUserName || displayUserName(currentUserEmail),
+            role: currentUserRole,
+            onlineAt: new Date().toISOString()
+          });
+        }
+      });
+
+    return () => {
+      void channel.untrack();
+      void supabase.removeChannel(channel);
+      setOnlineTechnicians([]);
+    };
+  }, [currentUserEmail, currentUserName, currentUserRole, isAuthenticated, view]);
 
   const overviewData = useMemo(() => {
     const today = new Date();
@@ -1542,6 +1627,19 @@ export default function Home() {
     }
 
     setSupportContracts((contractRows ?? []) as SupportContract[]);
+
+    const { data: chatRows, error: chatError } = await supabase
+      .from("chat_conversations")
+      .select("*, chat_messages(*)")
+      .order("last_message_at", { ascending: false });
+
+    if (chatError) {
+      setChatConversations([]);
+      console.warn("Tabela de chat indisponível", chatError);
+      return;
+    }
+
+    setChatConversations((chatRows ?? []) as ChatConversation[]);
   }
 
   async function signIn(event: FormEvent<HTMLFormElement>) {
@@ -2549,6 +2647,98 @@ export default function Home() {
     await loadData();
   }
 
+  async function addChatSystemMessage(conversationId: string, body: string) {
+    await supabase.from("chat_messages").insert({
+      conversation_id: conversationId,
+      direction: "system",
+      body,
+      sender_email: currentUserEmail,
+      sender_name: currentUserName || displayUserName(currentUserEmail),
+      created_by: currentUserId
+    });
+  }
+
+  async function assignChat(conversation: ChatConversation, userEmail = currentUserEmail) {
+    const target = authorizedUsers.find((user) => user.email.toLowerCase() === userEmail.toLowerCase());
+    const assignedName = target?.name || displayUserName(userEmail);
+    const { error } = await supabase
+      .from("chat_conversations")
+      .update({
+        status: "assigned",
+        assigned_to: userEmail.toLowerCase() === currentUserEmail.toLowerCase() ? currentUserId : null,
+        assigned_to_email: userEmail.toLowerCase(),
+        assigned_to_name: assignedName,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", conversation.id);
+
+    if (error) {
+      setMessage(dataMessage(error.message));
+      return;
+    }
+
+    await addChatSystemMessage(conversation.id, `Conversa atribuída para ${assignedName}.`);
+    setMessage(`Conversa atribuída para ${assignedName}.`);
+    await loadData();
+  }
+
+  async function closeChat(conversation: ChatConversation) {
+    if (!confirm("Encerrar esta conversa?")) return;
+
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from("chat_conversations")
+      .update({
+        status: "closed",
+        closed_by: currentUserId,
+        closed_at: now,
+        updated_at: now
+      })
+      .eq("id", conversation.id);
+
+    if (error) {
+      setMessage(dataMessage(error.message));
+      return;
+    }
+
+    await addChatSystemMessage(conversation.id, "Conversa encerrada.");
+    setMessage("Conversa encerrada.");
+    await loadData();
+  }
+
+  async function sendChatReply(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedChat) return;
+    const body = chatReply.trim();
+    if (!body) return;
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) {
+      setMessage("Sessão expirada. Entre novamente para responder.");
+      return;
+    }
+
+    const response = await fetch("/api/whatsapp/send-message", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ conversationId: selectedChat.id, body })
+    });
+
+    const result = await response.json().catch(() => null);
+    if (!response.ok) {
+      setMessage(result?.error ?? "Não foi possível enviar a mensagem.");
+      return;
+    }
+
+    setChatReply("");
+    setMessage(result?.deliveryMode === "whatsapp" ? "Mensagem enviada pelo WhatsApp." : "Mensagem salva em modo de validação. Configure a API do WhatsApp para envio externo.");
+    await loadData();
+  }
+
   if (!sessionReady) return <main className="centered">Carregando...</main>;
 
   if (!isSupabaseConfigured) {
@@ -2608,6 +2798,7 @@ export default function Home() {
         <nav className="side-nav">
           <button className={`nav-item ${view === "home" ? "active" : ""}`} onClick={() => setView("home")}>Tela inicial</button>
           <button className={`nav-item ${view === "overview" ? "active" : ""}`} onClick={() => setView("overview")}>Visão geral</button>
+          {currentUserCanEmitReports && <button className={`nav-item ${view === "chat" ? "active" : ""}`} onClick={() => setView("chat")}>Chat</button>}
           <button className={`nav-item ${view === "schedule" ? "active" : ""}`} onClick={() => setView("schedule")}>Cronograma</button>
           {(currentUserCanEditMachine || currentUserCanManageUsers) && <button className={`nav-item ${view === "registry" ? "active" : ""}`} onClick={() => { setRegistryTab("machines"); setView("registry"); }}>Cadastro</button>}
         </nav>
@@ -2646,6 +2837,95 @@ export default function Home() {
           <strong>{screenLegend(view, registryTab, selectedMachine)}</strong>
           {message !== DEFAULT_MESSAGE && <span>{message}</span>}
         </section>
+
+        {view === "chat" && currentUserCanEmitReports && (
+          <section className="view active chat-page">
+            <section className="chat-shell">
+              <aside className="chat-list-panel">
+                <div className="section-header">
+                  <h2>Conversas WhatsApp</h2>
+                  <span>{chatConversations.length} registros</span>
+                </div>
+                <div className="chat-conversation-list">
+                  {chatConversations.map((conversation) => {
+                    const lastMessage = [...(conversation.chat_messages ?? [])].sort((a, b) => compareDate(b.created_at, a.created_at))[0];
+                    return (
+                      <button key={conversation.id} className={selectedChat?.id === conversation.id ? "active" : ""} type="button" onClick={() => setSelectedChatId(conversation.id)}>
+                        <strong>{conversation.customer_name || conversation.customer_phone}</strong>
+                        <span>{lastMessage?.body || "Sem mensagens"}</span>
+                        <small>{chatStatusLabel(conversation.status)} · {formatDateTime(conversation.last_message_at)}</small>
+                      </button>
+                    );
+                  })}
+                  {!chatConversations.length && <p className="empty-state">Nenhuma conversa recebida ainda.</p>}
+                </div>
+              </aside>
+
+              <section className="chat-main-panel">
+                {selectedChat ? (
+                  <>
+                    <div className="chat-header">
+                      <div>
+                        <span className="section-kicker">Cliente</span>
+                        <h2>{selectedChat.customer_name || selectedChat.customer_phone}</h2>
+                        <p>{selectedChat.customer_phone} · {chatStatusLabel(selectedChat.status)}</p>
+                      </div>
+                      <div className="chat-actions">
+                        {selectedChat.status !== "closed" && <button className="button ghost" type="button" onClick={() => void assignChat(selectedChat)}>Assumir</button>}
+                        <select value={selectedChat.assigned_to_email ?? ""} onChange={(event) => event.target.value && void assignChat(selectedChat, event.target.value)} disabled={selectedChat.status === "closed"}>
+                          <option value="">Transferir para...</option>
+                          {onlineTechnicians.map((user) => <option key={user.email} value={user.email}>{user.name}</option>)}
+                        </select>
+                        {selectedChat.status !== "closed" && <button className="button danger-button" type="button" onClick={() => void closeChat(selectedChat)}>Encerrar</button>}
+                      </div>
+                    </div>
+
+                    <div className="chat-meta-strip">
+                      <span>Responsável: <strong>{selectedChat.assigned_to_name || "Sem responsável"}</strong></span>
+                      <span>Última mensagem: <strong>{formatDateTime(selectedChat.last_message_at)}</strong></span>
+                    </div>
+
+                    <div className="chat-message-list">
+                      {[...(selectedChat.chat_messages ?? [])].sort((a, b) => compareDate(a.created_at, b.created_at)).map((chatMessage) => (
+                        <article key={chatMessage.id} className={`chat-message ${chatMessage.direction}`}>
+                          <div>
+                            <strong>{chatMessage.direction === "inbound" ? (chatMessage.sender_name || selectedChat.customer_name || "Cliente") : chatMessage.direction === "system" ? "Sistema" : (chatMessage.sender_name || "Técnico")}</strong>
+                            <small>{formatDateTime(chatMessage.created_at)}</small>
+                          </div>
+                          <p>{chatMessage.body}</p>
+                        </article>
+                      ))}
+                    </div>
+
+                    <form className="chat-reply-form" onSubmit={sendChatReply}>
+                      <textarea value={chatReply} onChange={(event) => setChatReply(event.target.value)} placeholder="Digite a resposta ao cliente..." disabled={selectedChat.status === "closed"} />
+                      <button className="button primary" type="submit" disabled={selectedChat.status === "closed" || !chatReply.trim()}>Enviar resposta</button>
+                    </form>
+                  </>
+                ) : (
+                  <div className="chat-empty-panel">
+                    <h2>Nenhuma conversa selecionada</h2>
+                    <p>Quando o Webhook receber mensagens do WhatsApp, elas aparecerão na fila para validação.</p>
+                  </div>
+                )}
+              </section>
+
+              <aside className="chat-presence-panel">
+                <div className="section-header"><h2>Plantão online</h2><span>{onlineTechnicians.length}</span></div>
+                <div className="online-list">
+                  {onlineTechnicians.map((user) => (
+                    <div key={user.email}>
+                      <span className="presence-dot" />
+                      <strong>{user.name}</strong>
+                      <small>{user.role || "Usuário"}</small>
+                    </div>
+                  ))}
+                  {!onlineTechnicians.length && <p className="empty-state">Abra esta tela em outro usuário para validar presença online.</p>}
+                </div>
+              </aside>
+            </section>
+          </section>
+        )}
 
         {view === "overview" && (
           <section className="overview-page view active">

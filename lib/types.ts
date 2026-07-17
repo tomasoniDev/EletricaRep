@@ -69,6 +69,35 @@ export type AuthorizedUser = {
   updated_at: string;
 };
 
+export type ChatConversation = {
+  id: string;
+  customer_phone: string;
+  customer_name: string | null;
+  status: "open" | "assigned" | "closed";
+  assigned_to: string | null;
+  assigned_to_email: string | null;
+  assigned_to_name: string | null;
+  closed_by: string | null;
+  closed_at: string | null;
+  last_message_at: string;
+  created_at: string;
+  updated_at: string;
+  chat_messages?: ChatMessage[];
+};
+
+export type ChatMessage = {
+  id: string;
+  conversation_id: string;
+  direction: "inbound" | "outbound" | "system";
+  body: string;
+  whatsapp_message_id: string | null;
+  sender_phone: string | null;
+  sender_name: string | null;
+  sender_email: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
 export type TravelSchedule = {
   id: string;
   start_date: string;
