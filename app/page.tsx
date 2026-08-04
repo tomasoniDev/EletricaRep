@@ -4,7 +4,7 @@ import { FormEvent, MouseEvent as ReactMouseEvent, PointerEvent, useEffect, useM
 import Image from "next/image";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { downloadServicePdf, servicePdfBase64, servicePdfFileName } from "@/lib/pdf";
-import type { AuthorizedUser, ChatContact, ChatConversation, ChatMessage, Machine, Profile, ServiceRecord, SupportContract, TravelSchedule, UserRole } from "@/lib/types";
+import type { AuthorizedUser, ChatContact, ChatConversation, ChatMessage, Machine, MachineCredential, Profile, ServiceRecord, SupportContract, TravelSchedule, UserRole } from "@/lib/types";
 
 type View = "home" | "overview" | "machineDetail" | "service" | "registry" | "schedule" | "chat";
 type RegistryTab = "machines" | "users" | "clients";
@@ -79,6 +79,7 @@ type AuthorizedUserFormState = {
   email: string;
   role: UserRole;
   remote_access_allowed: boolean;
+  credential_access_allowed: boolean;
 };
 
 type ChatContactFormState = {
@@ -109,6 +110,7 @@ type SupportContractFormState = {
 
 const ALLOWED_EMAIL_DOMAINS = ["tomasoni.ind.br", "tomasoni.in.br"];
 const DEFAULT_MESSAGE = "Consulte uma máquina pelo código ou selecione uma linha da tabela.";
+const GENERIC_AUTH_MESSAGE = "Não foi possível iniciar o acesso. Verifique o e-mail corporativo e tente novamente.";
 const AUTH_CONFIRMED_AT_KEY = "tomasoni-servicecore-auth-confirmed-at";
 const AUTH_CONFIRMATION_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 const BIOMETRIC_EMAIL_KEY = "tomasoni-servicecore-biometric-email";
@@ -187,7 +189,8 @@ const EMPTY_USER_FORM: AuthorizedUserFormState = {
   name: "",
   email: "",
   role: "Montagem",
-  remote_access_allowed: false
+  remote_access_allowed: false,
+  credential_access_allowed: false
 };
 const EMPTY_CHAT_CONTACT_FORM: ChatContactFormState = {
   name: "",
@@ -211,6 +214,41 @@ const EMPTY_CONTRACT_FORM: SupportContractFormState = {
   contract_type: "",
   support_contract_until: "",
   status: "Ativo"
+};
+const MACHINE_SAFE_SELECT = `
+  id,
+  code,
+  model,
+  client,
+  unit_city,
+  serial,
+  description,
+  manufacture_month,
+  mechanical_list,
+  software_code,
+  ip_range,
+  vm,
+  software_version,
+  access_method,
+  remote_access,
+  support_contract_active,
+  support_contract_type,
+  support_contract_until,
+  created_at,
+  updated_at,
+  machine_emails(*),
+  service_records(*)
+`;
+const EMPTY_MACHINE_CREDENTIALS = {
+  vnc_ip: null,
+  vnc_user: null,
+  vnc_password: null,
+  vnc_vm_password: null,
+  vnc_notes: null,
+  sinema_url: null,
+  sinema_user: null,
+  sinema_password: null,
+  sinema_notes: null
 };
 function formatDate(value?: string | null) {
   if (!value) return "-";
@@ -1067,6 +1105,7 @@ export default function Home() {
   const [remoteAccessStatus, setRemoteAccessStatus] = useState<RemoteAccessStatus>("Offline");
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [currentUserRemoteAccessAllowed, setCurrentUserRemoteAccessAllowed] = useState(false);
+  const [currentUserCredentialAccessAllowed, setCurrentUserCredentialAccessAllowed] = useState(false);
   const [currentUserRole, setCurrentUserRole] = useState<UserRole | null>(null);
   const [selectedMachineId, setSelectedMachineId] = useState("");
   const [message, setMessage] = useState(DEFAULT_MESSAGE);
@@ -1169,8 +1208,10 @@ export default function Home() {
       setCurrentUserId(data.session?.user.id ?? "");
       setCurrentUserEmail(data.session?.user.email ?? "");
       if (data.session) {
-        void loadProfile(data.session.user.id, data.session.user.email ?? "");
-        void loadData();
+        void (async () => {
+          await loadProfile(data.session.user.id, data.session.user.email ?? "");
+          await loadData(data.session.user.email ?? "");
+        })();
       }
     });
 
@@ -1198,8 +1239,10 @@ export default function Home() {
       setCurrentUserId(session?.user.id ?? "");
       setCurrentUserEmail(session?.user.email ?? "");
       if (session) {
-        void loadProfile(session.user.id, session.user.email ?? "");
-        void loadData();
+        void (async () => {
+          await loadProfile(session.user.id, session.user.email ?? "");
+          await loadData(session.user.email ?? "");
+        })();
       }
     });
 
@@ -1251,7 +1294,8 @@ export default function Home() {
   const selectedChat = chatConversations.find((conversation) => conversation.id === selectedChatId) ?? chatConversations[0];
   const showRemoteAccess = machineHasRemoteAccess(machineForm.remote_access);
   const currentUserHasFullAccess = hasFullAccess(currentUserRole);
-  const currentUserCanUseRemoteAccess = currentUserRole === "Admin";
+  const currentUserCanUseRemoteAccess = currentUserRole === "Admin" || currentUserRemoteAccessAllowed;
+  const currentUserCanAccessCredentials = currentUserRole === "Admin" || currentUserCredentialAccessAllowed;
   const canDownloadBackup = currentUserRole === "Admin";
   const currentUserCanManageUsers = canManageUsers(currentUserRole);
   const currentUserCanEditMachine = canEditMachine(currentUserRole);
@@ -1630,7 +1674,7 @@ export default function Home() {
     const fallbackName = displayUserName(userEmail);
     const { data: authorizedRow } = await supabase
       .from("authorized_users")
-      .select("*")
+      .select("id, name, email, role, remote_access_allowed, credential_access_allowed, created_at, updated_at")
       .eq("email", userEmail.toLowerCase())
       .maybeSingle();
 
@@ -1638,15 +1682,17 @@ export default function Home() {
       const authorizedUser = authorizedRow as AuthorizedUser;
       setCurrentUserRole(authorizedUser.role);
       setCurrentUserRemoteAccessAllowed(Boolean(authorizedUser.remote_access_allowed));
+      setCurrentUserCredentialAccessAllowed(Boolean(authorizedUser.credential_access_allowed));
       setCurrentUserName(authorizedUser.name || fallbackName);
       return;
     }
 
     setCurrentUserRole(null);
     setCurrentUserRemoteAccessAllowed(false);
+    setCurrentUserCredentialAccessAllowed(false);
     const { data, error } = await supabase
       .from("profiles")
-      .select("*")
+      .select("user_id, email, display_name, created_at, updated_at")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -1675,10 +1721,27 @@ export default function Home() {
     setCurrentUserName((insertedProfile as Profile).display_name || fallbackName);
   }
 
-  async function loadData() {
+  async function loadData(userEmailOverride = "") {
+    let canAccessCredentialsForFetch = currentUserCanAccessCredentials;
+    const userEmail = (userEmailOverride || currentUserEmail).toLowerCase();
+
+    if (userEmail) {
+      const { data: ownUser } = await supabase
+        .from("authorized_users")
+        .select("role, credential_access_allowed")
+        .eq("email", userEmail)
+        .maybeSingle();
+
+      if (ownUser) {
+        const ownAuthorizedUser = ownUser as Pick<AuthorizedUser, "role" | "credential_access_allowed">;
+        canAccessCredentialsForFetch = ownAuthorizedUser.role === "Admin" || Boolean(ownAuthorizedUser.credential_access_allowed);
+        setCurrentUserCredentialAccessAllowed(Boolean(ownAuthorizedUser.credential_access_allowed));
+      }
+    }
+
     const { data: machineRows, error: machineError } = await supabase
       .from("machines")
-      .select("*, machine_emails(*), service_records(*)")
+      .select(MACHINE_SAFE_SELECT)
       .order("code", { ascending: true });
 
     if (machineError) {
@@ -1686,11 +1749,34 @@ export default function Home() {
       return;
     }
 
-    setMachines((machineRows ?? []) as Machine[]);
+    const machineIds = (machineRows ?? []).map((machine) => machine.id).filter(Boolean);
+    const credentialRows: MachineCredential[] = [];
+
+    if (canAccessCredentialsForFetch && machineIds.length) {
+      const { data: credentials, error: credentialError } = await supabase
+        .from("machine_credentials")
+        .select("machine_id, vnc_ip, vnc_user, vnc_password, vnc_vm_password, vnc_notes, sinema_url, sinema_user, sinema_password, sinema_notes, created_at, updated_at")
+        .in("machine_id", machineIds);
+
+      if (credentialError) {
+        setMessage("Seu usuário não conseguiu carregar as credenciais de acesso remoto.");
+      } else {
+        credentialRows.push(...((credentials ?? []) as MachineCredential[]));
+      }
+    }
+
+    const credentialByMachine = new Map(credentialRows.map((credential) => [credential.machine_id, credential]));
+    const hydratedMachines = (machineRows ?? []).map((machine) => ({
+      ...EMPTY_MACHINE_CREDENTIALS,
+      ...machine,
+      ...(credentialByMachine.get(machine.id) ?? {})
+    })) as Machine[];
+
+    setMachines(hydratedMachines);
 
     const { data: userRows, error: userError } = await supabase
       .from("authorized_users")
-      .select("*")
+      .select("id, name, email, role, remote_access_allowed, credential_access_allowed, created_at, updated_at")
       .order("name", { ascending: true });
 
     if (userError) {
@@ -1703,19 +1789,19 @@ export default function Home() {
 
     const { data: scheduleRows } = await supabase
       .from("travel_schedules")
-      .select("*")
+      .select("id, start_date, end_date, code, client, technicians, status, reason, created_by, created_at, updated_at")
       .order("created_at", { ascending: false });
 
     setTravelSchedules((scheduleRows ?? []) as TravelSchedule[]);
 
     const { data: contractRows, error: contractError } = await supabase
       .from("support_contracts")
-      .select("*")
+      .select("id, machine_id, code, client, serial, contract_type, status, active, support_contract_until, created_by, created_at, updated_at")
       .order("support_contract_until", { ascending: true });
 
     if (contractError) {
       setSupportContracts([]);
-      console.warn("Tabela de contratos indisponível", contractError);
+      if (process.env.NODE_ENV !== "production") console.warn("Tabela de contratos indisponível", contractError.code);
       return;
     }
 
@@ -1723,24 +1809,24 @@ export default function Home() {
 
     const { data: contactRows, error: contactError } = await supabase
       .from("chat_contacts")
-      .select("*")
+      .select("id, phone, name, company, created_at, updated_at")
       .order("company", { ascending: true });
 
     if (contactError) {
       setChatContacts([]);
-      console.warn("Tabela de clientes do acesso remoto indisponível", contactError);
+      if (process.env.NODE_ENV !== "production") console.warn("Tabela de clientes do acesso remoto indisponível", contactError.code);
     } else {
       setChatContacts((contactRows ?? []) as ChatContact[]);
     }
 
     const { data: chatRows, error: chatError } = await supabase
       .from("chat_conversations")
-      .select("*, chat_messages(*)")
+      .select("id, customer_phone, customer_name, customer_company, contact_id, machine_id, machine_code, machine_serial, identification_status, status, assigned_to, assigned_to_email, assigned_to_name, closed_by, closed_at, last_message_at, created_at, updated_at, chat_messages(id, conversation_id, direction, body, message_type, media_id, media_mime_type, media_sha256, media_filename, media_caption, whatsapp_message_id, sender_phone, sender_name, sender_email, created_by, created_at)")
       .order("last_message_at", { ascending: false });
 
     if (chatError) {
       setChatConversations([]);
-      console.warn("Tabela de chat indisponível", chatError);
+      if (process.env.NODE_ENV !== "production") console.warn("Tabela de chat indisponível", chatError.code);
       return;
     }
 
@@ -1753,7 +1839,7 @@ export default function Home() {
     const normalizedEmail = email.trim().toLowerCase();
 
     if (!isCorporateEmail(normalizedEmail)) {
-      setMessage("Acesso permitido somente para e-mails corporativos da Tomasoni.");
+      setMessage(GENERIC_AUTH_MESSAGE);
       return;
     }
 
@@ -1761,23 +1847,16 @@ export default function Home() {
     setMessage(DEFAULT_MESSAGE);
 
     if (!otpSent) {
-      const { data: isAuthorized, error: lookupError } = await supabase.rpc("authorized_email_exists", { input_email: normalizedEmail });
-      if (lookupError || !isAuthorized) {
-        setMessage("E-mail não cadastrado para acesso ao sistema.");
-        setAuthLoading(false);
-        return;
-      }
-
       const { error } = await supabase.auth.signInWithOtp({
         email: normalizedEmail,
         options: {
-          shouldCreateUser: true
+          shouldCreateUser: false
         }
       });
 
       if (error) {
-        console.error("Erro ao enviar código de acesso", error);
-        setMessage(authMessage(error));
+        if (process.env.NODE_ENV !== "production") console.error("Erro ao enviar código de acesso", describeAuthError(error));
+        setMessage(GENERIC_AUTH_MESSAGE);
         setAuthLoading(false);
         return;
       }
@@ -1803,7 +1882,7 @@ export default function Home() {
     });
 
     if (error || !data.session) {
-      console.error("Erro ao validar código de acesso", error);
+      if (process.env.NODE_ENV !== "production") console.error("Erro ao validar código de acesso", describeAuthError(error));
       setMessage(authMessage(error));
       setAuthLoading(false);
       return;
@@ -1821,7 +1900,7 @@ export default function Home() {
       setBiometricPromptOpen(true);
     }
     setMessage("Acesso autorizado.");
-    await loadData();
+    await loadData(data.session.user.email ?? normalizedEmail);
     setAuthLoading(false);
   }
 
@@ -1835,6 +1914,7 @@ export default function Home() {
     setCurrentUserName("");
     setCurrentUserRole(null);
     setCurrentUserRemoteAccessAllowed(false);
+    setCurrentUserCredentialAccessAllowed(false);
     setRemoteAccessStatus("Offline");
     setMachines([]);
     setAuthorizedUsers([]);
@@ -2367,16 +2447,7 @@ export default function Home() {
       vm: machineForm.vm.trim() || null,
       software_version: machineForm.software_version.trim() || null,
       access_method: null,
-      remote_access: machineForm.remote_access,
-      vnc_ip: machineForm.remote_access === "VNC" ? machineForm.vnc_ip.trim() || null : null,
-      vnc_user: machineForm.remote_access === "VNC" ? machineForm.vnc_user.trim() || null : null,
-      vnc_password: machineForm.remote_access === "VNC" ? machineForm.vnc_password.trim() || null : null,
-      vnc_vm_password: machineForm.remote_access === "VNC" ? machineForm.vnc_vm_password.trim() || null : null,
-      vnc_notes: machineForm.remote_access === "VNC" ? machineForm.vnc_notes.trim() || null : null,
-      sinema_url: machineForm.remote_access === "SINEMA" ? machineForm.sinema_url.trim() || null : null,
-      sinema_user: machineForm.remote_access === "SINEMA" ? machineForm.sinema_user.trim() || null : null,
-      sinema_password: null,
-      sinema_notes: machineForm.remote_access === "SINEMA" ? machineForm.sinema_notes.trim() || null : null
+      remote_access: machineForm.remote_access
     };
 
     const { data, error } = editingMachineId
@@ -2386,6 +2457,31 @@ export default function Home() {
     if (error || !data) {
       setMessage(dataMessage(error?.message || ""));
       return;
+    }
+
+    if (currentUserCanAccessCredentials) {
+      const credentialPayload = {
+        machine_id: data.id,
+        vnc_ip: machineForm.remote_access === "VNC" ? machineForm.vnc_ip.trim() || null : null,
+        vnc_user: machineForm.remote_access === "VNC" ? machineForm.vnc_user.trim() || null : null,
+        vnc_password: machineForm.remote_access === "VNC" ? machineForm.vnc_password.trim() || null : null,
+        vnc_vm_password: machineForm.remote_access === "VNC" ? machineForm.vnc_vm_password.trim() || null : null,
+        vnc_notes: machineForm.remote_access === "VNC" ? machineForm.vnc_notes.trim() || null : null,
+        sinema_url: machineForm.remote_access === "SINEMA" ? machineForm.sinema_url.trim() || null : null,
+        sinema_user: machineForm.remote_access === "SINEMA" ? machineForm.sinema_user.trim() || null : null,
+        sinema_password: machineForm.remote_access === "SINEMA" ? machineForm.sinema_password.trim() || null : null,
+        sinema_notes: machineForm.remote_access === "SINEMA" ? machineForm.sinema_notes.trim() || null : null,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error: credentialError } = await supabase
+        .from("machine_credentials")
+        .upsert(credentialPayload, { onConflict: "machine_id" });
+
+      if (credentialError) {
+        setMessage("Máquina salva, mas as credenciais de acesso remoto não foram atualizadas.");
+        return;
+      }
     }
 
     setEditingMachineId("");
@@ -2408,7 +2504,8 @@ export default function Home() {
       name: userForm.name.trim(),
       email: userForm.email.trim().toLowerCase(),
       role: userForm.role,
-      remote_access_allowed: userForm.remote_access_allowed
+      remote_access_allowed: userForm.remote_access_allowed,
+      credential_access_allowed: userForm.credential_access_allowed
     };
 
     if (!payload.name || !payload.email) {
@@ -3649,7 +3746,10 @@ export default function Home() {
               <article className="dashboard-card">
                 <div className="card-title"><DetailIcon type="remote" /><h3>Acesso Remoto</h3><span className="soft-pill">{selectedMachineAccess}</span></div>
                 <dl className="spec-list">
-                  {selectedMachineAccess === "VNC" && (
+                  {selectedMachineAccess !== "Sem acesso remoto" && !currentUserCanAccessCredentials && (
+                    <div><dt>Status</dt><dd>Informações protegidas. Solicite permissão para acessar senhas.</dd></div>
+                  )}
+                  {selectedMachineAccess === "VNC" && currentUserCanAccessCredentials && (
                     <>
                       <div><dt>IP de acesso</dt><dd>{selectedMachine.vnc_ip || "-"}</dd></div>
                       <div><dt>Senha</dt><dd>{selectedMachine.vnc_password || "-"}</dd></div>
@@ -3658,7 +3758,7 @@ export default function Home() {
                       <div><dt>Observações</dt><dd>{selectedMachine.vnc_notes || "-"}</dd></div>
                     </>
                   )}
-                  {selectedMachineAccess === "SINEMA" && (
+                  {selectedMachineAccess === "SINEMA" && currentUserCanAccessCredentials && (
                     <>
                       <div><dt>Device Name</dt><dd>{selectedMachine.sinema_url || "-"}</dd></div>
                       <div><dt>Subnet Name</dt><dd>{selectedMachine.sinema_user || "-"}</dd></div>
@@ -3855,22 +3955,26 @@ export default function Home() {
                       </select></label>
                     </div>
 
-                  {showRemoteAccess && (
+                  {showRemoteAccess && !currentUserCanAccessCredentials && (
+                    <p className="empty-state">Seu usuário não tem permissão para visualizar ou alterar credenciais de acesso remoto.</p>
+                  )}
+
+                  {showRemoteAccess && currentUserCanAccessCredentials && (
                     <>
                       {machineForm.remote_access === "VNC" && (
                         <div className="fields-grid">
                           <label>IP de acesso<input disabled={machineMainFieldsDisabled} value={machineForm.vnc_ip} onChange={(event) => updateMachineForm("vnc_ip", event.target.value)} placeholder="Ex.: 189.1.87.200/5906" maxLength={21} /></label>
-                          <label>Senha<input type="text" value={machineForm.vnc_password} onChange={(event) => updateMachineForm("vnc_password", event.target.value)} /></label>
-                          <label>Usuário VM<input value={machineForm.vnc_user} onChange={(event) => updateMachineForm("vnc_user", event.target.value)} /></label>
-                          <label>Senha VM<input type="text" value={machineForm.vnc_vm_password} onChange={(event) => updateMachineForm("vnc_vm_password", event.target.value)} /></label>
-                          <label className="wide">Observações de acesso<textarea rows={3} value={machineForm.vnc_notes} onChange={(event) => updateMachineForm("vnc_notes", event.target.value)} /></label>
+                          <label>Senha<input disabled={machineMainFieldsDisabled} type="text" value={machineForm.vnc_password} onChange={(event) => updateMachineForm("vnc_password", event.target.value)} /></label>
+                          <label>Usuário VM<input disabled={machineMainFieldsDisabled} value={machineForm.vnc_user} onChange={(event) => updateMachineForm("vnc_user", event.target.value)} /></label>
+                          <label>Senha VM<input disabled={machineMainFieldsDisabled} type="text" value={machineForm.vnc_vm_password} onChange={(event) => updateMachineForm("vnc_vm_password", event.target.value)} /></label>
+                          <label className="wide">Observações de acesso<textarea disabled={machineMainFieldsDisabled} rows={3} value={machineForm.vnc_notes} onChange={(event) => updateMachineForm("vnc_notes", event.target.value)} /></label>
                         </div>
                       )}
                       {machineForm.remote_access === "SINEMA" && (
                         <div className="fields-grid">
                           <label>Device Name<input disabled={machineMainFieldsDisabled} value={machineForm.sinema_url} onChange={(event) => updateMachineForm("sinema_url", event.target.value)} /></label>
-                          <label>Subnet Name<input value={machineForm.sinema_user} onChange={(event) => updateMachineForm("sinema_user", event.target.value)} /></label>
-                          <label className="wide">Observações<textarea rows={3} value={machineForm.sinema_notes} onChange={(event) => updateMachineForm("sinema_notes", event.target.value)} /></label>
+                          <label>Subnet Name<input disabled={machineMainFieldsDisabled} value={machineForm.sinema_user} onChange={(event) => updateMachineForm("sinema_user", event.target.value)} /></label>
+                          <label className="wide">Observações<textarea disabled={machineMainFieldsDisabled} rows={3} value={machineForm.sinema_notes} onChange={(event) => updateMachineForm("sinema_notes", event.target.value)} /></label>
                         </div>
                       )}
                     </>
@@ -3960,6 +4064,7 @@ export default function Home() {
                       {USER_ROLE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                     </select></label>
                     <label className="checkbox-field"><input type="checkbox" checked={userForm.remote_access_allowed} onChange={(event) => setUserForm((current) => ({ ...current, remote_access_allowed: event.target.checked }))} /> Permitir Acesso Remoto</label>
+                    <label className="checkbox-field"><input type="checkbox" checked={userForm.credential_access_allowed} onChange={(event) => setUserForm((current) => ({ ...current, credential_access_allowed: event.target.checked }))} /> Permitir acesso às senhas</label>
                   </div>
                 </form>
                 <section className="table-panel">
@@ -3970,6 +4075,7 @@ export default function Home() {
                         <th><button className="sort-header" type="button" onClick={() => toggleUserSort("email")}>E-mail <span>{sortMark(userSort.key === "email", userSort.direction)}</span></button></th>
                         <th><button className="sort-header" type="button" onClick={() => toggleUserSort("role")}>Perfil / Setor <span>{sortMark(userSort.key === "role", userSort.direction)}</span></button></th>
                         <th>Acesso remoto</th>
+                        <th>Senhas</th>
                         <th>Ações</th>
                       </tr></thead>
                       <tbody>{sortedUsers.map((user) => (
@@ -3978,12 +4084,13 @@ export default function Home() {
                           <td>{user.email}</td>
                           <td>{user.role}</td>
                           <td>{user.remote_access_allowed ? "Sim" : "Não"}</td>
+                          <td>{user.credential_access_allowed ? "Sim" : "Não"}</td>
                           <td>
                             <div className="row-actions">
                               <button className="icon-button menu-trigger" type="button" title="Ações" aria-label={`Ações do usuário ${user.name}`} onClick={(event) => toggleActionMenu(`user-${user.id}`, event)}><MoreIcon /></button>
                               {openActionMenu === `user-${user.id}` && (
                                 <div className="row-menu floating-row-menu" style={actionMenuPosition ?? undefined}>
-                                  <button type="button" onClick={() => { setEditingUserId(user.id); setUserForm({ name: user.name, email: user.email, role: user.role, remote_access_allowed: Boolean(user.remote_access_allowed) }); setOpenActionMenu(""); }}><EditIcon /> Alterar</button>
+                                  <button type="button" onClick={() => { setEditingUserId(user.id); setUserForm({ name: user.name, email: user.email, role: user.role, remote_access_allowed: Boolean(user.remote_access_allowed), credential_access_allowed: Boolean(user.credential_access_allowed) }); setOpenActionMenu(""); }}><EditIcon /> Alterar</button>
                                   <button className="danger" type="button" onClick={() => { void deleteUser(user.id); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>
                                 </div>
                               )}

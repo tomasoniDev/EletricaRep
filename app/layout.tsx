@@ -6,6 +6,22 @@ export const metadata: Metadata = {
   applicationName: "Assistência Tomasoni",
   title: "Assistência Tomasoni",
   description: "Aplicação corporativa para registros de atendimento técnico.",
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+    googleBot: {
+      index: false,
+      follow: false,
+      noimageindex: true,
+      "max-snippet": -1,
+      "max-image-preview": "none",
+      "max-video-preview": -1
+    }
+  },
+  other: {
+    robots: "noindex, nofollow, noarchive, nosnippet, noimageindex"
+  },
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [

@@ -33,6 +33,21 @@ export type Machine = {
   service_records?: ServiceRecord[];
 };
 
+export type MachineCredential = {
+  machine_id: string;
+  vnc_ip: string | null;
+  vnc_user: string | null;
+  vnc_password: string | null;
+  vnc_vm_password: string | null;
+  vnc_notes: string | null;
+  sinema_url: string | null;
+  sinema_user: string | null;
+  sinema_password: string | null;
+  sinema_notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type MachineComponent = {
   id: string;
   machine_id: string;
@@ -66,6 +81,7 @@ export type AuthorizedUser = {
   email: string;
   role: UserRole;
   remote_access_allowed: boolean | null;
+  credential_access_allowed: boolean | null;
   created_at: string;
   updated_at: string;
 };
