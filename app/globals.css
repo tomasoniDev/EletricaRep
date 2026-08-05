@@ -30,6 +30,10 @@
 
 * { box-sizing: border-box; }
 
+img, svg, canvas, video {
+  max-width: 100%;
+}
+
 html {
   max-width: 100%;
   overflow-x: hidden;
@@ -297,6 +301,7 @@ button { cursor: pointer; }
   width: calc(100% - 280px);
   max-width: calc(100% - 280px);
   min-width: 0;
+  overflow: clip;
   min-height: 100vh;
   padding: 28px;
   background: linear-gradient(90deg, rgba(18, 104, 216, 0.08), rgba(255, 255, 255, 0) 42%), var(--bg);
@@ -326,7 +331,8 @@ button { cursor: pointer; }
 
 .topbar h1 {
   line-height: 1.12;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .topbar .button, .topbar .icon-button {
@@ -865,7 +871,7 @@ input:focus, textarea:focus, select:focus {
 
 .machine-metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 22px 32px;
 }
 
@@ -895,6 +901,8 @@ input:focus, textarea:focus, select:focus {
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -998,7 +1006,7 @@ input:focus, textarea:focus, select:focus {
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 16px;
 }
 
@@ -1017,7 +1025,7 @@ input:focus, textarea:focus, select:focus {
 
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 14px;
 }
 
@@ -1053,7 +1061,7 @@ input:focus, textarea:focus, select:focus {
 
 .overview-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(260px, 1fr));
   grid-auto-flow: dense;
   gap: 16px;
 }
@@ -1287,7 +1295,7 @@ input:focus, textarea:focus, select:focus {
 }
 
 .bottom-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(260px, 1fr));
 }
 
 .service-rank-card {
@@ -1797,7 +1805,7 @@ table {
 }
 
 .home-table {
-  min-width: 0;
+  min-width: 820px;
   table-layout: fixed;
 }
 
@@ -1864,7 +1872,7 @@ table {
 .compact-table { min-width: 520px; }
 
 .schedule-table {
-  min-width: 1120px;
+  min-width: 980px;
   table-layout: fixed;
 }
 
@@ -2112,16 +2120,12 @@ tbody tr:hover { background: var(--surface-2); }
   }
   .logout-button { margin-top: 0; }
   .details-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .machine-hero,
-  .dashboard-grid {
+  .machine-hero {
     grid-template-columns: 1fr;
-  }
-  .kpi-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .overview-grid,
   .bottom-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(240px, 1fr));
   }
   .wide-card {
     grid-column: 1 / -1;
@@ -2129,9 +2133,6 @@ tbody tr:hover { background: var(--surface-2); }
   .geo-card {
     grid-column: 1 / -1;
     grid-row: auto;
-  }
-  .machine-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -2141,20 +2142,16 @@ tbody tr:hover { background: var(--surface-2); }
   }
 
   .dashboard-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(280px, 1fr));
   }
 
   .contract-card {
     min-height: auto;
   }
 
-  .kpi-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
   .overview-grid,
   .bottom-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(280px, 1fr));
   }
 
   .wide-card {
@@ -2173,7 +2170,7 @@ tbody tr:hover { background: var(--surface-2); }
   }
   .workspace {
     --content-width: 100%;
-    padding: 16px;
+    padding: 14px;
   }
   .sidebar {
     gap: 12px;
@@ -2188,7 +2185,7 @@ tbody tr:hover { background: var(--surface-2); }
     width: min(190px, 72vw);
   }
   .side-nav {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
   }
   .nav-item {
@@ -2206,6 +2203,7 @@ tbody tr:hover { background: var(--surface-2); }
   }
   .topbar h1 {
     white-space: normal;
+    font-size: clamp(1.65rem, 9vw, 2.15rem);
   }
   .topbar-actions {
     justify-content: flex-start;
@@ -2291,6 +2289,87 @@ tbody tr:hover { background: var(--surface-2); }
   }
   .chat-message {
     width: 100%;
+  }
+
+  .status-band,
+  .search-panel,
+  .table-panel,
+  .form-panel,
+  .form-card,
+  .dashboard-card,
+  .machine-hero {
+    padding: 14px;
+  }
+
+  .table-wrap {
+    border-radius: 8px;
+  }
+
+  table {
+    min-width: 760px;
+  }
+
+  .home-table {
+    min-width: 760px;
+  }
+
+  .schedule-table {
+    min-width: 860px;
+  }
+
+  th,
+  td {
+    padding: 10px 9px;
+  }
+
+  .modal-backdrop {
+    align-items: stretch;
+    padding: 12px;
+  }
+
+  .modal-card {
+    width: 100%;
+    max-height: calc(100dvh - 24px);
+    padding: 16px;
+  }
+}
+
+@media (max-width: 420px) {
+  .workspace {
+    padding: 12px;
+  }
+
+  .sidebar {
+    padding: 12px;
+  }
+
+  .side-nav {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar-actions {
+    gap: 8px;
+  }
+
+  .login-card {
+    padding: 22px;
+  }
+
+  .machine-metrics div,
+  .card-title {
+    grid-template-columns: 24px minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .machine-metrics svg,
+  .card-title svg,
+  .contract-card svg {
+    width: 21px;
+    height: 21px;
+  }
+
+  .contract-card {
+    padding: 18px;
   }
 }
 
