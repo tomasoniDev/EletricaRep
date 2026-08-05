@@ -2,9 +2,8 @@
 
 import { FormEvent, MouseEvent as ReactMouseEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { downloadServicePdf, servicePdfBase64, servicePdfFileName } from "@/lib/pdf";
-import type { AuthorizedUser, ChatContact, ChatConversation, ChatMessage, Machine, MachineCredential, Profile, ServiceRecord, SupportContract, TravelSchedule, UserRole } from "@/lib/types";
+import type { AuthorizedUser, ChatContact, ChatConversation, ChatMessage, Machine, ServiceRecord, SupportContract, TravelSchedule, UserRole } from "@/lib/types";
 
 type View = "home" | "overview" | "machineDetail" | "service" | "registry" | "schedule" | "chat";
 type RegistryTab = "machines" | "users" | "clients";
@@ -22,6 +21,19 @@ type ContractStatus = "Ativo" | "Inativo" | "Em negociação";
 type ActionMenuPosition = { top: number; right: number };
 type RemoteAccessStatus = "Online" | "Offline" | "Ocupado";
 type OnlineTechnician = { email: string; name: string; role?: string | null; status?: RemoteAccessStatus; onlineAt?: string };
+type AppSessionPayload = {
+  session?: { userId: string; email: string; expiresAt?: number } | null;
+  user?: AuthorizedUser | null;
+};
+type AppDataPayload = AppSessionPayload & {
+  machines?: Machine[];
+  authorizedUsers?: AuthorizedUser[];
+  travelSchedules?: TravelSchedule[];
+  supportContracts?: SupportContract[];
+  chatContacts?: ChatContact[];
+  chatConversations?: ChatConversation[];
+  error?: string;
+};
 type LeafletLayerTarget = LeafletMap | LeafletLayerGroup;
 type LeafletMap = {
   fitBounds: (bounds: [number, number][], options?: Record<string, unknown>) => LeafletMap;
@@ -250,6 +262,30 @@ const EMPTY_MACHINE_CREDENTIALS = {
   sinema_password: null,
   sinema_notes: null
 };
+
+async function apiRequest<T>(url: string, init?: RequestInit) {
+  const response = await fetch(url, {
+    ...init,
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {})
+    }
+  });
+  const data = await response.json().catch(() => null) as (T & { error?: string }) | null;
+  if (!response.ok) {
+    throw new Error(data?.error ?? "Não foi possível concluir a operação.");
+  }
+  return data as T;
+}
+
+async function appAction<T>(action: string, payload: Record<string, unknown> = {}) {
+  return apiRequest<{ data?: T; ok?: boolean }>("/api/app-action", {
+    method: "POST",
+    body: JSON.stringify({ action, payload })
+  });
+}
+
 function formatDate(value?: string | null) {
   if (!value) return "-";
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(value)) return value;
@@ -1175,78 +1211,53 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSessionReady(true);
-      const userEmail = data.session?.user.email ?? "";
-      if (data.session && !isCorporateEmail(userEmail)) {
-        void supabase.auth.signOut();
-        clearAuthConfirmation();
+    let cancelled = false;
+
+    apiRequest<AppSessionPayload>("/api/auth/session")
+      .then(async (payload) => {
+        if (cancelled) return;
+        setSessionReady(true);
+        const session = payload.session;
+        const user = payload.user;
+        const userEmail = session?.email ?? "";
+
+        if (!session || !user) {
+          setIsAuthenticated(false);
+          return;
+        }
+
+        if (!isCorporateEmail(userEmail)) {
+          await signOut();
+          setMessage("Acesso negado. Use um e-mail corporativo da Tomasoni.");
+          return;
+        }
+
+        if (!hasFreshAuthConfirmation()) {
+          await signOut();
+          setMessage("Por segurança, confirme seu acesso novamente com o código enviado ao e-mail.");
+          return;
+        }
+
+        applyAuthorizedSession(session.userId, userEmail, user);
+        if (hasBiometricEnabledFor(userEmail) && !hasBiometricVerifiedThisOpen(userEmail)) {
+          setBiometricRequired(true);
+          setIsAuthenticated(false);
+          setMessage("Confirme sua biometria para abrir o app neste dispositivo.");
+          return;
+        }
+
+        setIsAuthenticated(true);
+        await loadData();
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSessionReady(true);
         setIsAuthenticated(false);
-        setMessage("Acesso negado. Use um e-mail corporativo da Tomasoni.");
-        return;
-      }
+      });
 
-      if (data.session && !hasFreshAuthConfirmation()) {
-        void supabase.auth.signOut();
-        clearAuthConfirmation();
-        setIsAuthenticated(false);
-        setCurrentUserId("");
-        setMessage("Por segurança, confirme seu acesso novamente com o código enviado ao e-mail.");
-        return;
-      }
-
-      if (data.session && hasBiometricEnabledFor(userEmail) && !hasBiometricVerifiedThisOpen(userEmail)) {
-        setBiometricRequired(true);
-        setCurrentUserId(data.session.user.id);
-        setCurrentUserEmail(userEmail);
-        void loadProfile(data.session.user.id, userEmail);
-        setMessage("Confirme sua biometria para abrir o app neste dispositivo.");
-        return;
-      }
-
-      setIsAuthenticated(Boolean(data.session));
-      setCurrentUserId(data.session?.user.id ?? "");
-      setCurrentUserEmail(data.session?.user.email ?? "");
-      if (data.session) {
-        void (async () => {
-          await loadProfile(data.session.user.id, data.session.user.email ?? "");
-          await loadData(data.session.user.email ?? "");
-        })();
-      }
-    });
-
-    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
-      const userEmail = session?.user.email ?? "";
-      if (session && !isCorporateEmail(userEmail)) {
-        void supabase.auth.signOut();
-        clearAuthConfirmation();
-        setIsAuthenticated(false);
-        setMessage("Acesso negado. Use um e-mail corporativo da Tomasoni.");
-        return;
-      }
-
-      if (session && hasBiometricEnabledFor(userEmail) && !hasBiometricVerifiedThisOpen(userEmail)) {
-        setBiometricRequired(true);
-        setIsAuthenticated(false);
-        setCurrentUserId(session.user.id);
-        setCurrentUserEmail(userEmail);
-        void loadProfile(session.user.id, userEmail);
-        setMessage("Confirme sua biometria para abrir o app neste dispositivo.");
-        return;
-      }
-
-      setIsAuthenticated(Boolean(session));
-      setCurrentUserId(session?.user.id ?? "");
-      setCurrentUserEmail(session?.user.email ?? "");
-      if (session) {
-        void (async () => {
-          await loadProfile(session.user.id, session.user.email ?? "");
-          await loadData(session.user.email ?? "");
-        })();
-      }
-    });
-
-    return () => listener.subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -1366,60 +1377,27 @@ export default function Home() {
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    const channel = supabase
-      .channel("chat-data")
-      .on("postgres_changes", { event: "*", schema: "public", table: "chat_conversations" }, () => void loadData())
-      .on("postgres_changes", { event: "*", schema: "public", table: "chat_messages" }, () => void loadData())
-      .subscribe();
+    const interval = window.setInterval(() => {
+      void loadData();
+    }, view === "chat" ? 15000 : 45000);
 
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [isAuthenticated]);
+    return () => window.clearInterval(interval);
+  }, [isAuthenticated, view]);
 
   useEffect(() => {
-    if (!isAuthenticated || !currentUserCanUseRemoteAccess || !currentUserEmail) {
+    if (!isAuthenticated || !currentUserCanUseRemoteAccess || !currentUserEmail || remoteAccessStatus === "Offline") {
       setOnlineTechnicians([]);
       return;
     }
 
-    const channel = supabase.channel("chat-presence", {
-      config: { presence: { key: currentUserEmail } }
-    });
-
-    channel
-      .on("presence", { event: "sync" }, () => {
-        const state = channel.presenceState<OnlineTechnician>();
-        const nextOnline = Object.values(state)
-          .flat()
-          .map((item) => ({
-            email: item.email,
-            name: item.name || displayUserName(item.email),
-            role: item.role,
-            status: item.status,
-            onlineAt: item.onlineAt
-          }))
-          .filter((item, index, rows) => rows.findIndex((row) => row.email === item.email) === index)
-          .sort((a, b) => compareText(a.name, b.name));
-        setOnlineTechnicians(nextOnline);
-      })
-      .subscribe(async (status) => {
-        if (status === "SUBSCRIBED" && remoteAccessStatus !== "Offline") {
-          await channel.track({
-            email: currentUserEmail,
-            name: currentUserName || displayUserName(currentUserEmail),
-            role: currentUserRole,
-            status: remoteAccessStatus,
-            onlineAt: new Date().toISOString()
-          });
-        }
-      });
-
-    return () => {
-      void channel.untrack();
-      void supabase.removeChannel(channel);
-      setOnlineTechnicians([]);
+    const currentUserPresence: OnlineTechnician = {
+      email: currentUserEmail,
+      name: currentUserName || displayUserName(currentUserEmail),
+      role: currentUserRole,
+      status: remoteAccessStatus,
+      onlineAt: new Date().toISOString()
     };
+    setOnlineTechnicians([currentUserPresence]);
   }, [currentUserCanUseRemoteAccess, currentUserEmail, currentUserName, currentUserRole, isAuthenticated, remoteAccessStatus]);
 
   const overviewData = useMemo(() => {
@@ -1670,167 +1648,36 @@ export default function Home() {
     image.src = customerSignature;
   }, [customerSignature, serviceType, view]);
 
-  async function loadProfile(userId: string, userEmail: string) {
+  function applyAuthorizedSession(userId: string, userEmail: string, authorizedUser: AuthorizedUser) {
     const fallbackName = displayUserName(userEmail);
-    const { data: authorizedRow } = await supabase
-      .from("authorized_users")
-      .select("id, name, email, role, remote_access_allowed, credential_access_allowed, created_at, updated_at")
-      .eq("email", userEmail.toLowerCase())
-      .maybeSingle();
-
-    if (authorizedRow) {
-      const authorizedUser = authorizedRow as AuthorizedUser;
-      setCurrentUserRole(authorizedUser.role);
-      setCurrentUserRemoteAccessAllowed(Boolean(authorizedUser.remote_access_allowed));
-      setCurrentUserCredentialAccessAllowed(Boolean(authorizedUser.credential_access_allowed));
-      setCurrentUserName(authorizedUser.name || fallbackName);
-      return;
-    }
-
-    setCurrentUserRole(null);
-    setCurrentUserRemoteAccessAllowed(false);
-    setCurrentUserCredentialAccessAllowed(false);
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("user_id, email, display_name, created_at, updated_at")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (error) {
-      setCurrentUserName(fallbackName);
-      return;
-    }
-
-    if (data) {
-      const profile = data as Profile;
-      setCurrentUserName(profile.display_name || fallbackName);
-      return;
-    }
-
-    const { data: insertedProfile, error: insertError } = await supabase
-      .from("profiles")
-      .upsert({ user_id: userId, email: userEmail, display_name: fallbackName }, { onConflict: "user_id" })
-      .select()
-      .single();
-
-    if (insertError || !insertedProfile) {
-      setCurrentUserName(fallbackName);
-      return;
-    }
-
-    setCurrentUserName((insertedProfile as Profile).display_name || fallbackName);
+    setCurrentUserId(userId);
+    setCurrentUserEmail(userEmail.toLowerCase());
+    setCurrentUserRole(authorizedUser.role);
+    setCurrentUserRemoteAccessAllowed(Boolean(authorizedUser.remote_access_allowed));
+    setCurrentUserCredentialAccessAllowed(Boolean(authorizedUser.credential_access_allowed));
+    setCurrentUserName(authorizedUser.name || fallbackName);
   }
 
-  async function loadData(userEmailOverride = "") {
-    let canAccessCredentialsForFetch = currentUserCanAccessCredentials;
-    const userEmail = (userEmailOverride || currentUserEmail).toLowerCase();
-
-    if (userEmail) {
-      const { data: ownUser } = await supabase
-        .from("authorized_users")
-        .select("role, credential_access_allowed")
-        .eq("email", userEmail)
-        .maybeSingle();
-
-      if (ownUser) {
-        const ownAuthorizedUser = ownUser as Pick<AuthorizedUser, "role" | "credential_access_allowed">;
-        canAccessCredentialsForFetch = ownAuthorizedUser.role === "Admin" || Boolean(ownAuthorizedUser.credential_access_allowed);
-        setCurrentUserCredentialAccessAllowed(Boolean(ownAuthorizedUser.credential_access_allowed));
-      }
+  function applyAppData(payload: AppDataPayload) {
+    if (payload.session && payload.user) {
+      applyAuthorizedSession(payload.session.userId, payload.session.email, payload.user);
     }
 
-    const { data: machineRows, error: machineError } = await supabase
-      .from("machines")
-      .select(MACHINE_SAFE_SELECT)
-      .order("code", { ascending: true });
+    setMachines(payload.machines ?? []);
+    setAuthorizedUsers(payload.authorizedUsers ?? []);
+    setTravelSchedules(payload.travelSchedules ?? []);
+    setSupportContracts(payload.supportContracts ?? []);
+    setChatContacts(payload.chatContacts ?? []);
+    setChatConversations(payload.chatConversations ?? []);
+  }
 
-    if (machineError) {
-      setMessage(dataMessage(machineError.message || ""));
-      return;
+  async function loadData() {
+    try {
+      const payload = await apiRequest<AppDataPayload>("/api/app-data");
+      applyAppData(payload);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível carregar os dados.");
     }
-
-    const machineIds = (machineRows ?? []).map((machine) => machine.id).filter(Boolean);
-    const credentialRows: MachineCredential[] = [];
-
-    if (canAccessCredentialsForFetch && machineIds.length) {
-      const { data: credentials, error: credentialError } = await supabase
-        .from("machine_credentials")
-        .select("machine_id, vnc_ip, vnc_user, vnc_password, vnc_vm_password, vnc_notes, sinema_url, sinema_user, sinema_password, sinema_notes, created_at, updated_at")
-        .in("machine_id", machineIds);
-
-      if (credentialError) {
-        setMessage("Seu usuário não conseguiu carregar as credenciais de acesso remoto.");
-      } else {
-        credentialRows.push(...((credentials ?? []) as MachineCredential[]));
-      }
-    }
-
-    const credentialByMachine = new Map(credentialRows.map((credential) => [credential.machine_id, credential]));
-    const hydratedMachines = (machineRows ?? []).map((machine) => ({
-      ...EMPTY_MACHINE_CREDENTIALS,
-      ...machine,
-      ...(credentialByMachine.get(machine.id) ?? {})
-    })) as Machine[];
-
-    setMachines(hydratedMachines);
-
-    const { data: userRows, error: userError } = await supabase
-      .from("authorized_users")
-      .select("id, name, email, role, remote_access_allowed, credential_access_allowed, created_at, updated_at")
-      .order("name", { ascending: true });
-
-    if (userError) {
-      setMessage(dataMessage(userError.message || ""));
-      setAuthorizedUsers([]);
-      return;
-    }
-
-    setAuthorizedUsers((userRows ?? []) as AuthorizedUser[]);
-
-    const { data: scheduleRows } = await supabase
-      .from("travel_schedules")
-      .select("id, start_date, end_date, code, client, technicians, status, reason, created_by, created_at, updated_at")
-      .order("created_at", { ascending: false });
-
-    setTravelSchedules((scheduleRows ?? []) as TravelSchedule[]);
-
-    const { data: contractRows, error: contractError } = await supabase
-      .from("support_contracts")
-      .select("id, machine_id, code, client, serial, contract_type, status, active, support_contract_until, created_by, created_at, updated_at")
-      .order("support_contract_until", { ascending: true });
-
-    if (contractError) {
-      setSupportContracts([]);
-      if (process.env.NODE_ENV !== "production") console.warn("Tabela de contratos indisponível", contractError.code);
-      return;
-    }
-
-    setSupportContracts((contractRows ?? []) as SupportContract[]);
-
-    const { data: contactRows, error: contactError } = await supabase
-      .from("chat_contacts")
-      .select("id, phone, name, company, created_at, updated_at")
-      .order("company", { ascending: true });
-
-    if (contactError) {
-      setChatContacts([]);
-      if (process.env.NODE_ENV !== "production") console.warn("Tabela de clientes do acesso remoto indisponível", contactError.code);
-    } else {
-      setChatContacts((contactRows ?? []) as ChatContact[]);
-    }
-
-    const { data: chatRows, error: chatError } = await supabase
-      .from("chat_conversations")
-      .select("id, customer_phone, customer_name, customer_company, contact_id, machine_id, machine_code, machine_serial, identification_status, status, assigned_to, assigned_to_email, assigned_to_name, closed_by, closed_at, last_message_at, created_at, updated_at, chat_messages(id, conversation_id, direction, body, message_type, media_id, media_mime_type, media_sha256, media_filename, media_caption, whatsapp_message_id, sender_phone, sender_name, sender_email, created_by, created_at)")
-      .order("last_message_at", { ascending: false });
-
-    if (chatError) {
-      setChatConversations([]);
-      if (process.env.NODE_ENV !== "production") console.warn("Tabela de chat indisponível", chatError.code);
-      return;
-    }
-
-    setChatConversations((chatRows ?? []) as ChatConversation[]);
   }
 
   async function signIn(event: FormEvent<HTMLFormElement>) {
@@ -1847,16 +1694,14 @@ export default function Home() {
     setMessage(DEFAULT_MESSAGE);
 
     if (!otpSent) {
-      const { error } = await supabase.auth.signInWithOtp({
-        email: normalizedEmail,
-        options: {
-          shouldCreateUser: false
-        }
-      });
-
-      if (error) {
-        if (process.env.NODE_ENV !== "production") console.error("Erro ao enviar código de acesso", describeAuthError(error));
-        setMessage(GENERIC_AUTH_MESSAGE);
+      try {
+        await apiRequest<{ ok: boolean }>("/api/auth/request-code", {
+          method: "POST",
+          body: JSON.stringify({ email: normalizedEmail })
+        });
+      } catch (error) {
+        if (process.env.NODE_ENV !== "production") console.error("Erro ao enviar código de acesso", error);
+        setMessage(error instanceof Error ? error.message : GENERIC_AUTH_MESSAGE);
         setAuthLoading(false);
         return;
       }
@@ -1875,37 +1720,41 @@ export default function Home() {
       return;
     }
 
-    const { data, error } = await supabase.auth.verifyOtp({
-      email: normalizedEmail,
-      token: sanitizedCode,
-      type: "email"
-    });
+    let authPayload: AppSessionPayload;
+    try {
+      authPayload = await apiRequest<AppSessionPayload>("/api/auth/verify-code", {
+        method: "POST",
+        body: JSON.stringify({ email: normalizedEmail, code: sanitizedCode })
+      });
+    } catch (error) {
+      if (process.env.NODE_ENV !== "production") console.error("Erro ao validar código de acesso", error);
+      setMessage(error instanceof Error ? error.message : GENERIC_AUTH_MESSAGE);
+      setAuthLoading(false);
+      return;
+    }
 
-    if (error || !data.session) {
-      if (process.env.NODE_ENV !== "production") console.error("Erro ao validar código de acesso", describeAuthError(error));
-      setMessage(authMessage(error));
+    if (!authPayload.session || !authPayload.user) {
+      setMessage(GENERIC_AUTH_MESSAGE);
       setAuthLoading(false);
       return;
     }
 
     storeAuthConfirmation();
-    storeBiometricVerifiedThisOpen(data.session.user.email ?? normalizedEmail);
+    storeBiometricVerifiedThisOpen(authPayload.session.email);
     setOtpCode("");
     setOtpSent(false);
     setIsAuthenticated(true);
-    setCurrentUserId(data.session.user.id);
-    setCurrentUserEmail(data.session.user.email ?? normalizedEmail);
-    await loadProfile(data.session.user.id, data.session.user.email ?? normalizedEmail);
+    applyAuthorizedSession(authPayload.session.userId, authPayload.session.email, authPayload.user);
     if (canUseWebAuthn() && !window.localStorage.getItem(BIOMETRIC_CREDENTIAL_KEY) && !window.localStorage.getItem(BIOMETRIC_PROMPT_DISMISSED_KEY)) {
       setBiometricPromptOpen(true);
     }
     setMessage("Acesso autorizado.");
-    await loadData(data.session.user.email ?? normalizedEmail);
+    await loadData();
     setAuthLoading(false);
   }
 
   async function signOut() {
-    await supabase.auth.signOut();
+    await fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => null);
     clearAuthConfirmation();
     clearBiometricVerifiedThisOpen();
     setIsAuthenticated(false);
@@ -1920,6 +1769,8 @@ export default function Home() {
     setAuthorizedUsers([]);
     setChatContacts([]);
     setTravelSchedules([]);
+    setSupportContracts([]);
+    setChatConversations([]);
   }
 
   function updateRemoteAccessStatus(status: RemoteAccessStatus) {
@@ -2099,27 +1950,18 @@ export default function Home() {
     event.preventDefault();
     const displayName = profileName.trim() || displayUserName(currentUserEmail);
 
-    const { error } = await supabase
-      .from("profiles")
-      .upsert({
-        user_id: currentUserId,
-        email: currentUserEmail,
-        display_name: displayName
-      }, { onConflict: "user_id" });
-
-    if (error) {
-      setMessage(dataMessage(error.message));
-      return;
+    try {
+      const result = await appAction<AuthorizedUser>("saveProfile", { display_name: displayName });
+      if (result.data) {
+        applyAuthorizedSession(currentUserId, currentUserEmail, result.data);
+      } else {
+        setCurrentUserName(displayName);
+      }
+      setProfileModalOpen(false);
+      setMessage("Usuário atualizado com sucesso.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível atualizar o usuário.");
     }
-
-    await supabase
-      .from("authorized_users")
-      .update({ name: displayName })
-      .eq("email", currentUserEmail.toLowerCase());
-
-    setCurrentUserName(displayName);
-    setProfileModalOpen(false);
-    setMessage("Usuário atualizado com sucesso.");
   }
 
   function signaturePoint(event: PointerEvent<HTMLCanvasElement>) {
@@ -2450,38 +2292,26 @@ export default function Home() {
       remote_access: machineForm.remote_access
     };
 
-    const { data, error } = editingMachineId
-      ? await supabase.from("machines").update(payload).eq("id", editingMachineId).select().single()
-      : await supabase.from("machines").insert(payload).select().single();
-
-    if (error || !data) {
-      setMessage(dataMessage(error?.message || ""));
+    let data: Machine;
+    try {
+      const result = await appAction<Machine>("saveMachine", {
+        id: editingMachineId || null,
+        ...payload,
+        vnc_ip: machineForm.vnc_ip,
+        vnc_user: machineForm.vnc_user,
+        vnc_password: machineForm.vnc_password,
+        vnc_vm_password: machineForm.vnc_vm_password,
+        vnc_notes: machineForm.vnc_notes,
+        sinema_url: machineForm.sinema_url,
+        sinema_user: machineForm.sinema_user,
+        sinema_password: machineForm.sinema_password,
+        sinema_notes: machineForm.sinema_notes
+      });
+      if (!result.data) throw new Error("Máquina não salva.");
+      data = result.data;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível salvar a máquina.");
       return;
-    }
-
-    if (currentUserCanAccessCredentials) {
-      const credentialPayload = {
-        machine_id: data.id,
-        vnc_ip: machineForm.remote_access === "VNC" ? machineForm.vnc_ip.trim() || null : null,
-        vnc_user: machineForm.remote_access === "VNC" ? machineForm.vnc_user.trim() || null : null,
-        vnc_password: machineForm.remote_access === "VNC" ? machineForm.vnc_password.trim() || null : null,
-        vnc_vm_password: machineForm.remote_access === "VNC" ? machineForm.vnc_vm_password.trim() || null : null,
-        vnc_notes: machineForm.remote_access === "VNC" ? machineForm.vnc_notes.trim() || null : null,
-        sinema_url: machineForm.remote_access === "SINEMA" ? machineForm.sinema_url.trim() || null : null,
-        sinema_user: machineForm.remote_access === "SINEMA" ? machineForm.sinema_user.trim() || null : null,
-        sinema_password: machineForm.remote_access === "SINEMA" ? machineForm.sinema_password.trim() || null : null,
-        sinema_notes: machineForm.remote_access === "SINEMA" ? machineForm.sinema_notes.trim() || null : null,
-        updated_at: new Date().toISOString()
-      };
-
-      const { error: credentialError } = await supabase
-        .from("machine_credentials")
-        .upsert(credentialPayload, { onConflict: "machine_id" });
-
-      if (credentialError) {
-        setMessage("Máquina salva, mas as credenciais de acesso remoto não foram atualizadas.");
-        return;
-      }
     }
 
     setEditingMachineId("");
@@ -2518,16 +2348,15 @@ export default function Home() {
       return;
     }
 
-    const { data, error } = editingUserId
-      ? await supabase.from("authorized_users").update(payload).eq("id", editingUserId).select().single()
-      : await supabase.from("authorized_users").insert(payload).select().single();
-
-    if (error || !data) {
-      setMessage(dataMessage(error?.message || ""));
+    let savedUser: AuthorizedUser;
+    try {
+      const result = await appAction<AuthorizedUser>("saveUser", { id: editingUserId || null, ...payload });
+      if (!result.data) throw new Error("Usuário não salvo.");
+      savedUser = result.data;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível salvar o usuário.");
       return;
     }
-
-    const savedUser = data as AuthorizedUser;
     setEditingUserId("");
     setAuthorizedUsers((current) => {
       const withoutSaved = current.filter((user) => user.id !== savedUser.id);
@@ -2573,13 +2402,10 @@ export default function Home() {
       return;
     }
 
-    const { error } = await supabase
-      .from("chat_contacts")
-      .update(payload)
-      .eq("id", editingContact.id);
-
-    if (error) {
-      setMessage(dataMessage(error.message));
+    try {
+      await appAction<ChatContact>("saveChatContact", { id: editingContact.id, ...payload });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível atualizar o cliente.");
       return;
     }
 
@@ -2616,12 +2442,10 @@ export default function Home() {
       reason: travelForm.reason.trim() || null
     };
 
-    const { error } = editingTravelId
-      ? await supabase.from("travel_schedules").update(payload).eq("id", editingTravelId)
-      : await supabase.from("travel_schedules").insert({ ...payload, created_by: currentUserId });
-
-    if (error) {
-      setMessage(dataMessage(error.message));
+    try {
+      await appAction<TravelSchedule>("saveTravel", { id: editingTravelId || null, ...payload });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível salvar o cronograma.");
       return;
     }
 
@@ -2692,13 +2516,10 @@ export default function Home() {
       support_contract_until: normalizeFullDate(contractForm.support_contract_until) || null
     };
 
-    const { error } = editingContractId
-      ? await supabase.from("support_contracts").update(payload).eq("id", editingContractId)
-      : await supabase.from("support_contracts").insert({ ...payload, created_by: currentUserId });
-
-    if (error) {
-      console.error("Erro ao salvar contrato", error);
-      setMessage(dataMessage(error.message));
+    try {
+      await appAction<SupportContract>("saveContract", { id: editingContractId || null, ...payload });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível salvar o contrato.");
       return;
     }
 
@@ -2723,13 +2544,17 @@ export default function Home() {
 
   async function deleteSupportContract(id: string) {
     if (!currentUserCanManageContracts) {
-      setMessage("Seu usuário não tem permissão para excluir contratos.");
+      setMessage("Seu usuario nao tem permissao para excluir contratos.");
       return;
     }
     if (!confirm("Excluir este contrato?")) return;
-    const { error } = await supabase.from("support_contracts").delete().eq("id", id);
-    setMessage(error ? dataMessage(error.message) : "Contrato excluído.");
-    await loadData();
+    try {
+      await appAction("delete", { table: "support_contracts", id });
+      setMessage("Contrato excluido.");
+      await loadData();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível excluir o contrato.");
+    }
   }
 
   async function sendServiceEmail(machine: Machine, record: ServiceRecord, recipients: string[]) {
@@ -2737,24 +2562,16 @@ export default function Home() {
       return "Atendimento salvo e PDF gerado. Nenhum e-mail foi informado para envio.";
     }
 
-    const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData.session?.access_token;
-    if (!token) {
-      return "Atendimento salvo e PDF gerado, mas não foi possível enviar o e-mail: sessão não encontrada.";
-    }
-
     const pdfBase64 = await servicePdfBase64(machine, record);
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 20000);
     const response = await fetch("/api/send-service-email", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         to: recipients,
-        subject: `Relatório de atendimento - Máquina ${displayMachineCode(machine)}`,
+        subject: "Relatório de atendimento - Máquina " + displayMachineCode(machine),
         filename: servicePdfFileName(machine, record),
         pdfBase64
       }),
@@ -2763,16 +2580,16 @@ export default function Home() {
 
     const result = await response.json().catch(() => null);
     if (!response.ok) {
-      return `Atendimento salvo e PDF gerado, mas o e-mail não foi enviado. Detalhe: ${result?.error ?? "erro não informado"}`;
+      return "Atendimento salvo e PDF gerado, mas o e-mail nao foi enviado. Detalhe: " + (result?.error ?? "erro nao informado");
     }
 
-    return `Atendimento salvo, PDF gerado e e-mail enviado para ${recipients.join("; ")}.`;
+    return "Atendimento salvo, PDF gerado e e-mail enviado para " + recipients.join("; ") + ".";
   }
 
   async function saveService(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!currentUserCanEmitReports) {
-      setMessage("Seu perfil não tem permissão para emitir relatórios.");
+      setMessage("Seu perfil nao tem permissao para emitir relatorios.");
       return;
     }
 
@@ -2783,12 +2600,12 @@ export default function Home() {
     const serviceRecipients = parseEmails(String(form.get("service_recipients") ?? ""));
 
     if (!machine) {
-      setMessage("Selecione uma máquina.");
+      setMessage("Selecione uma maquina.");
       return;
     }
 
     if (editingServiceRecord && editingServiceRecord.created_by !== currentUserId) {
-      setMessage("Este atendimento só pode ser alterado pelo usuário que lançou o registro.");
+      setMessage("Este atendimento so pode ser alterado pelo usuario que lancou o registro.");
       return;
     }
 
@@ -2798,7 +2615,7 @@ export default function Home() {
     const serviceEnd = String(form.get("service_end") ?? "").trim();
     const serviceDateErrors = [
       validateFullDate(serviceDate, "Data do atendimento"),
-      validateDayMonth(serviceStart, "Início de atendimento"),
+      validateDayMonth(serviceStart, "Inicio de atendimento"),
       validateDayMonth(serviceEnd, "Fim de atendimento")
     ].filter(Boolean);
 
@@ -2807,12 +2624,9 @@ export default function Home() {
       return;
     }
 
-    const loggedTechnicianName = currentUserName || displayUserName(currentUserEmail);
     const payload = {
+      id: editingServiceRecord?.id ?? null,
       machine_id: machine.id,
-      technician_id: null,
-      technician_name: loggedTechnicianName,
-      technician_email: currentUserEmail || null,
       service_type: selectedServiceType,
       service_date: normalizeFullDate(serviceDate),
       service_start: serviceStart || null,
@@ -2827,22 +2641,16 @@ export default function Home() {
       customer_signature: selectedServiceType === "Visita técnica" ? customerSignature || null : null
     };
 
-    const { data, error } = editingServiceRecord
-      ? await supabase
-          .from("service_records")
-          .update(payload)
-          .eq("id", editingServiceRecord.id)
-          .eq("created_by", currentUserId)
-          .select()
-          .single()
-      : await supabase.from("service_records").insert({ ...payload, created_by: currentUserId }).select().single();
-
-    if (error || !data) {
-      setMessage(dataMessage(error?.message || ""));
+    let record: ServiceRecord;
+    try {
+      const result = await appAction<ServiceRecord>("saveService", payload);
+      if (!result.data) throw new Error("Atendimento nao salvo.");
+      record = result.data;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível salvar o atendimento.");
       return;
     }
 
-    const record = data as ServiceRecord;
     setSelectedMachineId(machine.id);
     setMessage(isEditingService ? "Atendimento atualizado com sucesso." : "Atendimento salvo. Gerando PDF e preparando envio por e-mail.");
     setSignatureExpanded(false);
@@ -2856,22 +2664,22 @@ export default function Home() {
     if (!isEditingService) {
       try {
         await downloadServicePdf(machine, record);
-        setMessage("Atendimento salvo. PDF gerado. Enviando e-mail aos responsáveis informados.");
+        setMessage("Atendimento salvo. PDF gerado. Enviando e-mail aos responsaveis informados.");
         setMessage(await sendServiceEmail(machine, record, serviceRecipients));
       } catch (error) {
         const detail = error instanceof DOMException && error.name === "AbortError"
           ? "tempo limite do envio atingido"
           : error instanceof Error
             ? error.message
-            : "erro não informado";
-        setMessage(`Atendimento salvo e PDF gerado, mas o e-mail não foi confirmado. Detalhe: ${detail}.`);
+            : "erro nao informado";
+        setMessage("Atendimento salvo e PDF gerado, mas o e-mail nao foi confirmado. Detalhe: " + detail + ".");
       }
     }
   }
 
   function startServiceEdit(record: ServiceRecord) {
     if (record.created_by !== currentUserId) {
-      setMessage("Este atendimento só pode ser alterado pelo usuário que lançou o registro.");
+      setMessage("Este atendimento so pode ser alterado pelo usuario que lancou o registro.");
       return;
     }
 
@@ -2881,68 +2689,56 @@ export default function Home() {
     setView("service");
   }
 
+  async function deleteByAction(table: string, id: string, successMessage: string) {
+    try {
+      await appAction("delete", { table, id });
+      setMessage(successMessage);
+      await loadData();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível excluir o registro.");
+    }
+  }
+
   async function deleteMachine(id: string) {
-    if (!confirm("Excluir esta máquina e todo o histórico?")) return;
-    const { error } = await supabase.from("machines").delete().eq("id", id);
-    setMessage(error ? dataMessage(error.message) : "Máquina excluída.");
-    await loadData();
+    if (!confirm("Excluir esta maquina e todo o historico?")) return;
+    await deleteByAction("machines", id, "Máquina excluída.");
   }
 
   async function deleteUser(id: string) {
     if (!currentUserCanManageUsers) {
-      setMessage("Seu usuário não tem permissão para excluir usuários.");
+      setMessage("Seu usuario nao tem permissao para excluir usuarios.");
       return;
     }
-    if (!confirm("Excluir este técnico?")) return;
-    const { error } = await supabase.from("authorized_users").delete().eq("id", id);
-    setMessage(error ? dataMessage(error.message) : "Técnico excluído.");
-    await loadData();
+    if (!confirm("Excluir este tecnico?")) return;
+    await deleteByAction("authorized_users", id, "Tecnico excluido.");
   }
 
   async function deleteChatContact(id: string) {
     if (!currentUserCanUseRemoteAccess) {
-      setMessage("Seu usuário não tem permissão para excluir clientes do Acesso Remoto.");
+      setMessage("Seu usuario nao tem permissao para excluir clientes do Acesso Remoto.");
       return;
     }
-    if (!confirm("Excluir este cliente do Acesso Remoto? As conversas permanecem no histórico, mas perdem o vínculo com o cadastro do cliente.")) return;
-
-    const { error } = await supabase.from("chat_contacts").delete().eq("id", id);
-    setMessage(error ? dataMessage(error.message) : "Cliente excluído.");
-    await loadData();
+    if (!confirm("Excluir este cliente do Acesso Remoto? As conversas permanecem no historico, mas perdem o vinculo com o cadastro do cliente.")) return;
+    await deleteByAction("chat_contacts", id, "Cliente excluido.");
   }
 
   async function deleteTravelSchedule(id: string) {
     if (!currentUserCanEditSchedule) {
-      setMessage("Seu usuário tem acesso apenas para visualizar o cronograma.");
+      setMessage("Seu usuario tem acesso apenas para visualizar o cronograma.");
       return;
     }
     if (!confirm("Excluir este item do cronograma?")) return;
-    const { error } = await supabase.from("travel_schedules").delete().eq("id", id);
-    setMessage(error ? dataMessage(error.message) : "Item do cronograma excluído.");
-    await loadData();
+    await deleteByAction("travel_schedules", id, "Item do cronograma excluido.");
   }
 
   async function deleteServiceRecord(record: ServiceRecord) {
     if (!currentUserHasFullAccess && record.created_by !== currentUserId) {
-      setMessage("Este atendimento só pode ser excluído pelo autor ou por usuário com acesso total.");
+      setMessage("Este atendimento so pode ser excluido pelo autor ou por usuario com acesso total.");
       return;
     }
     if (!confirm("Excluir este atendimento?")) return;
-    const { error } = await supabase.from("service_records").delete().eq("id", record.id);
-    setMessage(error ? dataMessage(error.message) : "Atendimento excluído.");
+    await deleteByAction("service_records", record.id, "Atendimento excluido.");
     setSelectedServiceRecord(null);
-    await loadData();
-  }
-
-  async function addChatSystemMessage(conversationId: string, body: string) {
-    await supabase.from("chat_messages").insert({
-      conversation_id: conversationId,
-      direction: "system",
-      body,
-      sender_email: currentUserEmail,
-      sender_name: currentUserName || displayUserName(currentUserEmail),
-      created_by: currentUserId
-    });
   }
 
   async function assignChat(conversation: ChatConversation, userEmail = currentUserEmail) {
@@ -2950,86 +2746,52 @@ export default function Home() {
     const assigningToSelf = normalizedTargetEmail === currentUserEmail.toLowerCase();
 
     if (assigningToSelf && remoteAccessStatus !== "Online") {
-      setMessage("Seu status precisa estar Online para assumir uma conversa sem atribuição.");
+      setMessage("Seu status precisa estar Online para assumir uma conversa sem atribuicao.");
       return;
     }
 
     if (!assigningToSelf && !availableTransferUsers.some((user) => user.email.toLowerCase() === normalizedTargetEmail)) {
-      setMessage("Transferência permitida somente para usuários Online.");
+      setMessage("Transferencia permitida somente para usuarios Online.");
       return;
     }
 
     const target = authorizedUsers.find((user) => user.email.toLowerCase() === userEmail.toLowerCase());
     const assignedName = target?.name || displayUserName(userEmail);
-    const { error } = await supabase
-      .from("chat_conversations")
-      .update({
-        status: "assigned",
-        assigned_to: assigningToSelf ? currentUserId : null,
-        assigned_to_email: normalizedTargetEmail,
-        assigned_to_name: assignedName,
-        updated_at: new Date().toISOString()
-      })
-      .eq("id", conversation.id);
-
-    if (error) {
-      setMessage(dataMessage(error.message));
-      return;
+    try {
+      await appAction("assignChat", { conversationId: conversation.id, userEmail: normalizedTargetEmail });
+      setMessage("Conversa atribuida para " + assignedName + ".");
+      setTransferDialogOpen(false);
+      await loadData();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível atribuir a conversa.");
     }
-
-    await addChatSystemMessage(conversation.id, `Conversa atribuída para ${assignedName}.`);
-    setMessage(`Conversa atribuída para ${assignedName}.`);
-    setTransferDialogOpen(false);
-    await loadData();
   }
 
   async function closeChat(conversation: ChatConversation) {
     if (!confirm("Encerrar esta conversa?")) return;
-
-    const now = new Date().toISOString();
-    const { error } = await supabase
-      .from("chat_conversations")
-      .update({
-        status: "closed",
-        closed_by: currentUserId,
-        closed_at: now,
-        updated_at: now
-      })
-      .eq("id", conversation.id);
-
-    if (error) {
-      setMessage(dataMessage(error.message));
-      return;
+    try {
+      await appAction("closeChat", { conversationId: conversation.id });
+      setMessage("Conversa encerrada.");
+      await loadData();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível encerrar a conversa.");
     }
-
-    await addChatSystemMessage(conversation.id, "Conversa encerrada.");
-    setMessage("Conversa encerrada.");
-    await loadData();
   }
 
   async function sendChatReply(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedChat) return;
     if (!canReplySelectedChat) {
-      setMessage("Seu status atual não permite responder esta conversa.");
+      setMessage("Seu status atual nao permite responder esta conversa.");
       return;
     }
     const body = chatReply.trim();
     if (!body) return;
 
-    const { data: sessionData } = await supabase.auth.getSession();
-    const accessToken = sessionData.session?.access_token;
-    if (!accessToken) {
-      setMessage("Sessão expirada. Entre novamente para responder.");
-      return;
-    }
-
     const response = await fetch("/api/whatsapp/send-message", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json"
-      },
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ conversationId: selectedChat.id, body })
     });
 
@@ -3040,22 +2802,15 @@ export default function Home() {
     }
 
     setChatReply("");
-    setMessage(result?.deliveryMode === "whatsapp" ? "Mensagem enviada pelo WhatsApp." : "Mensagem salva em modo de validação. Configure a API do WhatsApp para envio externo.");
+    setMessage(result?.deliveryMode === "whatsapp" ? "Mensagem enviada pelo WhatsApp." : "Mensagem salva em modo de validacao. Configure a API do WhatsApp para envio externo.");
     await loadData();
   }
 
   async function openChatMedia(message: ChatMessage) {
     if (!message.media_id) return;
 
-    const { data: sessionData } = await supabase.auth.getSession();
-    const accessToken = sessionData.session?.access_token;
-    if (!accessToken) {
-      setMessage("Sessão expirada. Entre novamente para abrir a mídia.");
-      return;
-    }
-
-    const response = await fetch(`/api/whatsapp/media/${encodeURIComponent(message.media_id)}`, {
-      headers: { Authorization: `Bearer ${accessToken}` }
+    const response = await fetch("/api/whatsapp/media/" + encodeURIComponent(message.media_id), {
+      credentials: "include"
     });
 
     if (!response.ok) {
@@ -3069,20 +2824,7 @@ export default function Home() {
     window.open(url, "_blank", "noopener,noreferrer");
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
-
   if (!sessionReady) return <main className="centered">Carregando...</main>;
-
-  if (!isSupabaseConfigured) {
-    return (
-      <main className="login-page">
-        <section className="login-card">
-          <Image src="/tomasoni-logo-transparent.png" alt="Tomasoni" width={300} height={80} priority />
-          <h1>Configuração pendente</h1>
-          <p>Preencha `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` no arquivo `.env.local` ou nas variáveis de ambiente da Vercel.</p>
-        </section>
-      </main>
-    );
-  }
 
   if (biometricRequired) {
     return (

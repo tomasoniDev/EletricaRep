@@ -3,8 +3,6 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   async headers() {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-    const supabaseHost = supabaseUrl ? new URL(supabaseUrl).host : "*.supabase.co";
     const csp = [
       "default-src 'self'",
       "base-uri 'self'",
@@ -13,7 +11,7 @@ const nextConfig: NextConfig = {
       "script-src 'self' 'unsafe-inline' https://unpkg.com",
       "style-src 'self' 'unsafe-inline' https://unpkg.com",
       "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://unpkg.com",
-      `connect-src 'self' https://${supabaseHost} wss://${supabaseHost} https://servicodados.ibge.gov.br https://nominatim.openstreetmap.org`,
+      "connect-src 'self' https://servicodados.ibge.gov.br https://nominatim.openstreetmap.org",
       "font-src 'self' data:",
       "form-action 'self'",
       "upgrade-insecure-requests"
