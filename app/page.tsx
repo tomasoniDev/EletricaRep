@@ -3726,7 +3726,7 @@ export default function Home() {
               <h2>{editingServiceRecord ? "Editar atendimento" : "Registrar atendimento"}</h2>
             </div>
             <div className="fields-grid">
-              <label>Máquina<input name="machine_lookup" list="service-machine-suggestions" required placeholder="Código, cliente ou modelo" defaultValue={serviceMachineLookupLabel(editingServiceRecord ? machines.find((machine) => machine.id === editingServiceRecord.machine_id) : serviceMachine)} /></label>
+              <label>Máquina<input name="machine_lookup" list="service-machine-suggestions" required placeholder="Código, cliente ou modelo" defaultValue={editingServiceRecord ? serviceMachineLookupLabel(machines.find((machine) => machine.id === editingServiceRecord.machine_id)) : ""} /></label>
               <datalist id="service-machine-suggestions">{machines.map((machine) => <option key={machine.id} value={serviceMachineLookupLabel(machine)} />)}</datalist>
               <label>Equipamento<input name="equipment" placeholder="CLP, IHM, servo, inversor" defaultValue={editingServiceRecord?.equipment ?? ""} /></label>
               <label>Técnico responsável<input value={currentUserName || displayUserName(currentUserEmail)} readOnly /></label>
