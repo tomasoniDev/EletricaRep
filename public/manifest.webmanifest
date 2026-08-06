@@ -1,9 +1,11 @@
 ﻿{
   "name": "Assistência Tomasoni",
-  "short_name": "Tomasoni Assist.",
+  "short_name": "Assistência",
+  "id": "/",
   "description": "Aplicação corporativa para registros de atendimento técnico.",
   "start_url": "/",
   "scope": "/",
+  "display_override": ["standalone", "window-controls-overlay", "minimal-ui"],
   "display": "standalone",
   "background_color": "#f7f8fa",
   "theme_color": "#1268d8",

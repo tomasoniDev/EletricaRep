@@ -6,6 +6,11 @@ export const metadata: Metadata = {
   applicationName: "Assistência Tomasoni",
   title: "Assistência Tomasoni",
   description: "Aplicação corporativa para registros de atendimento técnico.",
+  appleWebApp: {
+    capable: true,
+    title: "Assistência Tomasoni",
+    statusBarStyle: "default"
+  },
   robots: {
     index: false,
     follow: false,
@@ -20,7 +25,10 @@ export const metadata: Metadata = {
     }
   },
   other: {
-    robots: "noindex, nofollow, noarchive, nosnippet, noimageindex"
+    robots: "noindex, nofollow, noarchive, nosnippet, noimageindex",
+    "mobile-web-app-capable": "yes",
+    "apple-mobile-web-app-capable": "yes",
+    "application-name": "Assistência Tomasoni"
   },
   manifest: "/manifest.webmanifest",
   icons: {

@@ -14,11 +14,19 @@ const nextConfig: NextConfig = {
       "frame-src 'self' blob:",
       "connect-src 'self' https://servicodados.ibge.gov.br https://nominatim.openstreetmap.org",
       "font-src 'self' data:",
+      "worker-src 'self'",
       "form-action 'self'",
       "upgrade-insecure-requests"
     ].join("; ");
 
     return [
+      {
+        source: "/sw.js",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Service-Worker-Allowed", value: "/" }
+        ]
+      },
       {
         source: "/(.*)",
         headers: [

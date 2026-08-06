@@ -1196,6 +1196,13 @@ export default function Home() {
   }, [theme]);
 
   useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.register("/sw.js").catch((error) => {
+      if (process.env.NODE_ENV !== "production") console.error("Erro ao registrar service worker", error);
+    });
+  }, []);
+
+  useEffect(() => {
     try {
       const storedEmails = JSON.parse(window.localStorage.getItem(SERVICE_EMAIL_SUGGESTIONS_KEY) ?? "[]");
       if (Array.isArray(storedEmails)) {
