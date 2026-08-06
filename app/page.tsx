@@ -44,6 +44,7 @@ type LeafletMap = {
   removeLayer: (layer: LeafletLayerGroup) => LeafletMap;
   on: (event: string, handler: () => void) => LeafletMap;
   off: (event: string, handler: () => void) => LeafletMap;
+  invalidateSize: () => LeafletMap;
   remove: () => void;
   setView: (center: [number, number], zoom: number) => LeafletMap;
 };
@@ -385,6 +386,37 @@ function displayMachineCode(machine?: Pick<Machine, "code" | "model" | "client">
 
 function normalizeLookup(value?: string | null) {
   return value?.trim().toUpperCase() ?? "";
+}
+
+function serviceMachineLookupLabel(machine?: Machine | null) {
+  if (!machine) return "";
+  const code = displayMachineCode(machine);
+  const details = [machine.client, machine.model]
+    .map((item) => item?.trim())
+    .filter(Boolean)
+    .join(" - ");
+  return details ? `${code} - ${details}` : code;
+}
+
+function normalizeLookupText(value?: string | null) {
+  return value?.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() ?? "";
+}
+
+function findMachineByLookup(machines: Machine[], value: string) {
+  const target = normalizeLookupText(value);
+  if (!target) return null;
+
+  return machines.find((machine) => {
+    const candidates = [
+      machine.id,
+      machine.code,
+      displayMachineCode(machine),
+      serviceMachineLookupLabel(machine),
+      machine.code && machine.client ? `${machine.code} - ${machine.client}` : "",
+      machine.code && machine.model ? `${machine.code} - ${machine.model}` : ""
+    ];
+    return candidates.some((candidate) => normalizeLookupText(candidate) === target);
+  }) ?? null;
 }
 
 function contractMatchesMachine(contract: SupportContract, machine: Machine) {
@@ -1590,6 +1622,9 @@ export default function Home() {
           scrollWheelZoom: true,
           zoomControl: true
         }).setView([-14.235, -51.9253], 4);
+        window.setTimeout(() => {
+          if (!cancelled) map.invalidateSize();
+        }, 120);
 
         leaflet.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
           attribution: "&copy; OpenStreetMap"
@@ -1633,7 +1668,7 @@ export default function Home() {
         };
 
         Promise.all(overviewData.geoCities.map(async (item) => {
-          const center = await geocodeCity(item.city, item.state);
+          const center = await geocodeCity(item.city, item.state).catch(() => null);
           if (!center || cancelled) return;
           const machineList = item.machines
             .slice(0, 8)
@@ -2337,8 +2372,8 @@ export default function Home() {
     const normalizedMechanicalList = machineForm.mechanical_list.trim().toUpperCase();
     const normalizedSoftwareCode = machineForm.software_code.trim().toUpperCase();
     const validationErrors = [
-      validateCodePattern(normalizedCode, /^T665-\d{3,5}$/, "Código da máquina"),
-      validateCodePattern(normalizedSoftwareCode, /^T665-\d{3,5}$/, "Código do software"),
+      validateCodePattern(normalizedCode, /^T665-\d{4}$/, "Código da máquina"),
+      validateCodePattern(normalizedSoftwareCode, /^T665-\d{4}$/, "Código do software"),
       validateCodePattern(normalizedSerial, /^(500-\d{3}|500-\d{3}\/\d{2})$/, "Número de série"),
       validateCodePattern(normalizedMechanicalList, /^(500-\d{3}|T-0\d{3})$/, "Lista mecânica"),
       validateMonthYear(machineForm.manufacture_month, "Fabricação"),
@@ -2706,13 +2741,13 @@ export default function Home() {
     const isEditingService = Boolean(editingServiceRecord);
     const formElement = event.currentTarget;
     const form = new FormData(event.currentTarget);
-    const machine = machines.find((item) => item.id === String(form.get("machine_id")));
+    const machine = findMachineByLookup(machines, String(form.get("machine_lookup") ?? ""));
     const serviceRecipients = parseEmails(serviceRecipientsInput || String(form.get("service_recipients") ?? ""));
     const previewRecipients = isEditingService ? editingPreviewRecipients : serviceRecipients;
     const shouldOpenPreview = !isEditingService || editingPreviewRecipients !== null;
 
     if (!machine) {
-      setMessage("Selecione uma maquina.");
+      setMessage("Informe uma maquina cadastrada usando o codigo exibido nas sugestoes.");
       return;
     }
 
@@ -3691,7 +3726,8 @@ export default function Home() {
               <h2>{editingServiceRecord ? "Editar atendimento" : "Registrar atendimento"}</h2>
             </div>
             <div className="fields-grid">
-              <label>Máquina<select name="machine_id" required defaultValue={editingServiceRecord?.machine_id ?? serviceMachine?.id}>{machines.map((machine) => <option key={machine.id} value={machine.id}>{displayMachineCode(machine)}</option>)}</select></label>
+              <label>Máquina<input name="machine_lookup" list="service-machine-suggestions" required placeholder="Código, cliente ou modelo" defaultValue={serviceMachineLookupLabel(editingServiceRecord ? machines.find((machine) => machine.id === editingServiceRecord.machine_id) : serviceMachine)} /></label>
+              <datalist id="service-machine-suggestions">{machines.map((machine) => <option key={machine.id} value={serviceMachineLookupLabel(machine)} />)}</datalist>
               <label>Equipamento<input name="equipment" placeholder="CLP, IHM, servo, inversor" defaultValue={editingServiceRecord?.equipment ?? ""} /></label>
               <label>Técnico responsável<input value={currentUserName || displayUserName(currentUserEmail)} readOnly /></label>
               <label>Data<input name="service_date" required placeholder="dd/mm/aaaa" maxLength={10} defaultValue={formatDate(editingServiceRecord?.service_date ?? new Date().toISOString().slice(0, 10))} onChange={(event) => { event.currentTarget.value = formatFullDateInput(event.currentTarget.value); }} /></label>
@@ -3800,7 +3836,7 @@ export default function Home() {
                   <section className="form-card">
                     <h3>Dados da máquina</h3>
                     <div className="fields-grid">
-                      <label>Código<input disabled={machineMainFieldsDisabled} value={machineForm.code} onChange={(event) => updateMachineForm("code", event.target.value)} placeholder="T665-xxx" maxLength={10} /></label>
+                      <label>Código<input disabled={machineMainFieldsDisabled} value={machineForm.code} onChange={(event) => updateMachineForm("code", event.target.value)} placeholder="T665-xxxx" maxLength={9} /></label>
                       <label>Modelo<input disabled={machineMainFieldsDisabled} value={machineForm.model} onChange={(event) => updateMachineForm("model", event.target.value)} placeholder="Onduladeira, Dryend, ICV..." maxLength={120} /></label>
                       <label className="wide">Descrição<input disabled={machineMainFieldsDisabled} value={machineForm.description} onChange={(event) => updateMachineForm("description", event.target.value)} placeholder="Descrição curta do modelo da máquina" maxLength={160} /></label>
                       <label>Cliente<input disabled={machineMainFieldsDisabled} list="client-suggestions" value={machineForm.client} onChange={(event) => updateMachineForm("client", event.target.value)} placeholder="Nome da empresa" maxLength={160} /></label>
@@ -3808,7 +3844,7 @@ export default function Home() {
                       <label>Localização<input disabled={machineMainFieldsDisabled} list="city-suggestions" value={machineForm.unit_city} onChange={(event) => updateMachineForm("unit_city", event.target.value)} placeholder="Cidade - UF ou Cidade - PAIS" maxLength={160} /></label>
                       <datalist id="city-suggestions">{citySuggestions.map((city) => <option key={city} value={city} />)}</datalist>
                       <label>Mecânica<input disabled={machineMainFieldsDisabled} value={machineForm.mechanical_list} onChange={(event) => updateMachineForm("mechanical_list", event.target.value)} placeholder="500-xxx ou T-0xxx" maxLength={10} /></label>
-                      <label>Código do software<input disabled={machineMainFieldsDisabled} value={machineForm.software_code} onChange={(event) => updateMachineForm("software_code", event.target.value)} placeholder="T665-xxx" maxLength={10} /></label>
+                      <label>Código do software<input disabled={machineMainFieldsDisabled} value={machineForm.software_code} onChange={(event) => updateMachineForm("software_code", event.target.value)} placeholder="T665-xxxx" maxLength={9} /></label>
                       <label>VM<select disabled={machineMainFieldsDisabled} value={machineForm.vm} onChange={(event) => updateMachineForm("vm", event.target.value)}>
                         <option value="">Selecione</option>
                         {machineForm.vm && !VM_OPTIONS.includes(machineForm.vm) && <option value={machineForm.vm}>{machineForm.vm}</option>}
