@@ -109,9 +109,17 @@ export async function POST(request: Request) {
         credential_access_allowed: bool(payload.credential_access_allowed)
       };
       const editingId = id(payload.id);
-      const result = editingId
-        ? await admin.from("authorized_users").update(userPayload).eq("id", editingId).select().single()
-        : await admin.from("authorized_users").insert(userPayload).select().single();
+      const result = await admin
+        .rpc("save_authorized_user_as_operator", {
+          input_operator_email: session.email,
+          input_id: editingId,
+          input_name: userPayload.name,
+          input_email: userPayload.email,
+          input_role: userPayload.role,
+          input_remote_access_allowed: userPayload.remote_access_allowed,
+          input_credential_access_allowed: userPayload.credential_access_allowed
+        })
+        .single();
       if (result.error || !result.data) return jsonError(result.error?.message ?? "Usuário não salvo.", 500);
       return NextResponse.json({ data: result.data });
     }
