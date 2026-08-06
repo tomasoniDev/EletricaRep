@@ -132,6 +132,7 @@ const BIOMETRIC_PROMPT_DISMISSED_KEY = "tomasoni-servicecore-biometric-dismissed
 const BIOMETRIC_SESSION_VERIFIED_KEY = "tomasoni-servicecore-biometric-session-verified";
 const THEME_KEY = "tomasoni-servicecore-theme";
 const REMOTE_ACCESS_STATUS_KEY = "tomasoni-servicecore-remote-access-status";
+const SERVICE_EMAIL_SUGGESTIONS_KEY = "tomasoni-servicecore-service-email-suggestions";
 const REMOTE_ACCESS_OPTIONS: RemoteAccess[] = ["Sem acesso remoto", "SINEMA", "VNC"];
 const SERVICE_TYPE_OPTIONS: ServiceType[] = ["Acesso remoto", "Visita técnica"];
 const CONTRACT_TYPE_OPTIONS: ContractType[] = ["Seg-Sex", "Seg-Sab", "Garantia"];
@@ -1171,6 +1172,9 @@ export default function Home() {
   const [editingPreviewRecipients, setEditingPreviewRecipients] = useState<string[] | null>(null);
   const [machineForm, setMachineForm] = useState<MachineFormState>(EMPTY_MACHINE_FORM);
   const [serviceType, setServiceType] = useState<ServiceType>("Acesso remoto");
+  const [serviceRecipientsInput, setServiceRecipientsInput] = useState("");
+  const [serviceRecipientSuggestionsOpen, setServiceRecipientSuggestionsOpen] = useState(false);
+  const [savedServiceEmails, setSavedServiceEmails] = useState<string[]>([]);
   const [customerSignature, setCustomerSignature] = useState("");
   const [isSigning, setIsSigning] = useState(false);
   const [signatureExpanded, setSignatureExpanded] = useState(false);
@@ -1190,6 +1194,17 @@ export default function Home() {
     document.documentElement.classList.toggle("dark", theme === "dark");
     window.localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
+
+  useEffect(() => {
+    try {
+      const storedEmails = JSON.parse(window.localStorage.getItem(SERVICE_EMAIL_SUGGESTIONS_KEY) ?? "[]");
+      if (Array.isArray(storedEmails)) {
+        setSavedServiceEmails(storedEmails.filter((email): email is string => typeof email === "string"));
+      }
+    } catch {
+      setSavedServiceEmails([]);
+    }
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -1312,6 +1327,12 @@ export default function Home() {
   const selectedMachine = machines.find((machine) => machine.id === selectedMachineId);
   const serviceMachine = selectedMachine ?? machines[0];
   const previewMachine = servicePreview ? machines.find((machine) => machine.id === servicePreview.machineId) : null;
+  const activeServiceEmailToken = serviceRecipientsInput.split(/[;,\n]/).at(-1)?.trim().toLowerCase() ?? "";
+  const serviceEmailSuggestions = activeServiceEmailToken.length >= 2
+    ? savedServiceEmails
+        .filter((email) => email.includes(activeServiceEmailToken) && !parseEmails(serviceRecipientsInput).map((item) => item.toLowerCase()).includes(email.toLowerCase()))
+        .slice(0, 5)
+    : [];
   const editingMachine = machines.find((machine) => machine.id === editingMachineId);
   const selectedChat = chatConversations.find((conversation) => conversation.id === selectedChatId) ?? chatConversations[0];
   const showRemoteAccess = machineHasRemoteAccess(machineForm.remote_access);
@@ -2069,6 +2090,33 @@ export default function Home() {
     }
   }
 
+  function rememberServiceEmails(emails: string[]) {
+    const normalizedEmails = emails
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean);
+    if (!normalizedEmails.length) return;
+
+    setSavedServiceEmails((current) => {
+      const currentEmails = current.map((email) => email.toLowerCase());
+      const next = Array.from(new Set([...normalizedEmails, ...currentEmails])).slice(0, 80);
+      window.localStorage.setItem(SERVICE_EMAIL_SUGGESTIONS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  function selectServiceEmailSuggestion(email: string) {
+    const parts = serviceRecipientsInput.split(/([;,\n])/);
+    let lastTextIndex = parts.length - 1;
+    while (lastTextIndex >= 0 && /[;,\n]/.test(parts[lastTextIndex])) lastTextIndex -= 1;
+    if (lastTextIndex < 0) {
+      setServiceRecipientsInput(`${email}; `);
+    } else {
+      parts[lastTextIndex] = ` ${email}`;
+      setServiceRecipientsInput(`${parts.join("").replace(/^\s+/, "")}; `);
+    }
+    setServiceRecipientSuggestionsOpen(false);
+  }
+
   function startNewService() {
     if (!currentUserCanEmitReports) {
       setMessage("Seu perfil não tem permissão para emitir relatórios.");
@@ -2078,6 +2126,7 @@ export default function Home() {
     setSignatureExpanded(false);
     setEditingServiceRecord(null);
     setEditingPreviewRecipients(null);
+    setServiceRecipientsInput("");
     setSelectedServiceRecord(null);
     updateServiceType("Acesso remoto");
     setView("service");
@@ -2605,6 +2654,7 @@ export default function Home() {
       return "Atendimento salvo e PDF gerado, mas o e-mail nao foi enviado. Detalhe: " + (result?.error ?? "erro nao informado");
     }
 
+    rememberServiceEmails(recipients);
     return "Atendimento salvo, PDF gerado e e-mail enviado para " + recipients.join("; ") + ".";
   }
 
@@ -2640,7 +2690,7 @@ export default function Home() {
     const formElement = event.currentTarget;
     const form = new FormData(event.currentTarget);
     const machine = machines.find((item) => item.id === String(form.get("machine_id")));
-    const serviceRecipients = parseEmails(String(form.get("service_recipients") ?? ""));
+    const serviceRecipients = parseEmails(serviceRecipientsInput || String(form.get("service_recipients") ?? ""));
     const previewRecipients = isEditingService ? editingPreviewRecipients : serviceRecipients;
     const shouldOpenPreview = !isEditingService || editingPreviewRecipients !== null;
 
@@ -2703,6 +2753,7 @@ export default function Home() {
     setEditingPreviewRecipients(null);
     setSelectedServiceRecord(null);
     formElement.reset();
+    setServiceRecipientsInput("");
     updateServiceType("Acesso remoto");
     await loadData();
     setView("machineDetail");
@@ -3632,7 +3683,32 @@ export default function Home() {
               <label>Tipo de atendimento<select name="service_type" value={serviceType} onChange={(event) => updateServiceType(event.target.value as ServiceType)}>
                 {SERVICE_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
               </select></label>
-              {!editingServiceRecord && <label className="wide">E-mails para envio<textarea name="service_recipients" rows={2} placeholder="um@email.com; outro@email.com" /></label>}
+              {!editingServiceRecord && (
+                <label className="wide email-suggestion-field">
+                  E-mails para envio
+                  <textarea
+                    name="service_recipients"
+                    rows={2}
+                    placeholder="um@email.com; outro@email.com"
+                    value={serviceRecipientsInput}
+                    onChange={(event) => {
+                      setServiceRecipientsInput(event.target.value);
+                      setServiceRecipientSuggestionsOpen(true);
+                    }}
+                    onFocus={() => setServiceRecipientSuggestionsOpen(true)}
+                    onBlur={() => window.setTimeout(() => setServiceRecipientSuggestionsOpen(false), 120)}
+                  />
+                  {serviceRecipientSuggestionsOpen && serviceEmailSuggestions.length > 0 && (
+                    <div className="email-suggestions" role="listbox" aria-label="Sugestões de e-mail">
+                      {serviceEmailSuggestions.map((email) => (
+                        <button key={email} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => selectServiceEmailSuggestion(email)}>
+                          {email}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </label>
+              )}
               {serviceType === "Visita técnica" && (
                 <label>Cliente / representante<input name="customer_name" placeholder="Nome de quem assinou" defaultValue={editingServiceRecord?.customer_name ?? ""} /></label>
               )}

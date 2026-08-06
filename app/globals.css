@@ -2060,6 +2060,48 @@ tbody tr:hover { background: var(--surface-2); }
   background: #fff;
 }
 
+.email-suggestion-field {
+  position: relative;
+}
+
+.email-suggestions {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  display: grid;
+  width: min(520px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 14px 36px rgba(20, 35, 55, 0.16);
+}
+
+.email-suggestions button {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.email-suggestions button:last-child {
+  border-bottom: 0;
+}
+
+.email-suggestions button:hover,
+.email-suggestions button:focus-visible {
+  background: var(--surface-2);
+  color: var(--primary);
+}
+
 .record-details {
   display: grid;
   gap: 14px;
