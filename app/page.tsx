@@ -1168,6 +1168,7 @@ export default function Home() {
   const [servicePreview, setServicePreview] = useState<ServicePreviewState | null>(null);
   const [servicePreviewSending, setServicePreviewSending] = useState(false);
   const [editingServiceRecord, setEditingServiceRecord] = useState<ServiceRecord | null>(null);
+  const [editingPreviewRecipients, setEditingPreviewRecipients] = useState<string[] | null>(null);
   const [machineForm, setMachineForm] = useState<MachineFormState>(EMPTY_MACHINE_FORM);
   const [serviceType, setServiceType] = useState<ServiceType>("Acesso remoto");
   const [customerSignature, setCustomerSignature] = useState("");
@@ -2076,6 +2077,7 @@ export default function Home() {
 
     setSignatureExpanded(false);
     setEditingServiceRecord(null);
+    setEditingPreviewRecipients(null);
     setSelectedServiceRecord(null);
     updateServiceType("Acesso remoto");
     setView("service");
@@ -2086,8 +2088,9 @@ export default function Home() {
   }
 
   function editServiceFromPreview(record: ServiceRecord) {
+    const recipients = servicePreview?.recipients ?? [];
     closeServicePreview();
-    startServiceEdit(record);
+    startServiceEdit(record, recipients);
   }
 
   function showFullHistory() {
@@ -2609,7 +2612,7 @@ export default function Home() {
     if (!servicePreview || !previewMachine || servicePreviewSending) return;
 
     setServicePreviewSending(true);
-    setMessage("Enviando e-mail com o relatÃ³rio em anexo.");
+    setMessage("Enviando e-mail com o relatorio em anexo.");
     try {
       const resultMessage = await sendServiceEmail(previewMachine, servicePreview.record, servicePreview.recipients);
       setMessage(resultMessage);
@@ -2638,6 +2641,8 @@ export default function Home() {
     const form = new FormData(event.currentTarget);
     const machine = machines.find((item) => item.id === String(form.get("machine_id")));
     const serviceRecipients = parseEmails(String(form.get("service_recipients") ?? ""));
+    const previewRecipients = isEditingService ? editingPreviewRecipients : serviceRecipients;
+    const shouldOpenPreview = !isEditingService || editingPreviewRecipients !== null;
 
     if (!machine) {
       setMessage("Selecione uma maquina.");
@@ -2692,19 +2697,20 @@ export default function Home() {
     }
 
     setSelectedMachineId(machine.id);
-    setMessage(isEditingService ? "Atendimento atualizado com sucesso." : "Atendimento salvo. Preparando previa do PDF.");
+    setMessage(shouldOpenPreview ? "Atendimento salvo. Preparando previa do PDF." : "Atendimento atualizado com sucesso.");
     setSignatureExpanded(false);
     setEditingServiceRecord(null);
+    setEditingPreviewRecipients(null);
     setSelectedServiceRecord(null);
     formElement.reset();
     updateServiceType("Acesso remoto");
     await loadData();
     setView("machineDetail");
 
-    if (!isEditingService) {
+    if (shouldOpenPreview) {
       try {
         const pdfUrl = await servicePdfPreviewUrl(machine, record);
-        setServicePreview({ machineId: machine.id, record, recipients: serviceRecipients, pdfUrl });
+        setServicePreview({ machineId: machine.id, record, recipients: previewRecipients ?? [], pdfUrl });
         setMessage("Atendimento salvo. Revise a previa do PDF antes do envio.");
       } catch (error) {
         const detail = error instanceof Error ? error.message : "erro nao informado";
@@ -2713,7 +2719,7 @@ export default function Home() {
     }
   }
 
-  function startServiceEdit(record: ServiceRecord) {
+  function startServiceEdit(record: ServiceRecord, preservedRecipients: string[] | null = null) {
     if (record.created_by !== currentUserId) {
       setMessage("Este atendimento so pode ser alterado pelo usuario que lancou o registro.");
       return;
@@ -2722,6 +2728,7 @@ export default function Home() {
     setSelectedMachineId(record.machine_id);
     setSelectedServiceRecord(null);
     setEditingServiceRecord(record);
+    setEditingPreviewRecipients(preservedRecipients);
     setView("service");
   }
 
@@ -3946,7 +3953,7 @@ export default function Home() {
                 <span><strong>Arquivo:</strong> {servicePdfFileName(previewMachine, servicePreview.record)}</span>
                 <span><strong>Envio:</strong> {servicePreview.recipients.length ? servicePreview.recipients.join("; ") : "Nenhum e-mail informado"}</span>
               </div>
-              <iframe className="pdf-preview-frame" src={servicePreview.pdfUrl} title="Pr&eacute;via do relat&oacute;rio em PDF" />
+              <iframe className="pdf-preview-frame" src={`${servicePreview.pdfUrl}#toolbar=0&navpanes=0&scrollbar=1`} title="Pr&eacute;via do relat&oacute;rio em PDF" />
               <div className="modal-actions">
                 <button className="button ghost" type="button" onClick={() => editServiceFromPreview(servicePreview.record)}>Editar</button>
                 <button className="button ghost" type="button" onClick={() => downloadServicePdf(previewMachine, servicePreview.record)}>Baixar PDF</button>
