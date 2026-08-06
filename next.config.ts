@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
       "script-src 'self' 'unsafe-inline' https://unpkg.com",
       "style-src 'self' 'unsafe-inline' https://unpkg.com",
       "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://unpkg.com",
+      "frame-src 'self' blob:",
       "connect-src 'self' https://servicodados.ibge.gov.br https://nominatim.openstreetmap.org",
       "font-src 'self' data:",
       "form-action 'self'",

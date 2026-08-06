@@ -2,7 +2,7 @@
 
 import { FormEvent, MouseEvent as ReactMouseEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { downloadServicePdf, servicePdfBase64, servicePdfFileName } from "@/lib/pdf";
+import { downloadServicePdf, servicePdfBase64, servicePdfFileName, servicePdfPreviewUrl } from "@/lib/pdf";
 import type { AuthorizedUser, ChatContact, ChatConversation, ChatMessage, Machine, ServiceRecord, SupportContract, TravelSchedule, UserRole } from "@/lib/types";
 
 type View = "home" | "overview" | "machineDetail" | "service" | "registry" | "schedule" | "chat";
@@ -21,6 +21,7 @@ type ContractStatus = "Ativo" | "Inativo" | "Em negociação";
 type ActionMenuPosition = { top: number; right: number };
 type RemoteAccessStatus = "Online" | "Offline" | "Ocupado";
 type OnlineTechnician = { email: string; name: string; role?: string | null; status?: RemoteAccessStatus; onlineAt?: string };
+type ServicePreviewState = { machineId: string; record: ServiceRecord; recipients: string[]; pdfUrl: string };
 type AppSessionPayload = {
   session?: { userId: string; email: string; expiresAt?: number } | null;
   user?: AuthorizedUser | null;
@@ -1164,6 +1165,8 @@ export default function Home() {
   const [completedTravelSort, setCompletedTravelSort] = useState<{ key: TravelSortKey; direction: SortDirection }>({ key: "updated_at", direction: "desc" });
   const [citySuggestions, setCitySuggestions] = useState<string[]>([]);
   const [selectedServiceRecord, setSelectedServiceRecord] = useState<ServiceRecord | null>(null);
+  const [servicePreview, setServicePreview] = useState<ServicePreviewState | null>(null);
+  const [servicePreviewSending, setServicePreviewSending] = useState(false);
   const [editingServiceRecord, setEditingServiceRecord] = useState<ServiceRecord | null>(null);
   const [machineForm, setMachineForm] = useState<MachineFormState>(EMPTY_MACHINE_FORM);
   const [serviceType, setServiceType] = useState<ServiceType>("Acesso remoto");
@@ -1186,6 +1189,12 @@ export default function Home() {
     document.documentElement.classList.toggle("dark", theme === "dark");
     window.localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
+
+  useEffect(() => {
+    return () => {
+      if (servicePreview?.pdfUrl) URL.revokeObjectURL(servicePreview.pdfUrl);
+    };
+  }, [servicePreview?.pdfUrl]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1301,6 +1310,7 @@ export default function Home() {
 
   const selectedMachine = machines.find((machine) => machine.id === selectedMachineId);
   const serviceMachine = selectedMachine ?? machines[0];
+  const previewMachine = servicePreview ? machines.find((machine) => machine.id === servicePreview.machineId) : null;
   const editingMachine = machines.find((machine) => machine.id === editingMachineId);
   const selectedChat = chatConversations.find((conversation) => conversation.id === selectedChatId) ?? chatConversations[0];
   const showRemoteAccess = machineHasRemoteAccess(machineForm.remote_access);
@@ -2071,6 +2081,15 @@ export default function Home() {
     setView("service");
   }
 
+  function closeServicePreview() {
+    setServicePreview(null);
+  }
+
+  function editServiceFromPreview(record: ServiceRecord) {
+    closeServicePreview();
+    startServiceEdit(record);
+  }
+
   function showFullHistory() {
     setHistoryFilter("");
     window.requestAnimationFrame(() => {
@@ -2586,6 +2605,27 @@ export default function Home() {
     return "Atendimento salvo, PDF gerado e e-mail enviado para " + recipients.join("; ") + ".";
   }
 
+  async function sendPreviewServiceEmail() {
+    if (!servicePreview || !previewMachine || servicePreviewSending) return;
+
+    setServicePreviewSending(true);
+    setMessage("Enviando e-mail com o relatÃ³rio em anexo.");
+    try {
+      const resultMessage = await sendServiceEmail(previewMachine, servicePreview.record, servicePreview.recipients);
+      setMessage(resultMessage);
+      closeServicePreview();
+    } catch (error) {
+      const detail = error instanceof DOMException && error.name === "AbortError"
+        ? "tempo limite do envio atingido"
+        : error instanceof Error
+          ? error.message
+          : "erro nao informado";
+      setMessage("Atendimento salvo e PDF gerado, mas o e-mail nao foi confirmado. Detalhe: " + detail + ".");
+    } finally {
+      setServicePreviewSending(false);
+    }
+  }
+
   async function saveService(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!currentUserCanEmitReports) {
@@ -2652,7 +2692,7 @@ export default function Home() {
     }
 
     setSelectedMachineId(machine.id);
-    setMessage(isEditingService ? "Atendimento atualizado com sucesso." : "Atendimento salvo. Gerando PDF e preparando envio por e-mail.");
+    setMessage(isEditingService ? "Atendimento atualizado com sucesso." : "Atendimento salvo. Preparando previa do PDF.");
     setSignatureExpanded(false);
     setEditingServiceRecord(null);
     setSelectedServiceRecord(null);
@@ -2663,16 +2703,12 @@ export default function Home() {
 
     if (!isEditingService) {
       try {
-        await downloadServicePdf(machine, record);
-        setMessage("Atendimento salvo. PDF gerado. Enviando e-mail aos responsaveis informados.");
-        setMessage(await sendServiceEmail(machine, record, serviceRecipients));
+        const pdfUrl = await servicePdfPreviewUrl(machine, record);
+        setServicePreview({ machineId: machine.id, record, recipients: serviceRecipients, pdfUrl });
+        setMessage("Atendimento salvo. Revise a previa do PDF antes do envio.");
       } catch (error) {
-        const detail = error instanceof DOMException && error.name === "AbortError"
-          ? "tempo limite do envio atingido"
-          : error instanceof Error
-            ? error.message
-            : "erro nao informado";
-        setMessage("Atendimento salvo e PDF gerado, mas o e-mail nao foi confirmado. Detalhe: " + detail + ".");
+        const detail = error instanceof Error ? error.message : "erro nao informado";
+        setMessage("Atendimento salvo, mas a previa do PDF nao foi gerada. Detalhe: " + detail + ".");
       }
     }
   }
@@ -3892,6 +3928,31 @@ export default function Home() {
                 <button className="button primary" type="submit">Salvar cliente</button>
               </div>
             </form>
+          </div>
+        )}
+
+        {servicePreview && previewMachine && (
+          <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="pdf-preview-title" onClick={closeServicePreview}>
+            <section className="modal-card pdf-preview-card" onClick={(event) => event.stopPropagation()}>
+              <div className="section-header">
+                <div>
+                  <p className="eyebrow">PrÃ©via do relatÃ³rio</p>
+                  <h2 id="pdf-preview-title">Revise antes do envio</h2>
+                </div>
+                <button className="button ghost" type="button" onClick={closeServicePreview}>Fechar</button>
+              </div>
+              <div className="pdf-preview-meta">
+                <span><strong>MÃ¡quina:</strong> {displayMachineCode(previewMachine)}</span>
+                <span><strong>Arquivo:</strong> {servicePdfFileName(previewMachine, servicePreview.record)}</span>
+                <span><strong>Envio:</strong> {servicePreview.recipients.length ? servicePreview.recipients.join("; ") : "Nenhum e-mail informado"}</span>
+              </div>
+              <iframe className="pdf-preview-frame" src={servicePreview.pdfUrl} title="PrÃ©via do relatÃ³rio em PDF" />
+              <div className="modal-actions">
+                <button className="button ghost" type="button" onClick={() => editServiceFromPreview(servicePreview.record)}>Editar</button>
+                <button className="button ghost" type="button" onClick={() => downloadServicePdf(previewMachine, servicePreview.record)}>Baixar PDF</button>
+                <button className="button primary" type="button" disabled={servicePreviewSending} onClick={() => void sendPreviewServiceEmail()}>{servicePreviewSending ? "Enviando..." : "Enviar e-mail"}</button>
+              </div>
+            </section>
           </div>
         )}
 

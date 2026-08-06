@@ -302,6 +302,12 @@ export async function servicePdfBase64(machine: Machine, record: ServiceRecord) 
   return dataUri.split(",")[1] ?? "";
 }
 
+export async function servicePdfPreviewUrl(machine: Machine, record: ServiceRecord) {
+  const doc = await createServicePdf(machine, record);
+  const blob = doc.output("blob");
+  return URL.createObjectURL(blob);
+}
+
 export async function downloadServicePdf(machine: Machine, record: ServiceRecord) {
   const doc = await createServicePdf(machine, record);
   doc.save(servicePdfFileName(machine, record));
