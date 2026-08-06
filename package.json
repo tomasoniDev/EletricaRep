@@ -13,11 +13,13 @@
     "geist": "^1.7.2",
     "jspdf": "^4.2.1",
     "next": "^15.3.2",
+    "nodemailer": "^9.0.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.17",
+    "@types/nodemailer": "^8.0.1",
     "@types/react": "^19.0.12",
     "@types/react-dom": "^19.0.4",
     "typescript": "^5.8.3"

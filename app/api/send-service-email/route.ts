@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import nodemailer from "nodemailer";
 import { authErrorResponse, canEmitReports, requireAuthorizedSession } from "@/lib/server-auth";
 
 type SendEmailPayload = {
@@ -8,14 +9,30 @@ type SendEmailPayload = {
   pdfBase64?: string;
 };
 
-const resendApiKey = process.env.RESEND_API_KEY;
-const fromEmail = process.env.RESEND_FROM_EMAIL ?? "Tomasoni Relatórios <onboarding@resend.dev>";
+const smtpHost = process.env.SMTP_HOST;
+const smtpPort = Number(process.env.SMTP_PORT ?? 587);
+const smtpSecure = process.env.SMTP_SECURE === "true";
+const smtpUser = process.env.SMTP_USER;
+const smtpPass = process.env.SMTP_PASS;
+const fromEmail = process.env.SMTP_FROM ?? (smtpUser ? `Hub Tomasoni <${smtpUser}>` : undefined);
 
 function cleanRecipients(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value
     .map((email) => String(email).trim().toLowerCase())
     .filter((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+}
+
+function smtpConfigurationError() {
+  if (!smtpHost || !smtpUser || !smtpPass || !fromEmail) {
+    return "Configuração SMTP incompleta na Vercel. Verifique SMTP_HOST, SMTP_USER, SMTP_PASS e SMTP_FROM.";
+  }
+
+  if (!Number.isFinite(smtpPort)) {
+    return "SMTP_PORT inválida na Vercel.";
+  }
+
+  return "";
 }
 
 export async function POST(request: Request) {
@@ -25,8 +42,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Usuário sem permissão para enviar relatórios." }, { status: 403 });
     }
 
-    if (!resendApiKey) {
-      return NextResponse.json({ error: "RESEND_API_KEY não configurada na Vercel." }, { status: 500 });
+    const configError = smtpConfigurationError();
+    if (configError) {
+      return NextResponse.json({ error: configError }, { status: 500 });
     }
 
     const body = (await request.json()) as SendEmailPayload;
@@ -40,36 +58,44 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Dados do relatório incompletos." }, { status: 400 });
     }
 
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${resendApiKey}`,
-        "Content-Type": "application/json"
+    const transporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpSecure,
+      requireTLS: !smtpSecure,
+      auth: {
+        user: smtpUser,
+        pass: smtpPass
       },
-      body: JSON.stringify({
-        from: fromEmail,
-        to,
-        subject: body.subject,
-        html: "<p>Mensagem automática. Não responda este e-mail.</p><p>O relatório de atendimento segue em anexo.</p>",
-        attachments: [
-          {
-            filename: body.filename,
-            content: body.pdfBase64
-          }
-        ]
-      })
+      tls: {
+        minVersion: "TLSv1.2"
+      }
     });
 
-    const result = await response.json().catch(() => null);
-    if (!response.ok) {
+    const info = await transporter.sendMail({
+      from: fromEmail,
+      to,
+      subject: body.subject,
+      text: "Mensagem automática. Não responda este e-mail.\n\nO relatório de atendimento segue em anexo.",
+      html: "<p>Mensagem automática. Não responda este e-mail.</p><p>O relatório de atendimento segue em anexo.</p>",
+      attachments: [
+        {
+          filename: body.filename,
+          content: Buffer.from(body.pdfBase64, "base64"),
+          contentType: "application/pdf"
+        }
+      ]
+    });
+
+    return NextResponse.json({ id: info.messageId ?? null, accepted: info.accepted ?? [] });
+  } catch (error) {
+    if (error instanceof Error) {
       return NextResponse.json(
-        { error: result?.message ?? "Não foi possível enviar o e-mail pelo Resend." },
-        { status: response.status }
+        { error: `Não foi possível enviar o e-mail via SMTP. Detalhe: ${error.message}` },
+        { status: 502 }
       );
     }
 
-    return NextResponse.json({ id: result?.id ?? null });
-  } catch (error) {
     return authErrorResponse(error);
   }
 }
