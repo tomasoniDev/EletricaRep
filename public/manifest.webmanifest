@@ -1,8 +1,8 @@
 ﻿{
-  "name": "Assistência Tomasoni",
-  "short_name": "Assistência",
+  "name": "Assistencia Tomasoni",
+  "short_name": "Assistencia",
   "id": "/",
-  "description": "Aplicação corporativa para registros de atendimento técnico.",
+  "description": "Aplicacao corporativa para registros de atendimento tecnico.",
   "start_url": "/",
   "scope": "/",
   "display_override": ["standalone", "window-controls-overlay", "minimal-ui"],
