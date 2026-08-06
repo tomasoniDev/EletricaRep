@@ -133,6 +133,7 @@ const BIOMETRIC_SESSION_VERIFIED_KEY = "tomasoni-servicecore-biometric-session-v
 const THEME_KEY = "tomasoni-servicecore-theme";
 const REMOTE_ACCESS_STATUS_KEY = "tomasoni-servicecore-remote-access-status";
 const SERVICE_EMAIL_SUGGESTIONS_KEY = "tomasoni-servicecore-service-email-suggestions";
+const PWA_SW_RELOAD_KEY = "tomasoni-servicecore-sw-reload";
 const REMOTE_ACCESS_OPTIONS: RemoteAccess[] = ["Sem acesso remoto", "SINEMA", "VNC"];
 const SERVICE_TYPE_OPTIONS: ServiceType[] = ["Acesso remoto", "Visita técnica"];
 const CONTRACT_TYPE_OPTIONS: ContractType[] = ["Seg-Sex", "Seg-Sab", "Garantia"];
@@ -1197,9 +1198,18 @@ export default function Home() {
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
-    navigator.serviceWorker.register("/sw.js").catch((error) => {
-      if (process.env.NODE_ENV !== "production") console.error("Erro ao registrar service worker", error);
-    });
+    navigator.serviceWorker
+      .register("/sw.js", { scope: "/", updateViaCache: "none" })
+      .then(async () => {
+        await navigator.serviceWorker.ready;
+        if (!navigator.serviceWorker.controller && !window.sessionStorage.getItem(PWA_SW_RELOAD_KEY)) {
+          window.sessionStorage.setItem(PWA_SW_RELOAD_KEY, "1");
+          window.location.reload();
+        }
+      })
+      .catch((error) => {
+        if (process.env.NODE_ENV !== "production") console.error("Erro ao registrar service worker", error);
+      });
   }, []);
 
   useEffect(() => {
