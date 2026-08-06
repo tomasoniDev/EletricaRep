@@ -3936,17 +3936,17 @@ export default function Home() {
             <section className="modal-card pdf-preview-card" onClick={(event) => event.stopPropagation()}>
               <div className="section-header">
                 <div>
-                  <p className="eyebrow">PrÃ©via do relatÃ³rio</p>
+                  <p className="eyebrow">Pr&eacute;via do relat&oacute;rio</p>
                   <h2 id="pdf-preview-title">Revise antes do envio</h2>
                 </div>
                 <button className="button ghost" type="button" onClick={closeServicePreview}>Fechar</button>
               </div>
               <div className="pdf-preview-meta">
-                <span><strong>MÃ¡quina:</strong> {displayMachineCode(previewMachine)}</span>
+                <span><strong>M&aacute;quina:</strong> {displayMachineCode(previewMachine)}</span>
                 <span><strong>Arquivo:</strong> {servicePdfFileName(previewMachine, servicePreview.record)}</span>
                 <span><strong>Envio:</strong> {servicePreview.recipients.length ? servicePreview.recipients.join("; ") : "Nenhum e-mail informado"}</span>
               </div>
-              <iframe className="pdf-preview-frame" src={servicePreview.pdfUrl} title="PrÃ©via do relatÃ³rio em PDF" />
+              <iframe className="pdf-preview-frame" src={servicePreview.pdfUrl} title="Pr&eacute;via do relat&oacute;rio em PDF" />
               <div className="modal-actions">
                 <button className="button ghost" type="button" onClick={() => editServiceFromPreview(servicePreview.record)}>Editar</button>
                 <button className="button ghost" type="button" onClick={() => downloadServicePdf(previewMachine, servicePreview.record)}>Baixar PDF</button>
