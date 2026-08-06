@@ -1187,11 +1187,95 @@ input:focus, textarea:focus, select:focus {
 }
 
 .real-map {
+  position: relative;
   overflow: hidden;
   min-height: 520px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--surface-2);
+}
+
+.map-fallback {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 62% 18%, color-mix(in srgb, var(--primary) 10%, transparent), transparent 22%),
+    radial-gradient(circle at 50% 62%, color-mix(in srgb, #0f9b5f 12%, transparent), transparent 26%),
+    linear-gradient(145deg, color-mix(in srgb, var(--primary) 7%, var(--surface-2)), var(--surface));
+}
+
+.map-fallback::before {
+  content: "";
+  position: absolute;
+  inset: 42px 18% 44px 20%;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--line));
+  border-radius: 48% 52% 45% 55% / 34% 38% 62% 66%;
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  transform: rotate(-9deg);
+}
+
+.map-label {
+  position: absolute;
+  z-index: 1;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.map-label.north {
+  left: 42%;
+  top: 18%;
+}
+
+.map-label.south {
+  bottom: 18%;
+  right: 22%;
+}
+
+.map-fallback em {
+  position: absolute;
+  left: 18px;
+  bottom: 14px;
+  z-index: 2;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.map-fallback-marker {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  min-width: 44px;
+  min-height: 44px;
+  border: 2px solid color-mix(in srgb, var(--primary) 80%, #ffffff);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 86%, #ffffff);
+  color: #ffffff;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 14px 34px rgba(18, 104, 216, 0.25);
+  cursor: pointer;
+}
+
+.map-fallback-marker span {
+  font-size: 0.68rem;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.map-fallback-marker strong {
+  font-size: 0.86rem;
+  line-height: 1;
+}
+
+.map-fallback-marker:hover {
+  background: color-mix(in srgb, var(--primary) 70%, #000000);
+  transform: translate(-50%, -50%) scale(1.05);
 }
 
 .real-map .leaflet-popup-content {

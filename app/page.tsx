@@ -177,6 +177,13 @@ const STATE_CENTERS: Record<string, [number, number]> = {
   SE: [-10.57, -37.45],
   TO: [-10.25, -48.25]
 };
+
+function mapPointPosition(center: [number, number]) {
+  const [lat, lon] = center;
+  const left = Math.min(92, Math.max(8, ((lon + 74) / 40) * 100));
+  const top = Math.min(92, Math.max(8, ((6 - lat) / 40) * 100));
+  return { left: `${left}%`, top: `${top}%` };
+}
 const EMPTY_MACHINE_FORM: MachineFormState = {
   code: "",
   mechanical_list: "",
@@ -1203,6 +1210,7 @@ export default function Home() {
   const [servicePreviewSending, setServicePreviewSending] = useState(false);
   const [editingServiceRecord, setEditingServiceRecord] = useState<ServiceRecord | null>(null);
   const [editingPreviewRecipients, setEditingPreviewRecipients] = useState<string[] | null>(null);
+  const [mapMode, setMapMode] = useState<"loading" | "leaflet" | "fallback">("loading");
   const [machineForm, setMachineForm] = useState<MachineFormState>(EMPTY_MACHINE_FORM);
   const [serviceType, setServiceType] = useState<ServiceType>("Acesso remoto");
   const [serviceRecipientsInput, setServiceRecipientsInput] = useState("");
@@ -1610,9 +1618,15 @@ export default function Home() {
     }
 
     let cancelled = false;
+    setMapMode("loading");
+    const timeout = window.setTimeout(() => {
+      if (!cancelled) setMapMode("fallback");
+    }, 5000);
+
     loadLeaflet()
       .then((leaflet) => {
         if (cancelled || !overviewMapRef.current) return;
+        window.clearTimeout(timeout);
         if (leafletMapRef.current) {
           leafletMapRef.current.remove();
           leafletMapRef.current = null;
@@ -1691,8 +1705,11 @@ export default function Home() {
         if (bounds.length > 1) map.fitBounds(bounds, { padding: [28, 28], maxZoom: 6 });
         updateGeoLayers();
         leafletMapRef.current = map;
+        setMapMode("leaflet");
       })
       .catch(() => {
+        window.clearTimeout(timeout);
+        setMapMode("fallback");
         setMessage("Não foi possível carregar o mapa. Verifique a conexão e tente novamente.");
       });
 
@@ -3259,7 +3276,32 @@ export default function Home() {
               <article className="dashboard-card geo-card">
                 <div className="card-title"><DetailIcon type="location" /><h3>Geolocalização</h3><span className="soft-pill">Estados / cidades</span></div>
                 <div className="geo-panel">
-                  <div className="real-map" ref={overviewMapRef} aria-label="Mapa de máquinas por estado e cidade" />
+                  <div className={`real-map ${mapMode === "fallback" ? "fallback-map" : ""}`} ref={overviewMapRef} aria-label="Mapa de máquinas por estado e cidade">
+                    {mapMode !== "leaflet" && (
+                      <div className="map-fallback">
+                        <span className="map-label north">Brasil</span>
+                        <span className="map-label south">Sul / Sudeste</span>
+                        {overviewData.geoStates.map((item) => {
+                          const center = STATE_CENTERS[item.state];
+                          if (!center) return null;
+                          return (
+                            <button
+                              key={item.state}
+                              className="map-fallback-marker"
+                              style={mapPointPosition(center)}
+                              type="button"
+                              title={`${item.state}: ${item.value} máquina${item.value === 1 ? "" : "s"}`}
+                              onClick={() => { setMachineFilter(item.state); setView("home"); }}
+                            >
+                              <span>{item.state}</span>
+                              <strong>{item.value}</strong>
+                            </button>
+                          );
+                        })}
+                        {mapMode === "loading" && <em>Carregando mapa...</em>}
+                      </div>
+                    )}
+                  </div>
                   <div className="state-map-list">
                     {overviewData.byState.map((item) => (
                       <button key={item.name} type="button" onClick={() => { setMachineFilter(item.name === "Sem localização" ? "" : item.name); setView("home"); }}>
