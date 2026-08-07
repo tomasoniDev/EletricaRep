@@ -1189,6 +1189,7 @@ export default function Home() {
   const [editingServiceRecord, setEditingServiceRecord] = useState<ServiceRecord | null>(null);
   const [editingPreviewRecipients, setEditingPreviewRecipients] = useState<string[] | null>(null);
   const [mapMode, setMapMode] = useState<"loading" | "leaflet" | "fallback">("loading");
+  const [focusedMapState, setFocusedMapState] = useState("");
   const [machineForm, setMachineForm] = useState<MachineFormState>(EMPTY_MACHINE_FORM);
   const [serviceType, setServiceType] = useState<ServiceType>("Acesso remoto");
   const [serviceRecipientsInput, setServiceRecipientsInput] = useState("");
@@ -1690,7 +1691,9 @@ export default function Home() {
         });
 
         map.on("zoomend", updateGeoLayers);
-        if (bounds.length > 1) map.fitBounds(bounds, { padding: [28, 28], maxZoom: 6 });
+        const focusedCenter = focusedMapState ? STATE_CENTERS[focusedMapState] : null;
+        if (focusedCenter) map.setView(focusedCenter, 7);
+        else if (bounds.length > 1) map.fitBounds(bounds, { padding: [28, 28], maxZoom: 6 });
         updateGeoLayers();
         leafletMapRef.current = map;
         setMapMode("leaflet");
@@ -1705,7 +1708,27 @@ export default function Home() {
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [overviewData.geoCities, overviewData.geoStates, view]);
+  }, [focusedMapState, overviewData.geoCities, overviewData.geoStates, view]);
+
+  function focusOverviewMapState(stateName: string) {
+    if (stateName === "Sem localização" || !STATE_CENTERS[stateName]) {
+      setFocusedMapState("");
+      const bounds = overviewData.geoStates
+        .map((item) => STATE_CENTERS[item.state])
+        .filter(Boolean);
+      if (leafletMapRef.current) {
+        if (bounds.length > 1) leafletMapRef.current.fitBounds(bounds, { padding: [28, 28], maxZoom: 6 });
+        else leafletMapRef.current.setView([-14.235, -51.9253], 4);
+      }
+      return;
+    }
+
+    setFocusedMapState(stateName);
+    const center = STATE_CENTERS[stateName];
+    if (leafletMapRef.current && center) {
+      leafletMapRef.current.setView(center, 7);
+    }
+  }
 
   useEffect(() => {
     setMachineForm(machineFormFromMachine(editingMachine));
@@ -3276,11 +3299,11 @@ export default function Home() {
                           return (
                             <button
                               key={item.state}
-                              className="map-fallback-marker"
+                              className={`map-fallback-marker ${focusedMapState === item.state ? "active" : ""}`}
                               style={mapPointPosition(center)}
                               type="button"
                               title={`${item.state}: ${item.value} máquina${item.value === 1 ? "" : "s"}`}
-                              onClick={() => { setMachineFilter(item.state); setView("home"); }}
+                              onClick={() => focusOverviewMapState(item.state)}
                             >
                               <span>{item.state}</span>
                               <strong>{item.value}</strong>
@@ -3293,7 +3316,12 @@ export default function Home() {
                   </div>
                   <div className="state-map-list">
                     {overviewData.byState.map((item) => (
-                      <button key={item.name} type="button" onClick={() => { setMachineFilter(item.name === "Sem localização" ? "" : item.name); setView("home"); }}>
+                      <button
+                        key={item.name}
+                        className={focusedMapState === item.name ? "active" : ""}
+                        type="button"
+                        onClick={() => focusOverviewMapState(item.name)}
+                      >
                         <span>{item.name}</span>
                         <strong>{item.value}</strong>
                       </button>

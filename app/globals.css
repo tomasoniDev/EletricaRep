@@ -1314,6 +1314,17 @@ input:focus, textarea:focus, select:focus {
   color: var(--primary);
 }
 
+.state-map-list button.active {
+  border-color: color-mix(in srgb, var(--primary) 65%, var(--line));
+  background: color-mix(in srgb, var(--primary) 14%, var(--surface));
+  color: var(--primary);
+}
+
+.map-fallback-marker.active {
+  outline: 3px solid color-mix(in srgb, var(--primary) 24%, transparent);
+  outline-offset: 3px;
+}
+
 .state-map-list span {
   overflow: hidden;
   color: var(--muted);
