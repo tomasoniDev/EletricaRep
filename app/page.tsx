@@ -146,8 +146,6 @@ const SOFTWARE_OPTIONS = [
 const VM_OPTIONS = Array.from({ length: 9 }, (_, index) => `V${index + 13}`);
 const USER_ROLE_OPTIONS: UserRole[] = ["Admin", "Diretoria", "Coordenador", "Engenharia", "Montagem", "Comercial"];
 const TRAVEL_STATUS_OPTIONS = ["A definir", "Planejado", "Em andamento", "Concluido", "Cancelado"];
-const LEAFLET_CSS_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-const LEAFLET_JS_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
 const STATE_CENTERS: Record<string, [number, number]> = {
   AC: [-9.0238, -70.812],
   AL: [-9.5713, -36.782],
@@ -757,39 +755,14 @@ let leafletLoadPromise: Promise<LeafletNamespace> | null = null;
 
 function loadLeaflet() {
   if (typeof window === "undefined") return Promise.reject(new Error("Mapa indisponível fora do navegador."));
-  const existingLeaflet = (window as Window & { L?: LeafletNamespace }).L;
+  const existingLeaflet = (window as unknown as { L?: LeafletNamespace }).L;
   if (existingLeaflet) return Promise.resolve(existingLeaflet);
 
-  if (!document.querySelector(`link[href="${LEAFLET_CSS_URL}"]`)) {
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = LEAFLET_CSS_URL;
-    document.head.appendChild(link);
-  }
-
   if (!leafletLoadPromise) {
-    leafletLoadPromise = new Promise((resolve, reject) => {
-      const existingScript = document.querySelector<HTMLScriptElement>(`script[src="${LEAFLET_JS_URL}"]`);
-      if (existingScript) {
-        existingScript.addEventListener("load", () => {
-          const loadedLeaflet = (window as Window & { L?: LeafletNamespace }).L;
-          if (loadedLeaflet) resolve(loadedLeaflet);
-          else reject(new Error("Leaflet não carregou corretamente."));
-        }, { once: true });
-        existingScript.addEventListener("error", () => reject(new Error("Falha ao carregar o mapa.")), { once: true });
-        return;
-      }
-
-      const script = document.createElement("script");
-      script.src = LEAFLET_JS_URL;
-      script.async = true;
-      script.onload = () => {
-        const loadedLeaflet = (window as Window & { L?: LeafletNamespace }).L;
-        if (loadedLeaflet) resolve(loadedLeaflet);
-        else reject(new Error("Leaflet não carregou corretamente."));
-      };
-      script.onerror = () => reject(new Error("Falha ao carregar o mapa."));
-      document.head.appendChild(script);
+    leafletLoadPromise = import("leaflet").then((module) => {
+      const leaflet = (module.default ?? module) as unknown as LeafletNamespace;
+      (window as unknown as { L?: LeafletNamespace }).L = leaflet;
+      return leaflet;
     });
   }
 
@@ -1715,6 +1688,7 @@ export default function Home() {
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timeout);
     };
   }, [overviewData.geoCities, overviewData.geoStates, view]);
 

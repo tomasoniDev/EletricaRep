@@ -1,5 +1,6 @@
 ﻿import type { Metadata } from "next";
 import { GeistSans } from "geist/font/sans";
+import "leaflet/dist/leaflet.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
