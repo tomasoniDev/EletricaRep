@@ -1691,9 +1691,7 @@ export default function Home() {
         });
 
         map.on("zoomend", updateGeoLayers);
-        const focusedCenter = focusedMapState ? STATE_CENTERS[focusedMapState] : null;
-        if (focusedCenter) map.setView(focusedCenter, 7);
-        else if (bounds.length > 1) map.fitBounds(bounds, { padding: [28, 28], maxZoom: 6 });
+        if (bounds.length > 1) map.fitBounds(bounds, { padding: [28, 28], maxZoom: 6 });
         updateGeoLayers();
         leafletMapRef.current = map;
         setMapMode("leaflet");
@@ -1708,26 +1706,30 @@ export default function Home() {
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [focusedMapState, overviewData.geoCities, overviewData.geoStates, view]);
+  }, [overviewData.geoCities, overviewData.geoStates, view]);
+
+  useEffect(() => {
+    if (view !== "overview" || !leafletMapRef.current) return;
+    const center = focusedMapState ? STATE_CENTERS[focusedMapState] : null;
+    if (center) {
+      leafletMapRef.current.setView(center, 7);
+      return;
+    }
+
+    const bounds = overviewData.geoStates
+      .map((item) => STATE_CENTERS[item.state])
+      .filter(Boolean);
+    if (bounds.length > 1) leafletMapRef.current.fitBounds(bounds, { padding: [28, 28], maxZoom: 6 });
+    else leafletMapRef.current.setView([-14.235, -51.9253], 4);
+  }, [focusedMapState, overviewData.geoStates, view]);
 
   function focusOverviewMapState(stateName: string) {
     if (stateName === "Sem localização" || !STATE_CENTERS[stateName]) {
       setFocusedMapState("");
-      const bounds = overviewData.geoStates
-        .map((item) => STATE_CENTERS[item.state])
-        .filter(Boolean);
-      if (leafletMapRef.current) {
-        if (bounds.length > 1) leafletMapRef.current.fitBounds(bounds, { padding: [28, 28], maxZoom: 6 });
-        else leafletMapRef.current.setView([-14.235, -51.9253], 4);
-      }
       return;
     }
 
     setFocusedMapState(stateName);
-    const center = STATE_CENTERS[stateName];
-    if (leafletMapRef.current && center) {
-      leafletMapRef.current.setView(center, 7);
-    }
   }
 
   useEffect(() => {
