@@ -56,9 +56,14 @@ type LeafletMarker = {
   addTo: (target: LeafletLayerTarget) => LeafletMarker;
   bindPopup: (content: string) => LeafletMarker;
 };
+type LeafletTileLayer = {
+  addTo: (map: LeafletMap) => LeafletTileLayer;
+  on: (event: string, handler: () => void) => LeafletTileLayer;
+  remove: () => void;
+};
 type LeafletNamespace = {
   map: (element: HTMLElement, options?: Record<string, unknown>) => LeafletMap;
-  tileLayer: (url: string, options?: Record<string, unknown>) => { addTo: (map: LeafletMap) => unknown };
+  tileLayer: (url: string, options?: Record<string, unknown>) => LeafletTileLayer;
   layerGroup: () => LeafletLayerGroup;
   circleMarker: (center: [number, number], options?: Record<string, unknown>) => LeafletMarker;
 };
@@ -1613,9 +1618,19 @@ export default function Home() {
           if (!cancelled) map.invalidateSize();
         }, 120);
 
-        leaflet.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          attribution: "&copy; OpenStreetMap"
+        const primaryTiles = leaflet.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png", {
+          attribution: "&copy; OpenStreetMap &copy; CARTO",
+          detectRetina: true
         }).addTo(map);
+        let fallbackTilesLoaded = false;
+        primaryTiles.on("tileerror", () => {
+          if (fallbackTilesLoaded) return;
+          fallbackTilesLoaded = true;
+          primaryTiles.remove();
+          leaflet.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            attribution: "&copy; OpenStreetMap"
+          }).addTo(map);
+        });
 
         const stateLayer = leaflet.layerGroup();
         const cityLayer = leaflet.layerGroup();
