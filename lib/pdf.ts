@@ -46,6 +46,14 @@ function valueOrDash(value?: string | null) {
   return normalized || "-";
 }
 
+function formatPhone(value?: string | null) {
+  const rawValue = String(value ?? "").trim();
+  const digits = rawValue.replace(/\D/g, "");
+  if (digits.length === 11) return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  if (digits.length === 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return valueOrDash(rawValue);
+}
+
 function serviceDateTimeOrFallback(value: string | null | undefined, fallbackDate?: string | null) {
   const normalized = String(value ?? "").trim();
   if (normalized) return normalized;
@@ -232,7 +240,7 @@ function drawTechnicianData(doc: jsPDF, record: ServiceRecord, y: number) {
   const col = (CONTENT_WIDTH - 24) / 3;
   labelValue(doc, "Nome", record.technician_name, MARGIN, y + 31, col);
   labelValue(doc, "E-mail", record.technician_email, MARGIN + col + 12, y + 31, col);
-  labelValue(doc, "Telefone", record.technician_phone, MARGIN + (col + 12) * 2, y + 31, col);
+  labelValue(doc, "Telefone", formatPhone(record.technician_phone), MARGIN + (col + 12) * 2, y + 31, col);
   return y + 68;
 }
 

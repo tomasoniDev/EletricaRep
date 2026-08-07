@@ -314,6 +314,15 @@ function onlyDigits(value: string) {
   return value.replace(/\D/g, "");
 }
 
+function formatPhone(value?: string | null) {
+  const digits = onlyDigits(String(value ?? "")).slice(0, 11);
+  if (!digits) return "";
+  if (digits.length <= 2) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
+
 function formatFullDateInput(value: string) {
   const digits = onlyDigits(value).slice(0, 8);
   if (digits.length <= 2) return digits;
@@ -4067,7 +4076,7 @@ export default function Home() {
                   <div className="fields-grid">
                     <label>Usuário<input value={userForm.name} onChange={(event) => setUserForm((current) => ({ ...current, name: event.target.value }))} /></label>
                     <label>E-mail<input value={userForm.email} onChange={(event) => setUserForm((current) => ({ ...current, email: event.target.value }))} type="email" /></label>
-                    <label>Telefone<input value={userForm.phone} onChange={(event) => setUserForm((current) => ({ ...current, phone: event.target.value }))} placeholder="5511999999999" inputMode="tel" /></label>
+                    <label>Telefone<input value={formatPhone(userForm.phone)} onChange={(event) => setUserForm((current) => ({ ...current, phone: formatPhone(event.target.value) }))} placeholder="(45) 99952-6775" inputMode="tel" maxLength={15} /></label>
                     <label>Perfil / Setor<select value={userForm.role} onChange={(event) => setUserForm((current) => ({ ...current, role: event.target.value as UserRole }))}>
                       {USER_ROLE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                     </select></label>
@@ -4091,7 +4100,7 @@ export default function Home() {
                         <tr key={user.id}>
                           <td>{user.name}</td>
                           <td>{user.email}</td>
-                          <td>{user.phone || "-"}</td>
+                          <td>{formatPhone(user.phone) || "-"}</td>
                           <td>{user.role}</td>
                           <td>{user.remote_access_allowed ? "Sim" : "Não"}</td>
                           <td>{user.credential_access_allowed ? "Sim" : "Não"}</td>
@@ -4100,7 +4109,7 @@ export default function Home() {
                               <button className="icon-button menu-trigger" type="button" title="Ações" aria-label={`Ações do usuário ${user.name}`} onClick={(event) => toggleActionMenu(`user-${user.id}`, event)}><MoreIcon /></button>
                               {openActionMenu === `user-${user.id}` && (
                                 <div className="row-menu floating-row-menu" style={actionMenuPosition ?? undefined}>
-                                  <button type="button" onClick={() => { setEditingUserId(user.id); setUserForm({ name: user.name, email: user.email, role: user.role, phone: user.phone ?? "", remote_access_allowed: Boolean(user.remote_access_allowed), credential_access_allowed: Boolean(user.credential_access_allowed) }); setOpenActionMenu(""); }}><EditIcon /> Alterar</button>
+                                  <button type="button" onClick={() => { setEditingUserId(user.id); setUserForm({ name: user.name, email: user.email, role: user.role, phone: formatPhone(user.phone), remote_access_allowed: Boolean(user.remote_access_allowed), credential_access_allowed: Boolean(user.credential_access_allowed) }); setOpenActionMenu(""); }}><EditIcon /> Alterar</button>
                                   <button className="danger" type="button" onClick={() => { void deleteUser(user.id); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>
                                 </div>
                               )}
