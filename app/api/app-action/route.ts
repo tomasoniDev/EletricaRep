@@ -105,6 +105,7 @@ export async function POST(request: Request) {
         name: text(payload.name),
         email,
         role: text(payload.role) ?? "Montagem",
+        phone: String(payload.phone ?? "").replace(/\D/g, ""),
         remote_access_allowed: bool(payload.remote_access_allowed),
         credential_access_allowed: bool(payload.credential_access_allowed)
       };
@@ -117,7 +118,8 @@ export async function POST(request: Request) {
           input_email: userPayload.email,
           input_role: userPayload.role,
           input_remote_access_allowed: userPayload.remote_access_allowed,
-          input_credential_access_allowed: userPayload.credential_access_allowed
+          input_credential_access_allowed: userPayload.credential_access_allowed,
+          input_phone: userPayload.phone
         })
         .single();
       if (result.error || !result.data) return jsonError(result.error?.message ?? "Usuário não salvo.", 500);
@@ -217,6 +219,7 @@ export async function POST(request: Request) {
         technician_id: null,
         technician_name: session.user.name,
         technician_email: session.email,
+        technician_phone: text(session.user.phone),
         service_type: text(payload.service_type),
         service_date: text(payload.service_date),
         service_start: text(payload.service_start),

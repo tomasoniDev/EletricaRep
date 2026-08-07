@@ -80,6 +80,7 @@ export type AuthorizedUser = {
   name: string;
   email: string;
   role: UserRole;
+  phone: string | null;
   remote_access_allowed: boolean | null;
   credential_access_allowed: boolean | null;
   created_at: string;
@@ -179,6 +180,7 @@ export type ServiceRecord = {
   technician_id: string | null;
   technician_name: string;
   technician_email: string | null;
+  technician_phone: string | null;
   service_type: "Acesso remoto" | "Visita técnica" | null;
   service_date: string;
   service_start: string | null;

@@ -46,6 +46,12 @@ function valueOrDash(value?: string | null) {
   return normalized || "-";
 }
 
+function serviceDateTimeOrFallback(value: string | null | undefined, fallbackDate?: string | null) {
+  const normalized = String(value ?? "").trim();
+  if (normalized) return normalized;
+  return formatDate(fallbackDate);
+}
+
 function displayMachineCode(machine: Machine) {
   return machine.code?.trim() || machine.model?.trim() || machine.client?.trim() || "maquina-sem-codigo";
 }
@@ -206,14 +212,13 @@ function drawMachineData(doc: jsPDF, machine: Machine) {
 function drawServiceData(doc: jsPDF, record: ServiceRecord) {
   sectionTitle(doc, "Dados do atendimento", 330);
   const col = (CONTENT_WIDTH - 24) / 3;
-  labelValue(doc, "Data do atendimento", formatDate(record.service_date), MARGIN, 361, col);
-  labelValue(doc, "Tipo de atendimento", record.service_type ?? "Acesso remoto", MARGIN + col + 12, 361, col);
-  labelValue(doc, "Equipamento", record.equipment, MARGIN + (col + 12) * 2, 361, col);
-  labelValue(doc, "Início", record.service_start, MARGIN, 400, col);
-  labelValue(doc, "Fim", record.service_end, MARGIN + col + 12, 400, col);
-  labelValue(doc, "Motivo breve", record.issue_summary, MARGIN, 439, CONTENT_WIDTH);
+  labelValue(doc, "Início", serviceDateTimeOrFallback(record.service_start, record.service_date), MARGIN, 361, col);
+  labelValue(doc, "Fim", record.service_end, MARGIN + col + 12, 361, col);
+  labelValue(doc, "Tipo de atendimento", record.service_type ?? "Acesso remoto", MARGIN + (col + 12) * 2, 361, col);
+  labelValue(doc, "Equipamento", record.equipment, MARGIN, 400, col);
+  labelValue(doc, "Motivo breve", record.issue_summary, MARGIN + col + 12, 400, CONTENT_WIDTH - col - 12);
 
-  let y = 492;
+  let y = 453;
   y = flowTextSection(doc, "Solicitação do cliente / problema relatado", record.request, y);
   y = flowTextSection(doc, "Diagnóstico", record.diagnosis, y);
   y = flowTextSection(doc, "Serviço realizado", record.service_done, y);
@@ -224,9 +229,10 @@ function drawServiceData(doc: jsPDF, record: ServiceRecord) {
 function drawTechnicianData(doc: jsPDF, record: ServiceRecord, y: number) {
   y = ensurePageSpace(doc, y, 70);
   sectionTitle(doc, "Técnico responsável", y);
-  const col = (CONTENT_WIDTH - 12) / 2;
+  const col = (CONTENT_WIDTH - 24) / 3;
   labelValue(doc, "Nome", record.technician_name, MARGIN, y + 31, col);
   labelValue(doc, "E-mail", record.technician_email, MARGIN + col + 12, y + 31, col);
+  labelValue(doc, "Telefone", record.technician_phone, MARGIN + (col + 12) * 2, y + 31, col);
   return y + 68;
 }
 

@@ -97,6 +97,7 @@ type AuthorizedUserFormState = {
   name: string;
   email: string;
   role: UserRole;
+  phone: string;
   remote_access_allowed: boolean;
   credential_access_allowed: boolean;
 };
@@ -215,6 +216,7 @@ const EMPTY_USER_FORM: AuthorizedUserFormState = {
   name: "",
   email: "",
   role: "Montagem",
+  phone: "",
   remote_access_allowed: false,
   credential_access_allowed: false
 };
@@ -325,6 +327,15 @@ function formatDayMonthInput(value: string) {
   return `${digits.slice(0, 2)}/${digits.slice(2)}`;
 }
 
+function formatServiceDateTimeInput(value: string) {
+  const digits = onlyDigits(value).slice(0, 10);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  if (digits.length <= 6) return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+  if (digits.length <= 8) return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4, 6)} - ${digits.slice(6)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4, 6)} - ${digits.slice(6, 8)}:${digits.slice(8)}`;
+}
+
 function formatMonthYearInput(value: string) {
   const digits = onlyDigits(value).slice(0, 6);
   if (digits.length <= 2) return digits;
@@ -338,6 +349,14 @@ function normalizeFullDate(value: string) {
   const match = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (!match) return trimmed;
   return `${match[3]}-${match[2]}-${match[1]}`;
+}
+
+function extractDateFromServiceDateTime(value: string) {
+  const normalized = value.trim();
+  const match = normalized.match(/^(\d{2})\/(\d{2})\/(\d{2}|\d{4})\s*-\s*\d{2}:\d{2}$/);
+  if (!match) return "";
+  const year = match[3].length === 2 ? `20${match[3]}` : match[3];
+  return `${year}-${match[2]}-${match[1]}`;
 }
 
 function daysUntil(value?: string | null) {
@@ -704,6 +723,26 @@ function validateDayMonth(value: string, label: string) {
   if (month < 1 || month > 12) return `${label} possui mês inválido.`;
   const maxDay = new Date(2024, month, 0).getDate();
   if (day < 1 || day > maxDay) return `${label} possui dia inválido para o mês informado.`;
+  return "";
+}
+
+function validateServiceDateTime(value: string, label: string) {
+  const normalized = value.trim();
+  if (!normalized) return "";
+  if (/^\d{2}\/\d{2}$/.test(normalized)) return validateDayMonth(normalized, label);
+  const match = normalized.match(/^(\d{2})\/(\d{2})\/(\d{2}|\d{4})\s*-\s*(\d{2}):(\d{2})$/);
+  if (!match) return `${label} deve estar no formato dd/mm/aa - hh:mm.`;
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = match[3].length === 2 ? Number(`20${match[3]}`) : Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  if (month < 1 || month > 12) return `${label} possui mÃªs invÃ¡lido.`;
+  if (year < 2000 || year > 2099) return `${label} possui ano invÃ¡lido.`;
+  const maxDay = new Date(year, month, 0).getDate();
+  if (day < 1 || day > maxDay) return `${label} possui dia invÃ¡lido para o mÃªs informado.`;
+  if (hour < 0 || hour > 23) return `${label} possui hora invÃ¡lida.`;
+  if (minute < 0 || minute > 59) return `${label} possui minuto invÃ¡lido.`;
   return "";
 }
 
@@ -2479,6 +2518,7 @@ export default function Home() {
       name: userForm.name.trim(),
       email: userForm.email.trim().toLowerCase(),
       role: userForm.role,
+      phone: userForm.phone.replace(/\D/g, ""),
       remote_access_allowed: userForm.remote_access_allowed,
       credential_access_allowed: userForm.credential_access_allowed
     };
@@ -2779,13 +2819,11 @@ export default function Home() {
     }
 
     const selectedServiceType = normalizeServiceType(String(form.get("service_type") ?? serviceType));
-    const serviceDate = String(form.get("service_date") ?? "").trim();
     const serviceStart = String(form.get("service_start") ?? "").trim();
     const serviceEnd = String(form.get("service_end") ?? "").trim();
     const serviceDateErrors = [
-      validateFullDate(serviceDate, "Data do atendimento"),
-      validateDayMonth(serviceStart, "Inicio de atendimento"),
-      validateDayMonth(serviceEnd, "Fim de atendimento")
+      validateServiceDateTime(serviceStart, "Inicio de atendimento"),
+      validateServiceDateTime(serviceEnd, "Fim de atendimento")
     ].filter(Boolean);
 
     if (serviceDateErrors.length) {
@@ -2793,11 +2831,15 @@ export default function Home() {
       return;
     }
 
+    const serviceDate = extractDateFromServiceDateTime(serviceStart)
+      || editingServiceRecord?.service_date
+      || new Date().toISOString().slice(0, 10);
+
     const payload = {
       id: editingServiceRecord?.id ?? null,
       machine_id: machine.id,
       service_type: selectedServiceType,
-      service_date: normalizeFullDate(serviceDate),
+      service_date: serviceDate,
       service_start: serviceStart || null,
       service_end: serviceEnd || null,
       equipment: String(form.get("equipment") ?? "").trim() || null,
@@ -3782,9 +3824,8 @@ export default function Home() {
               <datalist id="service-machine-suggestions">{machines.map((machine) => <option key={machine.id} value={serviceMachineLookupLabel(machine)} />)}</datalist>
               <label>Equipamento<input name="equipment" placeholder="CLP, IHM, servo, inversor" defaultValue={editingServiceRecord?.equipment ?? ""} /></label>
               <label>Técnico responsável<input value={currentUserName || displayUserName(currentUserEmail)} readOnly /></label>
-              <label>Data<input name="service_date" required placeholder="dd/mm/aaaa" maxLength={10} defaultValue={formatDate(editingServiceRecord?.service_date ?? new Date().toISOString().slice(0, 10))} onChange={(event) => { event.currentTarget.value = formatFullDateInput(event.currentTarget.value); }} /></label>
-              <label>Início do atendimento<input name="service_start" placeholder="dd/mm" pattern="\d{2}/\d{2}" maxLength={5} defaultValue={editingServiceRecord?.service_start ?? ""} onChange={(event) => { event.currentTarget.value = formatDayMonthInput(event.currentTarget.value); }} /></label>
-              <label>Fim do atendimento<input name="service_end" placeholder="dd/mm" pattern="\d{2}/\d{2}" maxLength={5} defaultValue={editingServiceRecord?.service_end ?? ""} onChange={(event) => { event.currentTarget.value = formatDayMonthInput(event.currentTarget.value); }} /></label>
+              <label>Início do atendimento<input name="service_start" placeholder="dd/mm/aa - hh:mm" maxLength={16} defaultValue={editingServiceRecord?.service_start ?? ""} onChange={(event) => { event.currentTarget.value = formatServiceDateTimeInput(event.currentTarget.value); }} /></label>
+              <label>Fim do atendimento<input name="service_end" placeholder="dd/mm/aa - hh:mm" maxLength={16} defaultValue={editingServiceRecord?.service_end ?? ""} onChange={(event) => { event.currentTarget.value = formatServiceDateTimeInput(event.currentTarget.value); }} /></label>
               <label>Tipo de atendimento<select name="service_type" value={serviceType} onChange={(event) => updateServiceType(event.target.value as ServiceType)}>
                 {SERVICE_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
               </select></label>
@@ -4026,6 +4067,7 @@ export default function Home() {
                   <div className="fields-grid">
                     <label>Usuário<input value={userForm.name} onChange={(event) => setUserForm((current) => ({ ...current, name: event.target.value }))} /></label>
                     <label>E-mail<input value={userForm.email} onChange={(event) => setUserForm((current) => ({ ...current, email: event.target.value }))} type="email" /></label>
+                    <label>Telefone<input value={userForm.phone} onChange={(event) => setUserForm((current) => ({ ...current, phone: event.target.value }))} placeholder="5511999999999" inputMode="tel" /></label>
                     <label>Perfil / Setor<select value={userForm.role} onChange={(event) => setUserForm((current) => ({ ...current, role: event.target.value as UserRole }))}>
                       {USER_ROLE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                     </select></label>
@@ -4039,6 +4081,7 @@ export default function Home() {
                       <thead><tr>
                         <th><button className="sort-header" type="button" onClick={() => toggleUserSort("name")}>Usuário <span>{sortMark(userSort.key === "name", userSort.direction)}</span></button></th>
                         <th><button className="sort-header" type="button" onClick={() => toggleUserSort("email")}>E-mail <span>{sortMark(userSort.key === "email", userSort.direction)}</span></button></th>
+                        <th>Telefone</th>
                         <th><button className="sort-header" type="button" onClick={() => toggleUserSort("role")}>Perfil / Setor <span>{sortMark(userSort.key === "role", userSort.direction)}</span></button></th>
                         <th>Acesso remoto</th>
                         <th>Senhas</th>
@@ -4048,6 +4091,7 @@ export default function Home() {
                         <tr key={user.id}>
                           <td>{user.name}</td>
                           <td>{user.email}</td>
+                          <td>{user.phone || "-"}</td>
                           <td>{user.role}</td>
                           <td>{user.remote_access_allowed ? "Sim" : "Não"}</td>
                           <td>{user.credential_access_allowed ? "Sim" : "Não"}</td>
@@ -4056,7 +4100,7 @@ export default function Home() {
                               <button className="icon-button menu-trigger" type="button" title="Ações" aria-label={`Ações do usuário ${user.name}`} onClick={(event) => toggleActionMenu(`user-${user.id}`, event)}><MoreIcon /></button>
                               {openActionMenu === `user-${user.id}` && (
                                 <div className="row-menu floating-row-menu" style={actionMenuPosition ?? undefined}>
-                                  <button type="button" onClick={() => { setEditingUserId(user.id); setUserForm({ name: user.name, email: user.email, role: user.role, remote_access_allowed: Boolean(user.remote_access_allowed), credential_access_allowed: Boolean(user.credential_access_allowed) }); setOpenActionMenu(""); }}><EditIcon /> Alterar</button>
+                                  <button type="button" onClick={() => { setEditingUserId(user.id); setUserForm({ name: user.name, email: user.email, role: user.role, phone: user.phone ?? "", remote_access_allowed: Boolean(user.remote_access_allowed), credential_access_allowed: Boolean(user.credential_access_allowed) }); setOpenActionMenu(""); }}><EditIcon /> Alterar</button>
                                   <button className="danger" type="button" onClick={() => { void deleteUser(user.id); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>
                                 </div>
                               )}
@@ -4157,6 +4201,8 @@ export default function Home() {
               <div className="record-details">
                 <div><span>Tipo de atendimento</span><strong>{normalizeServiceType(selectedServiceRecord.service_type)}</strong></div>
                 <div><span>Equipamento</span><strong>{selectedServiceRecord.equipment || "-"}</strong></div>
+                <div><span>Início</span><strong>{selectedServiceRecord.service_start || formatDate(selectedServiceRecord.service_date)}</strong></div>
+                <div><span>Fim</span><strong>{selectedServiceRecord.service_end || "-"}</strong></div>
                 <div><span>Técnico</span><strong>{selectedServiceRecord.technician_name}</strong></div>
                 <div><span>Motivo breve</span><strong>{selectedServiceRecord.issue_summary || "-"}</strong></div>
                 {normalizeServiceType(selectedServiceRecord.service_type) === "Visita técnica" && (

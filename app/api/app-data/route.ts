@@ -84,7 +84,7 @@ export async function GET() {
     ] = await Promise.all([
       admin
         .from("authorized_users")
-        .select("id, name, email, role, remote_access_allowed, credential_access_allowed, created_at, updated_at")
+        .select("id, name, email, role, phone, remote_access_allowed, credential_access_allowed, created_at, updated_at")
         .order("name", { ascending: true }),
       admin
         .from("travel_schedules")

@@ -133,7 +133,7 @@ export async function getAuthorizedUserByEmail(email: string) {
   const admin = createSupabaseAdminClient();
   const { data } = await admin
     .from("authorized_users")
-    .select("id, name, email, role, remote_access_allowed, credential_access_allowed, created_at, updated_at")
+    .select("id, name, email, role, phone, remote_access_allowed, credential_access_allowed, created_at, updated_at")
     .eq("email", email.toLowerCase())
     .maybeSingle();
   return (data as AuthorizedUser | null) ?? null;
