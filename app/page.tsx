@@ -1619,19 +1619,10 @@ export default function Home() {
           if (!cancelled) map.invalidateSize();
         }, 120);
 
-        const primaryTiles = leaflet.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png", {
+        leaflet.tileLayer("/api/map-tile/{z}/{x}/{y}.png", {
           attribution: "&copy; OpenStreetMap &copy; CARTO",
           detectRetina: true
         }).addTo(map);
-        let fallbackTilesLoaded = false;
-        primaryTiles.on("tileerror", () => {
-          if (fallbackTilesLoaded) return;
-          fallbackTilesLoaded = true;
-          primaryTiles.remove();
-          leaflet.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            attribution: "&copy; OpenStreetMap"
-          }).addTo(map);
-        });
 
         const stateLayer = leaflet.layerGroup();
         const cityLayer = leaflet.layerGroup();
