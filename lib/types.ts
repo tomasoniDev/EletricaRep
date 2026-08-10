@@ -197,3 +197,41 @@ export type ServiceRecord = {
   created_at: string;
   updated_at: string;
 };
+
+export type AppAuditLog = {
+  id: string;
+  action: string;
+  entity: string | null;
+  entity_id: string | null;
+  entity_label: string | null;
+  user_id: string | null;
+  user_email: string | null;
+  user_name: string | null;
+  user_role: UserRole | null;
+  details: Record<string, unknown> | null;
+  created_at: string;
+};
+
+export type AppMigrationInfo = {
+  version: string;
+  name: string;
+  file: string;
+  updated_at: string | null;
+};
+
+export type AppDeploymentInfo = {
+  environment: string | null;
+  url: string | null;
+  commit_sha: string | null;
+  commit_message: string | null;
+  commit_author: string | null;
+  region: string | null;
+  node_env: string | null;
+  generated_at: string;
+};
+
+export type AppAdminInfo = {
+  migrations: AppMigrationInfo[];
+  deployment: AppDeploymentInfo;
+  auditLogs: AppAuditLog[];
+};

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
-import { authErrorResponse, canAccessCredentials, requireAuthorizedSession } from "@/lib/server-auth";
+import { readdirSync, statSync } from "fs";
+import path from "path";
+import { authErrorResponse, canAccessCredentials, hasFullAccess, requireAuthorizedSession } from "@/lib/server-auth";
 import { createSupabaseAdminClient } from "@/lib/server-supabase";
-import type { MachineCredential } from "@/lib/types";
+import type { AppAdminInfo, AppAuditLog, MachineCredential } from "@/lib/types";
 
 const MACHINE_SAFE_SELECT = `
   id,
@@ -39,6 +41,42 @@ const EMPTY_MACHINE_CREDENTIALS = {
   sinema_password: null,
   sinema_notes: null
 };
+
+function loadMigrationInfo() {
+  try {
+    const migrationsDir = path.join(process.cwd(), "supabase", "migrations");
+    return readdirSync(migrationsDir)
+      .filter((file) => file.endsWith(".sql"))
+      .sort()
+      .map((file) => {
+        const [version, ...nameParts] = file.replace(/\.sql$/, "").split("_");
+        const stats = statSync(path.join(migrationsDir, file));
+        return {
+          version,
+          name: nameParts.join(" ").replace(/\b\w/g, (char) => char.toUpperCase()),
+          file,
+          updated_at: stats.mtime.toISOString()
+        };
+      })
+      .reverse()
+      .slice(0, 12);
+  } catch {
+    return [];
+  }
+}
+
+function deploymentInfo() {
+  return {
+    environment: process.env.VERCEL_ENV ?? null,
+    url: process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL ?? null,
+    commit_sha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+    commit_message: process.env.VERCEL_GIT_COMMIT_MESSAGE ?? null,
+    commit_author: process.env.VERCEL_GIT_COMMIT_AUTHOR_NAME ?? null,
+    region: process.env.VERCEL_REGION ?? process.env.VERCEL_FUNCTION_REGION ?? null,
+    node_env: process.env.NODE_ENV ?? null,
+    generated_at: new Date().toISOString()
+  };
+}
 
 export async function GET() {
   try {
@@ -104,6 +142,23 @@ export async function GET() {
         .order("last_message_at", { ascending: false })
     ]);
 
+    let adminInfo: AppAdminInfo | null = null;
+    let auditWarning: string | null = null;
+    if (hasFullAccess(session.user.role)) {
+      const auditResult = await admin
+        .from("app_audit_logs")
+        .select("id, action, entity, entity_id, entity_label, user_id, user_email, user_name, user_role, details, created_at")
+        .order("created_at", { ascending: false })
+        .limit(80);
+
+      auditWarning = auditResult.error?.message ?? null;
+      adminInfo = {
+        migrations: loadMigrationInfo(),
+        deployment: deploymentInfo(),
+        auditLogs: (auditResult.data ?? []) as AppAuditLog[]
+      };
+    }
+
     return NextResponse.json({
       session: {
         userId: session.userId,
@@ -117,12 +172,14 @@ export async function GET() {
       supportContracts: contractResult.data ?? [],
       chatContacts: contactResult.data ?? [],
       chatConversations: chatResult.data ?? [],
+      adminInfo,
       warnings: {
         users: usersResult.error?.message ?? null,
         travelSchedules: scheduleResult.error?.message ?? null,
         supportContracts: contractResult.error?.message ?? null,
         chatContacts: contactResult.error?.message ?? null,
-        chatConversations: chatResult.error?.message ?? null
+        chatConversations: chatResult.error?.message ?? null,
+        auditLogs: auditWarning
       }
     });
   } catch (error) {

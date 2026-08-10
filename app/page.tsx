@@ -3,9 +3,9 @@
 import { FormEvent, MouseEvent as ReactMouseEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { downloadServicePdf, servicePdfBase64, servicePdfFileName, servicePdfPreviewUrl } from "@/lib/pdf";
-import type { AuthorizedUser, ChatContact, ChatConversation, ChatMessage, Machine, ServiceRecord, SupportContract, TravelSchedule, UserRole } from "@/lib/types";
+import type { AppAdminInfo, AppAuditLog, AuthorizedUser, ChatContact, ChatConversation, ChatMessage, Machine, ServiceRecord, SupportContract, TravelSchedule, UserRole } from "@/lib/types";
 
-type View = "home" | "overview" | "machineDetail" | "service" | "registry" | "schedule" | "chat";
+type View = "home" | "overview" | "admin" | "machineDetail" | "service" | "registry" | "schedule" | "chat";
 type RegistryTab = "machines" | "users" | "clients";
 type ScheduleTab = "travel" | "contracts";
 type SortDirection = "asc" | "desc";
@@ -33,6 +33,7 @@ type AppDataPayload = AppSessionPayload & {
   supportContracts?: SupportContract[];
   chatContacts?: ChatContact[];
   chatConversations?: ChatConversation[];
+  adminInfo?: AppAdminInfo | null;
   error?: string;
 };
 type LeafletLayerTarget = LeafletMap | LeafletLayerGroup;
@@ -902,6 +903,7 @@ function dataMessage(error: string) {
 function screenLegend(view: View, registryTab: RegistryTab, selectedMachine?: Machine) {
   if (view === "home") return "Consulte uma máquina pelo código ou selecione uma linha da tabela.";
   if (view === "overview") return "Visão geral da base instalada, contratos, acessos e atendimentos registrados.";
+  if (view === "admin") return "Monitore atualizações, deploys, migrations e ações registradas no sistema.";
   if (view === "chat") return "Acesso Remoto: receba, assuma, transfira e encerre conversas.";
   if (view === "machineDetail") return selectedMachine ? `Dados cadastrais e histórico da máquina ${displayMachineCode(selectedMachine)}.` : "Dados cadastrais e histórico da máquina.";
   if (view === "service") return "Registre um novo atendimento técnico e gere o relatório em PDF.";
@@ -914,6 +916,7 @@ function screenLegend(view: View, registryTab: RegistryTab, selectedMachine?: Ma
 function helpText(view: View, registryTab: RegistryTab) {
   if (view === "home") return "Use o filtro para localizar uma máquina por código, modelo, cliente ou localização. Clique no código da máquina para abrir os dados cadastrais e o histórico de atendimentos.";
   if (view === "overview") return "A visão geral consolida indicadores da base cadastrada, contratos, acesso remoto, localização e volume de atendimentos. Use os rankings para localizar máquinas, clientes e regiões que merecem atenção.";
+  if (view === "admin") return "A tela administrativa concentra informações técnicas do app e a trilha de auditoria das operações feitas pelos usuários. O acesso fica restrito aos perfis Admin e Diretoria.";
   if (view === "chat") return "Use a tela de Acesso Remoto para validar atendimentos recebidos pelo WhatsApp. Conversas podem ser assumidas por usuários Online, transferidas e encerradas com histórico salvo.";
   if (view === "machineDetail") return "Nesta tela ficam os dados técnicos da máquina, informações de acesso remoto e histórico. Clique em um atendimento para ver o registro completo ou use o menu de ações para baixar o PDF.";
   if (view === "service") return "Registre o atendimento com tipo, motivo breve e descrições completas. Em visita técnica, colete a assinatura do cliente para incluir no PDF.";
@@ -993,6 +996,15 @@ function helpSections(view: View, registryTab: RegistryTab) {
     ];
   }
 
+  if (view === "admin") {
+    return [
+      ["Deploy", "Mostra ambiente, URL, commit, autor e data da leitura informados pela Vercel."],
+      ["Migrations", "Lista as migrations mais recentes versionadas no repositório para facilitar conferência com o Supabase."],
+      ["Auditoria", "Mostra as últimas ações gravadas no sistema: criação, edição, exclusão, relatórios, contratos, cronograma e Acesso Remoto."],
+      ["Permissões", "Esta tela é restrita aos perfis Admin e Diretoria."]
+    ];
+  }
+
   if (view === "chat") {
     return [
       ["Fila de conversas", "Lista mensagens recebidas pelo WhatsApp. Conversas abertas ainda não foram assumidas; atribuídas têm um técnico responsável; encerradas ficam no histórico."],
@@ -1032,6 +1044,76 @@ function initialsFromEmail(value: string) {
   if (!parts.length) return "US";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return `${parts[0][0]}${parts.at(-1)?.[0] ?? ""}`.toUpperCase();
+}
+
+function auditActionLabel(action: string) {
+  const labels: Record<string, string> = {
+    "machine.created": "Máquina cadastrada",
+    "machine.updated": "Máquina alterada",
+    "authorized_users.deleted": "Usuário excluído",
+    "user.created": "Usuário cadastrado",
+    "user.updated": "Usuário alterado",
+    "profile.updated": "Perfil alterado",
+    "chat_contact.updated": "Cliente do acesso remoto alterado",
+    "chat_contacts.deleted": "Cliente do acesso remoto excluído",
+    "travel.created": "Viagem cadastrada",
+    "travel.updated": "Viagem alterada",
+    "travel_schedules.deleted": "Viagem excluída",
+    "contract.created": "Contrato cadastrado",
+    "contract.updated": "Contrato alterado",
+    "support_contracts.deleted": "Contrato excluído",
+    "service.created": "Atendimento registrado",
+    "service.updated": "Atendimento alterado",
+    "service_records.deleted": "Atendimento excluído",
+    "machines.deleted": "Máquina excluída",
+    "chat.assigned": "Conversa atribuída",
+    "chat.closed": "Conversa encerrada"
+  };
+  return labels[action] ?? action;
+}
+
+function auditEntityLabel(entity?: string | null) {
+  const labels: Record<string, string> = {
+    machines: "Máquinas",
+    authorized_users: "Usuários",
+    chat_contacts: "Clientes",
+    travel_schedules: "Cronograma",
+    support_contracts: "Contratos",
+    service_records: "Relatórios",
+    chat_conversations: "Acesso Remoto"
+  };
+  return entity ? labels[entity] ?? entity : "-";
+}
+
+function auditDetailsSummary(log: AppAuditLog) {
+  const details = log.details ?? {};
+  const keys = ["code", "client", "model", "status", "service_type", "issue_summary", "contract_type", "assigned_to_name", "email"];
+  const summary = keys
+    .map((key) => {
+      const value = details[key];
+      return typeof value === "string" && value.trim() ? value.trim() : "";
+    })
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(" · ");
+  return summary || log.entity_label || "-";
+}
+
+function formatLongDateTime(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function shortCommit(value?: string | null) {
+  return value ? value.slice(0, 7) : "-";
 }
 
 function formatDateTime(value?: string | null) {
@@ -1203,6 +1285,7 @@ export default function Home() {
   const [supportContracts, setSupportContracts] = useState<SupportContract[]>([]);
   const [chatConversations, setChatConversations] = useState<ChatConversation[]>([]);
   const [chatContacts, setChatContacts] = useState<ChatContact[]>([]);
+  const [adminInfo, setAdminInfo] = useState<AppAdminInfo | null>(null);
   const [selectedChatId, setSelectedChatId] = useState("");
   const [chatReply, setChatReply] = useState("");
   const [onlineTechnicians, setOnlineTechnicians] = useState<OnlineTechnician[]>([]);
@@ -1421,6 +1504,7 @@ export default function Home() {
   const selectedChat = chatConversations.find((conversation) => conversation.id === selectedChatId) ?? chatConversations[0];
   const showRemoteAccess = machineHasRemoteAccess(machineForm.remote_access);
   const currentUserHasFullAccess = hasFullAccess(currentUserRole);
+  const currentUserCanViewAdmin = currentUserHasFullAccess;
   const currentUserCanUseRemoteAccess = currentUserRole === "Admin" || currentUserRemoteAccessAllowed;
   const currentUserCanAccessCredentials = currentUserRole === "Admin" || currentUserCredentialAccessAllowed;
   const canDownloadBackup = currentUserRole === "Admin";
@@ -1429,6 +1513,9 @@ export default function Home() {
   const currentUserCanManageContracts = canManageContracts(currentUserRole);
   const currentUserCanEmitReports = canEmitReports(currentUserRole);
   const currentUserCanEditSchedule = canEditSchedule(currentUserRole);
+  const adminDeployment = adminInfo?.deployment;
+  const adminMigrations = adminInfo?.migrations ?? [];
+  const adminAuditLogs = adminInfo?.auditLogs ?? [];
   const machineMainFieldsDisabled = !currentUserCanEditMachine;
   const selectedMachineAccess = normalizeRemoteAccess(selectedMachine?.remote_access ?? selectedMachine?.access_method);
   const selectedMachineContract = latestContractForMachine(supportContracts, selectedMachine);
@@ -1479,6 +1566,12 @@ export default function Home() {
       setView("home");
     }
   }, [currentUserCanUseRemoteAccess, view]);
+
+  useEffect(() => {
+    if (view === "admin" && !currentUserCanViewAdmin) {
+      setView("home");
+    }
+  }, [currentUserCanViewAdmin, view]);
 
   useEffect(() => {
     if (!isAuthenticated || !currentUserEmail || !currentUserCanUseRemoteAccess) {
@@ -1823,6 +1916,7 @@ export default function Home() {
     setSupportContracts(payload.supportContracts ?? []);
     setChatContacts(payload.chatContacts ?? []);
     setChatConversations(payload.chatConversations ?? []);
+    setAdminInfo(payload.adminInfo ?? null);
   }
 
   async function loadData() {
@@ -1925,6 +2019,7 @@ export default function Home() {
     setTravelSchedules([]);
     setSupportContracts([]);
     setChatConversations([]);
+    setAdminInfo(null);
   }
 
   function updateRemoteAccessStatus(status: RemoteAccessStatus) {
@@ -3090,6 +3185,7 @@ export default function Home() {
         <nav className="side-nav">
           <button className={`nav-item ${view === "home" ? "active" : ""}`} onClick={() => setView("home")}>Tela inicial</button>
           <button className={`nav-item ${view === "overview" ? "active" : ""}`} onClick={() => setView("overview")}>Visão geral</button>
+          {currentUserCanViewAdmin && <button className={`nav-item ${view === "admin" ? "active" : ""}`} onClick={() => setView("admin")}>Administração</button>}
           {currentUserCanUseRemoteAccess && <button className={`nav-item ${view === "chat" ? "active" : ""}`} onClick={() => setView("chat")}>Acesso Remoto</button>}
           <button className={`nav-item ${view === "schedule" ? "active" : ""}`} onClick={() => setView("schedule")}>Cronograma</button>
           {(currentUserCanEditMachine || currentUserCanManageUsers || currentUserCanUseRemoteAccess) && <button className={`nav-item ${view === "registry" ? "active" : ""}`} onClick={() => { setRegistryTab(currentUserCanEditMachine ? "machines" : currentUserCanUseRemoteAccess ? "clients" : "users"); setView("registry"); }}>Cadastro</button>}
@@ -3447,6 +3543,105 @@ export default function Home() {
                       <strong>{normalizeServiceType(record.service_type).replace("Acesso remoto", "Remoto").replace("Visita técnica", "Visita")}</strong>
                     </button>
                   ))}
+                </div>
+              </article>
+            </section>
+          </section>
+        )}
+
+        {view === "admin" && currentUserCanViewAdmin && (
+          <section className="admin-page view active">
+            <section className="kpi-grid">
+              <article className="kpi-card accent">
+                <span>Usuários autorizados</span>
+                <strong>{authorizedUsers.length}</strong>
+                <small>{authorizedUsers.filter((user) => hasFullAccess(user.role)).length} com acesso total</small>
+              </article>
+              <article className="kpi-card">
+                <span>Máquinas cadastradas</span>
+                <strong>{machines.length}</strong>
+                <small>{machines.filter((machine) => machine.updated_at).length} registros monitorados</small>
+              </article>
+              <article className="kpi-card">
+                <span>Relatórios</span>
+                <strong>{overviewData.totalServices}</strong>
+                <small>{overviewData.servicesThisMonth} no mês atual</small>
+              </article>
+              <article className="kpi-card success">
+                <span>Contratos</span>
+                <strong>{supportContracts.length}</strong>
+                <small>{overviewData.activeContracts} ativos</small>
+              </article>
+              <article className="kpi-card warning">
+                <span>Migrations locais</span>
+                <strong>{adminMigrations.length}</strong>
+                <small>Últimas versionadas</small>
+              </article>
+              <article className="kpi-card">
+                <span>Eventos auditados</span>
+                <strong>{adminAuditLogs.length}</strong>
+                <small>Últimos registros carregados</small>
+              </article>
+            </section>
+
+            <section className="admin-grid">
+              <article className="dashboard-card admin-info-card">
+                <div className="card-title"><DetailIcon type="software" /><h3>Deploy e ambiente</h3></div>
+                <div className="admin-info-list">
+                  <div><span>Ambiente</span><strong>{adminDeployment?.environment || "-"}</strong></div>
+                  <div><span>URL</span><strong>{adminDeployment?.url || "-"}</strong></div>
+                  <div><span>Commit</span><strong>{shortCommit(adminDeployment?.commit_sha)}</strong></div>
+                  <div><span>Mensagem</span><strong title={adminDeployment?.commit_message || ""}>{adminDeployment?.commit_message || "-"}</strong></div>
+                  <div><span>Autor</span><strong>{adminDeployment?.commit_author || "-"}</strong></div>
+                  <div><span>Região</span><strong>{adminDeployment?.region || "-"}</strong></div>
+                  <div><span>Runtime</span><strong>{adminDeployment?.node_env || "-"}</strong></div>
+                  <div><span>Leitura</span><strong>{formatLongDateTime(adminDeployment?.generated_at)}</strong></div>
+                </div>
+              </article>
+
+              <article className="dashboard-card admin-info-card">
+                <div className="card-title"><DetailIcon type="history" /><h3>Migrations recentes</h3></div>
+                <div className="admin-migration-list">
+                  {adminMigrations.length ? adminMigrations.slice(0, 8).map((migration) => (
+                    <div key={migration.file}>
+                      <span>{migration.version}</span>
+                      <strong title={migration.file}>{migration.name || migration.file}</strong>
+                      <small>{formatLongDateTime(migration.updated_at)}</small>
+                    </div>
+                  )) : <p className="empty-card-note">Nenhuma migration local encontrada.</p>}
+                </div>
+              </article>
+
+              <article className="dashboard-card admin-info-card">
+                <div className="card-title"><DetailIcon type="check" /><h3>Permissões e módulos</h3></div>
+                <div className="admin-info-list">
+                  <div><span>Admin</span><strong>{authorizedUsers.filter((user) => user.role === "Admin").length}</strong></div>
+                  <div><span>Diretoria</span><strong>{authorizedUsers.filter((user) => user.role === "Diretoria").length}</strong></div>
+                  <div><span>Acesso Remoto</span><strong>{authorizedUsers.filter((user) => user.remote_access_allowed).length}</strong></div>
+                  <div><span>Acesso a senhas</span><strong>{authorizedUsers.filter((user) => user.credential_access_allowed).length}</strong></div>
+                  <div><span>Conversas</span><strong>{chatConversations.length}</strong></div>
+                  <div><span>Clientes do chat</span><strong>{chatContacts.length}</strong></div>
+                </div>
+              </article>
+
+              <article className="dashboard-card admin-audit-card admin-wide-card">
+                <div className="card-title"><DetailIcon type="detail" /><h3>Últimas ações dos usuários</h3></div>
+                <div className="admin-audit-list">
+                  {adminAuditLogs.length ? adminAuditLogs.map((log) => (
+                    <article key={log.id} className="admin-audit-item">
+                      <time>{formatLongDateTime(log.created_at)}</time>
+                      <div>
+                        <strong>{auditActionLabel(log.action)}</strong>
+                        <span>{auditEntityLabel(log.entity)} · {log.entity_label || auditDetailsSummary(log)}</span>
+                        <p>{auditDetailsSummary(log)}</p>
+                      </div>
+                      <small>{log.user_name || displayUserName(log.user_email || "")}<br />{log.user_role || "-"}</small>
+                    </article>
+                  )) : (
+                    <p className="empty-card-note">
+                      Nenhuma ação auditada ainda. Aplique a migration 035_admin_audit_logs.sql para iniciar o registro das próximas operações.
+                    </p>
+                  )}
                 </div>
               </article>
             </section>

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  type AuthorizedSession,
   authErrorResponse,
   canAccessCredentials,
   canEditMachine,
@@ -39,6 +40,34 @@ function bool(value: unknown) {
 
 function jsonError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
+}
+
+async function safeRecordAudit(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  session: AuthorizedSession,
+  entry: {
+    action: string;
+    entity?: string | null;
+    entityId?: string | null;
+    entityLabel?: string | null;
+    details?: Record<string, unknown>;
+  }
+) {
+  try {
+    await admin.from("app_audit_logs").insert({
+      action: entry.action,
+      entity: entry.entity ?? null,
+      entity_id: entry.entityId ?? null,
+      entity_label: entry.entityLabel ?? null,
+      user_id: session.userId,
+      user_email: session.email,
+      user_name: session.user.name,
+      user_role: session.user.role,
+      details: entry.details ?? {}
+    });
+  } catch {
+    // A auditoria depende da migration mais recente; a ação principal não deve ser bloqueada por isso.
+  }
 }
 
 export async function POST(request: Request) {
@@ -94,6 +123,19 @@ export async function POST(request: Request) {
         if (credentialResult.error) return jsonError("Máquina salva, mas as credenciais não foram atualizadas.", 500);
       }
 
+      await safeRecordAudit(admin, session, {
+        action: editingId ? "machine.updated" : "machine.created",
+        entity: "machines",
+        entityId: result.data.id,
+        entityLabel: machinePayload.code ?? machinePayload.model ?? machinePayload.client,
+        details: {
+          code: machinePayload.code,
+          client: machinePayload.client,
+          model: machinePayload.model,
+          remote_access: machinePayload.remote_access
+        }
+      });
+
       return NextResponse.json({ data: result.data });
     }
 
@@ -123,6 +165,20 @@ export async function POST(request: Request) {
         })
         .single();
       if (result.error || !result.data) return jsonError(result.error?.message ?? "Usuário não salvo.", 500);
+      const savedUser = result.data as { id?: string };
+      await safeRecordAudit(admin, session, {
+        action: editingId ? "user.updated" : "user.created",
+        entity: "authorized_users",
+        entityId: savedUser.id,
+        entityLabel: userPayload.email,
+        details: {
+          name: userPayload.name,
+          email: userPayload.email,
+          role: userPayload.role,
+          remote_access_allowed: userPayload.remote_access_allowed,
+          credential_access_allowed: userPayload.credential_access_allowed
+        }
+      });
       return NextResponse.json({ data: result.data });
     }
 
@@ -141,6 +197,13 @@ export async function POST(request: Request) {
         .select()
         .single();
       if (result.error || !result.data) return jsonError(result.error?.message ?? "Usuário não atualizado.", 500);
+      await safeRecordAudit(admin, session, {
+        action: "profile.updated",
+        entity: "authorized_users",
+        entityId: result.data.id,
+        entityLabel: session.email,
+        details: { display_name: displayName }
+      });
       return NextResponse.json({ data: result.data });
     }
 
@@ -162,6 +225,13 @@ export async function POST(request: Request) {
         .select()
         .single();
       if (result.error || !result.data) return jsonError(result.error?.message ?? "Cliente não atualizado.", 500);
+      await safeRecordAudit(admin, session, {
+        action: "chat_contact.updated",
+        entity: "chat_contacts",
+        entityId: result.data.id,
+        entityLabel: result.data.name || result.data.phone,
+        details: { company: result.data.company, phone: result.data.phone }
+      });
       return NextResponse.json({ data: result.data });
     }
 
@@ -181,6 +251,18 @@ export async function POST(request: Request) {
         ? await admin.from("travel_schedules").update(travelPayload).eq("id", editingId).select().single()
         : await admin.from("travel_schedules").insert({ ...travelPayload, created_by: session.userId }).select().single();
       if (result.error || !result.data) return jsonError(result.error?.message ?? "Cronograma não salvo.", 500);
+      await safeRecordAudit(admin, session, {
+        action: editingId ? "travel.updated" : "travel.created",
+        entity: "travel_schedules",
+        entityId: result.data.id,
+        entityLabel: travelPayload.code ?? travelPayload.client,
+        details: {
+          client: travelPayload.client,
+          status: travelPayload.status,
+          start_date: travelPayload.start_date,
+          end_date: travelPayload.end_date
+        }
+      });
       return NextResponse.json({ data: result.data });
     }
 
@@ -202,6 +284,18 @@ export async function POST(request: Request) {
         ? await admin.from("support_contracts").update(contractPayload).eq("id", editingId).select().single()
         : await admin.from("support_contracts").insert({ ...contractPayload, created_by: session.userId }).select().single();
       if (result.error || !result.data) return jsonError(result.error?.message ?? "Contrato não salvo.", 500);
+      await safeRecordAudit(admin, session, {
+        action: editingId ? "contract.updated" : "contract.created",
+        entity: "support_contracts",
+        entityId: result.data.id,
+        entityLabel: contractPayload.code ?? contractPayload.serial ?? contractPayload.client,
+        details: {
+          client: contractPayload.client,
+          status: contractPayload.status,
+          contract_type: contractPayload.contract_type,
+          support_contract_until: contractPayload.support_contract_until
+        }
+      });
       return NextResponse.json({ data: result.data });
     }
 
@@ -238,6 +332,18 @@ export async function POST(request: Request) {
         ? await admin.from("service_records").update(servicePayload).eq("id", editingId).select().single()
         : await admin.from("service_records").insert({ ...servicePayload, created_by: session.userId }).select().single();
       if (result.error || !result.data) return jsonError(result.error?.message ?? "Atendimento não salvo.", 500);
+      await safeRecordAudit(admin, session, {
+        action: editingId ? "service.updated" : "service.created",
+        entity: "service_records",
+        entityId: result.data.id,
+        entityLabel: servicePayload.issue_summary ?? servicePayload.equipment ?? servicePayload.service_date,
+        details: {
+          machine_id: servicePayload.machine_id,
+          service_date: servicePayload.service_date,
+          service_type: servicePayload.service_type,
+          issue_summary: servicePayload.issue_summary
+        }
+      });
       return NextResponse.json({ data: result.data });
     }
 
@@ -262,6 +368,13 @@ export async function POST(request: Request) {
 
       const result = await admin.from(table).delete().eq("id", rowId);
       if (result.error) return jsonError(result.error.message, 500);
+      await safeRecordAudit(admin, session, {
+        action: `${table}.deleted`,
+        entity: table,
+        entityId: rowId,
+        entityLabel: rowId,
+        details: { table }
+      });
       return NextResponse.json({ ok: true });
     }
 
@@ -296,6 +409,16 @@ export async function POST(request: Request) {
         sender_name: session.user.name,
         created_by: session.userId
       });
+      await safeRecordAudit(admin, session, {
+        action: "chat.assigned",
+        entity: "chat_conversations",
+        entityId: conversationId,
+        entityLabel: target.email,
+        details: {
+          assigned_to_email: target.email,
+          assigned_to_name: target.name
+        }
+      });
       return NextResponse.json({ ok: true });
     }
 
@@ -321,6 +444,13 @@ export async function POST(request: Request) {
         sender_email: session.email,
         sender_name: session.user.name,
         created_by: session.userId
+      });
+      await safeRecordAudit(admin, session, {
+        action: "chat.closed",
+        entity: "chat_conversations",
+        entityId: conversationId,
+        entityLabel: conversationId,
+        details: { closed_at: now }
       });
       return NextResponse.json({ ok: true });
     }
