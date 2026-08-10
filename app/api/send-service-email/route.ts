@@ -1,12 +1,19 @@
 import { NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { authErrorResponse, canEmitReports, requireAuthorizedSession } from "@/lib/server-auth";
+import { uploadServiceReportToSharePoint } from "@/lib/sharepoint";
 
 type SendEmailPayload = {
   to?: string[];
   subject?: string;
   filename?: string;
   pdfBase64?: string;
+  machineCode?: string;
+};
+
+type SharePointUploadResult = Awaited<ReturnType<typeof uploadServiceReportToSharePoint>> | {
+  skipped: false;
+  error: string;
 };
 
 const smtpHost = process.env.SMTP_HOST;
@@ -87,7 +94,21 @@ export async function POST(request: Request) {
       ]
     });
 
-    return NextResponse.json({ id: info.messageId ?? null, accepted: info.accepted ?? [] });
+    let sharePoint: SharePointUploadResult | null = null;
+    try {
+      sharePoint = await uploadServiceReportToSharePoint({
+        machineCode: body.machineCode,
+        filename: body.filename,
+        pdfBase64: body.pdfBase64
+      });
+    } catch (sharePointError) {
+      sharePoint = {
+        skipped: false,
+        error: sharePointError instanceof Error ? sharePointError.message : "Falha ao salvar PDF no SharePoint."
+      };
+    }
+
+    return NextResponse.json({ id: info.messageId ?? null, accepted: info.accepted ?? [], sharePoint });
   } catch (error) {
     if (error instanceof Error) {
       return NextResponse.json(

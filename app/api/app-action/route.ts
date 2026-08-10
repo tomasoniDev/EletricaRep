@@ -14,6 +14,7 @@ import {
   requireAuthorizedSession
 } from "@/lib/server-auth";
 import { createSupabaseAdminClient } from "@/lib/server-supabase";
+import { safeBackupOperationalDataToSharePoint } from "@/lib/sharepoint";
 
 type ActionBody = {
   action?: string;
@@ -68,6 +69,10 @@ async function safeRecordAudit(
   } catch {
     // A auditoria depende da migration mais recente; a ação principal não deve ser bloqueada por isso.
   }
+}
+
+async function safeRefreshSharePointBackup(admin: ReturnType<typeof createSupabaseAdminClient>) {
+  return safeBackupOperationalDataToSharePoint(admin);
 }
 
 export async function POST(request: Request) {
@@ -136,7 +141,8 @@ export async function POST(request: Request) {
         }
       });
 
-      return NextResponse.json({ data: result.data });
+      const backup = await safeRefreshSharePointBackup(admin);
+      return NextResponse.json({ data: result.data, backup });
     }
 
     if (action === "saveUser") {
@@ -179,6 +185,7 @@ export async function POST(request: Request) {
           credential_access_allowed: userPayload.credential_access_allowed
         }
       });
+      await safeRefreshSharePointBackup(admin);
       return NextResponse.json({ data: result.data });
     }
 
@@ -204,6 +211,7 @@ export async function POST(request: Request) {
         entityLabel: session.email,
         details: { display_name: displayName }
       });
+      await safeRefreshSharePointBackup(admin);
       return NextResponse.json({ data: result.data });
     }
 
@@ -232,7 +240,25 @@ export async function POST(request: Request) {
         entityLabel: result.data.name || result.data.phone,
         details: { company: result.data.company, phone: result.data.phone }
       });
+      await safeRefreshSharePointBackup(admin);
       return NextResponse.json({ data: result.data });
+    }
+
+    if (action === "backupSharePoint") {
+      if (!hasFullAccess(session.user.role)) return jsonError("Usuário sem permissão para atualizar backup no SharePoint.", 403);
+      const backup = await safeRefreshSharePointBackup(admin);
+      if ("error" in backup && backup.error) return jsonError(backup.error, 502);
+      if ("skipped" in backup && backup.skipped) {
+        const message = "message" in backup ? backup.message : "Backup do SharePoint não configurado.";
+        return jsonError(message ?? "Backup do SharePoint não configurado.", 500);
+      }
+      await safeRecordAudit(admin, session, {
+        action: "sharepoint.backup",
+        entity: "machines",
+        entityLabel: "Backup SharePoint",
+        details: { item: "item" in backup ? backup.item : null }
+      });
+      return NextResponse.json({ ok: true, backup });
     }
 
     if (action === "saveTravel") {
@@ -263,6 +289,7 @@ export async function POST(request: Request) {
           end_date: travelPayload.end_date
         }
       });
+      await safeRefreshSharePointBackup(admin);
       return NextResponse.json({ data: result.data });
     }
 
@@ -296,6 +323,7 @@ export async function POST(request: Request) {
           support_contract_until: contractPayload.support_contract_until
         }
       });
+      await safeRefreshSharePointBackup(admin);
       return NextResponse.json({ data: result.data });
     }
 
@@ -375,6 +403,9 @@ export async function POST(request: Request) {
         entityLabel: rowId,
         details: { table }
       });
+      if (["machines", "authorized_users", "chat_contacts", "travel_schedules", "support_contracts"].includes(table)) {
+        await safeRefreshSharePointBackup(admin);
+      }
       return NextResponse.json({ ok: true });
     }
 

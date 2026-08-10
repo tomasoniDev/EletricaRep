@@ -297,7 +297,7 @@ async function apiRequest<T>(url: string, init?: RequestInit) {
 }
 
 async function appAction<T>(action: string, payload: Record<string, unknown> = {}) {
-  return apiRequest<{ data?: T; ok?: boolean }>("/api/app-action", {
+  return apiRequest<{ data?: T; ok?: boolean; backup?: unknown }>("/api/app-action", {
     method: "POST",
     body: JSON.stringify({ action, payload })
   });
@@ -534,17 +534,6 @@ function parseEmails(value: string) {
 function lastServiceDate(machine: Machine) {
   const dates = machine.service_records?.map((record) => record.service_date).filter(Boolean) ?? [];
   return dates.sort().at(-1) ?? "";
-}
-
-function csvCell(value: unknown) {
-  const text = value === null || value === undefined ? "" : String(value);
-  return `"${text.replace(/"/g, "\"\"")}"`;
-}
-
-function fileTimestamp() {
-  const now = new Date();
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
 }
 
 function daysSince(value?: string | null) {
@@ -2111,88 +2100,21 @@ export default function Home() {
     }
   }
 
-  function downloadMachinesBackup() {
+  async function downloadMachinesBackup() {
     if (!canDownloadBackup) {
       setUserMenuOpen(false);
       setMessage("Backup disponível apenas para usuário autorizado.");
       return;
     }
 
-    const headers = [
-      "Código",
-      "Modelo",
-      "Descrição",
-      "Cliente",
-      "Localização",
-      "Número de série",
-      "Lista mecânica",
-      "Fabricação",
-      "Software",
-      "Código do software",
-      "VM",
-      "Faixa de IP",
-      "Acesso remoto",
-      "IP de acesso VNC",
-      "Senha VNC",
-      "Usuário VM",
-      "Senha VM",
-      "Observações VNC",
-      "Device Name SINEMA",
-      "Subnet Name SINEMA",
-      "Observações SINEMA",
-      "Contrato ativo",
-      "Tipo de contrato",
-      "Final da vigência",
-      "Último atendimento",
-      "Quantidade de atendimentos",
-      "Criado em",
-      "Atualizado em"
-    ];
-
-    const rows = machines.map((machine) => [
-      displayMachineCode(machine),
-      machine.model ?? "",
-      machine.description ?? "",
-      machine.client ?? "",
-      machine.unit_city ?? "",
-      machine.serial ?? "",
-      machine.mechanical_list ?? "",
-      machine.manufacture_month ? formatMonthYear(machine.manufacture_month) : "",
-      machine.software_version ?? "",
-      machine.software_code ?? "",
-      machine.vm ?? "",
-      machine.ip_range ?? "",
-      normalizeRemoteAccess(machine.remote_access ?? machine.access_method),
-      machine.vnc_ip ?? "",
-      machine.vnc_password ?? "",
-      machine.vnc_user ?? "",
-      machine.vnc_vm_password ?? "",
-      machine.vnc_notes ?? "",
-      machine.sinema_url ?? "",
-      machine.sinema_user ?? "",
-      machine.sinema_notes ?? "",
-      machine.support_contract_active === null || machine.support_contract_active === undefined ? "" : machine.support_contract_active ? "Sim" : "NÃ£o",
-      machine.support_contract_type ?? "",
-      machine.support_contract_until ? formatDate(machine.support_contract_until) : "",
-      lastServiceDate(machine) ? formatDate(lastServiceDate(machine)) : "",
-      machine.service_records?.length ?? 0,
-      machine.created_at ? formatDate(machine.created_at.slice(0, 10)) : "",
-      machine.updated_at ? formatDate(machine.updated_at.slice(0, 10)) : ""
-    ]);
-
-    const csv = [headers, ...rows].map((row) => row.map(csvCell).join(";")).join("\r\n");
-    const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `backup-maquinas-tomasoni-${fileTimestamp()}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-
     setUserMenuOpen(false);
-    setMessage(`Backup de ${machines.length} máquinas gerado em planilha CSV.`);
+    setMessage("Atualizando backup no SharePoint.");
+    try {
+      await appAction("backupSharePoint");
+      setMessage("Backup atualizado no SharePoint com sucesso.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível atualizar o backup no SharePoint.");
+    }
   }
 
   async function saveUserProfile(event: FormEvent<HTMLFormElement>) {
@@ -2862,6 +2784,7 @@ export default function Home() {
         to: recipients,
         subject: "Relatório de atendimento - Máquina " + displayMachineCode(machine),
         filename: servicePdfFileName(machine, record),
+        machineCode: displayMachineCode(machine),
         pdfBase64
       }),
       signal: controller.signal
@@ -2873,7 +2796,15 @@ export default function Home() {
     }
 
     rememberServiceEmails(recipients);
-    return "Atendimento salvo, PDF gerado e e-mail enviado para " + recipients.join("; ") + ".";
+    if (result?.sharePoint?.error) {
+      return "Atendimento salvo e e-mail enviado para " + recipients.join("; ") + ", mas o PDF não foi salvo no SharePoint. Detalhe: " + result.sharePoint.error;
+    }
+
+    if (result?.sharePoint?.skipped) {
+      return "Atendimento salvo e e-mail enviado para " + recipients.join("; ") + ". Backup do PDF no SharePoint não configurado.";
+    }
+
+    return "Atendimento salvo, PDF gerado, e-mail enviado para " + recipients.join("; ") + " e PDF salvo no SharePoint.";
   }
 
   async function sendPreviewServiceEmail() {
@@ -3215,7 +3146,7 @@ export default function Home() {
                 </>
               )}
               <button type="button" onClick={editUser}><EditIcon /> Editar Usuário</button>
-              {canDownloadBackup && <button type="button" onClick={downloadMachinesBackup}><PdfDownloadIcon /> Backup de máquinas</button>}
+              {canDownloadBackup && <button type="button" onClick={downloadMachinesBackup}><PdfDownloadIcon /> Backup SharePoint</button>}
               <button type="button" onClick={signOut}><LogOutIcon /> Sair</button>
             </div>
           )}
