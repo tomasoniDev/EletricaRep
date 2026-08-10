@@ -3185,10 +3185,10 @@ export default function Home() {
         <nav className="side-nav">
           <button className={`nav-item ${view === "home" ? "active" : ""}`} onClick={() => setView("home")}>Tela inicial</button>
           <button className={`nav-item ${view === "overview" ? "active" : ""}`} onClick={() => setView("overview")}>Visão geral</button>
-          {currentUserCanViewAdmin && <button className={`nav-item ${view === "admin" ? "active" : ""}`} onClick={() => setView("admin")}>Administração</button>}
           {currentUserCanUseRemoteAccess && <button className={`nav-item ${view === "chat" ? "active" : ""}`} onClick={() => setView("chat")}>Acesso Remoto</button>}
           <button className={`nav-item ${view === "schedule" ? "active" : ""}`} onClick={() => setView("schedule")}>Cronograma</button>
           {(currentUserCanEditMachine || currentUserCanManageUsers || currentUserCanUseRemoteAccess) && <button className={`nav-item ${view === "registry" ? "active" : ""}`} onClick={() => { setRegistryTab(currentUserCanEditMachine ? "machines" : currentUserCanUseRemoteAccess ? "clients" : "users"); setView("registry"); }}>Cadastro</button>}
+          {currentUserCanViewAdmin && <button className={`nav-item ${view === "admin" ? "active" : ""}`} onClick={() => setView("admin")}>Administração</button>}
         </nav>
         <div className="user-menu">
           <button className="user-menu-trigger" type="button" onClick={() => setUserMenuOpen((open) => !open)} aria-expanded={userMenuOpen}>
