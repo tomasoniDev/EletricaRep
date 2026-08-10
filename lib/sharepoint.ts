@@ -7,6 +7,11 @@ type GraphSite = {
   id: string;
 };
 
+type GraphDrive = {
+  id: string;
+  name: string;
+};
+
 type GraphDriveItem = {
   id: string;
   name: string;
@@ -25,7 +30,8 @@ const tenantId = process.env.MS_GRAPH_TENANT_ID;
 const clientId = process.env.MS_GRAPH_CLIENT_ID;
 const clientSecret = process.env.MS_GRAPH_CLIENT_SECRET;
 const sharePointSiteUrl = process.env.SHAREPOINT_SITE_URL;
-const sharePointBasePath = normalizeSharePointPath(process.env.SHAREPOINT_BASE_PATH ?? "Hub Tomasoni");
+const sharePointDriveName = process.env.SHAREPOINT_DRIVE_NAME ?? "Máquinas";
+const sharePointBasePath = normalizeSharePointPath(process.env.SHAREPOINT_BASE_PATH ?? "");
 
 export function isSharePointConfigured() {
   return Boolean(tenantId && clientId && clientSecret && sharePointSiteUrl);
@@ -114,7 +120,22 @@ async function getSharePointSite() {
   return graphRequest<GraphSite>(`/sites/${url.hostname}:${sitePath}`);
 }
 
-async function ensureFolder(siteId: string, folderPath: string) {
+async function getSharePointDrive(siteId: string) {
+  if (!sharePointDriveName.trim()) {
+    return graphRequest<GraphDrive>(`/sites/${siteId}/drive`);
+  }
+
+  const data = await graphRequest<{ value?: GraphDrive[] }>(`/sites/${siteId}/drives`);
+  const normalizedTarget = sharePointDriveName.trim().toLowerCase();
+  const drive = data.value?.find((item) => item.name.trim().toLowerCase() === normalizedTarget);
+  if (!drive) {
+    throw new Error(`Biblioteca do SharePoint não encontrada: ${sharePointDriveName}.`);
+  }
+
+  return drive;
+}
+
+async function ensureFolder(driveId: string, folderPath: string) {
   const parts = normalizeSharePointPath(folderPath).split("/").filter(Boolean);
   let currentPath = "";
 
@@ -122,8 +143,8 @@ async function ensureFolder(siteId: string, folderPath: string) {
     const parentPath = currentPath;
     currentPath = normalizeSharePointPath(`${currentPath}/${part}`);
     const parentEndpoint = parentPath
-      ? `/sites/${siteId}/drive/root:/${encodePath(parentPath)}:/children`
-      : `/sites/${siteId}/drive/root/children`;
+      ? `/drives/${driveId}/root:/${encodePath(parentPath)}:/children`
+      : `/drives/${driveId}/root/children`;
 
     try {
       await graphRequest<GraphDriveItem>(parentEndpoint, {
@@ -145,11 +166,12 @@ async function ensureFolder(siteId: string, folderPath: string) {
 
 async function uploadFile(folderPath: string, filename: string, content: Buffer, contentType: string) {
   const site = await getSharePointSite();
+  const drive = await getSharePointDrive(site.id);
   const normalizedFolder = normalizeSharePointPath(folderPath);
-  await ensureFolder(site.id, normalizedFolder);
+  await ensureFolder(drive.id, normalizedFolder);
   const filePath = encodePath(`${normalizedFolder}/${safePathSegment(filename, "arquivo")}`);
   const body = content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength) as BodyInit;
-  return graphRequest<GraphDriveItem>(`/sites/${site.id}/drive/root:/${filePath}:/content`, {
+  return graphRequest<GraphDriveItem>(`/drives/${drive.id}/root:/${filePath}:/content`, {
     method: "PUT",
     body,
     headers: { "Content-Type": contentType }
@@ -250,7 +272,7 @@ export async function backupOperationalDataToSharePoint(admin: SupabaseClient) {
   const data = await loadOperationalBackupData(admin);
   const workbook = createOperationalBackupWorkbook(data);
   const uploaded = await uploadFile(
-    `${sharePointBasePath}/Backups`,
+    `${sharePointBasePath}/Backup`,
     "backup-cadastros-hub-tomasoni.xls",
     workbook,
     "application/vnd.ms-excel; charset=utf-8"
@@ -270,7 +292,7 @@ export async function uploadServiceReportToSharePoint(options: {
 
   const machineFolder = safePathSegment(options.machineCode, "maquina-sem-codigo");
   const uploaded = await uploadFile(
-    `${sharePointBasePath}/Relatorios/${machineFolder}`,
+    `${sharePointBasePath}/Relatórios/${machineFolder}`,
     options.filename,
     Buffer.from(options.pdfBase64, "base64"),
     "application/pdf"
