@@ -20,9 +20,6 @@ type GraphDriveItem = {
 
 type OperationalBackupData = {
   machines: Record<string, unknown>[];
-  contacts: Record<string, unknown>[];
-  contracts: Record<string, unknown>[];
-  travelSchedules: Record<string, unknown>[];
 };
 
 const graphBaseUrl = "https://graph.microsoft.com/v1.0";
@@ -186,18 +183,42 @@ function htmlCell(value: unknown) {
     .replace(/"/g, "&quot;");
 }
 
-function tableHtml(title: string, rows: Record<string, unknown>[]) {
-  const headers = Array.from(rows.reduce((set, row) => {
-    Object.keys(row).forEach((key) => set.add(key));
-    return set;
-  }, new Set<string>()));
+const machineBackupColumns = [
+  ["code", "Código"],
+  ["model", "Modelo"],
+  ["description", "Descrição"],
+  ["client", "Cliente"],
+  ["unit_city", "Localização"],
+  ["serial", "Número de série"],
+  ["mechanical_list", "Lista mecânica"],
+  ["manufacture_month", "Fabricação"],
+  ["software_version", "Software"],
+  ["software_code", "Código do software"],
+  ["vm", "VM"],
+  ["ip_range", "Faixa de IP"],
+  ["remote_access", "Acesso remoto"],
+  ["access_method", "Forma de acesso"],
+  ["vnc_ip", "IP de acesso VNC"],
+  ["vnc_user", "Usuário VNC"],
+  ["vnc_notes", "Observações VNC"],
+  ["sinema_url", "Endereço SINEMA"],
+  ["sinema_user", "Usuário SINEMA"],
+  ["sinema_notes", "Observações SINEMA"],
+  ["created_at", "Criado em"],
+  ["updated_at", "Atualizado em"]
+] as const;
 
+function tableHtml(
+  title: string,
+  rows: Record<string, unknown>[],
+  columns: readonly (readonly [string, string])[]
+) {
   return `
     <h2>${htmlCell(title)}</h2>
     <table>
-      <thead><tr>${headers.map((header) => `<th>${htmlCell(header)}</th>`).join("")}</tr></thead>
+      <thead><tr>${columns.map(([, label]) => `<th>${htmlCell(label)}</th>`).join("")}</tr></thead>
       <tbody>
-        ${rows.map((row) => `<tr>${headers.map((header) => `<td>${htmlCell(row[header])}</td>`).join("")}</tr>`).join("")}
+        ${rows.map((row) => `<tr>${columns.map(([key]) => `<td>${htmlCell(row[key])}</td>`).join("")}</tr>`).join("")}
       </tbody>
     </table>
   `;
@@ -221,10 +242,7 @@ function createOperationalBackupWorkbook(data: OperationalBackupData) {
 <body>
   <h1>Backup Hub Tomasoni</h1>
   <p>Gerado em ${htmlCell(generatedAt)}</p>
-  ${tableHtml("Máquinas", data.machines)}
-  ${tableHtml("Clientes do Acesso Remoto", data.contacts)}
-  ${tableHtml("Contratos", data.contracts)}
-  ${tableHtml("Cronograma", data.travelSchedules)}
+  ${tableHtml("Máquinas cadastradas", data.machines, machineBackupColumns)}
 </body>
 </html>`;
 
@@ -232,35 +250,17 @@ function createOperationalBackupWorkbook(data: OperationalBackupData) {
 }
 
 async function loadOperationalBackupData(admin: SupabaseClient): Promise<OperationalBackupData> {
-  const [machinesResult, contactsResult, contractsResult, travelResult] = await Promise.all([
-    admin
-      .from("machines")
-      .select("code, model, description, client, unit_city, serial, mechanical_list, manufacture_month, software_version, software_code, vm, ip_range, remote_access, created_at, updated_at")
-      .order("code", { ascending: true }),
-    admin
-      .from("chat_contacts")
-      .select("name, company, phone, created_at, updated_at")
-      .order("company", { ascending: true }),
-    admin
-      .from("support_contracts")
-      .select("code, client, serial, contract_type, status, active, support_contract_until, created_at, updated_at")
-      .order("support_contract_until", { ascending: true }),
-    admin
-      .from("travel_schedules")
-      .select("start_date, end_date, code, client, technicians, status, reason, created_at, updated_at")
-      .order("created_at", { ascending: false })
-  ]);
+  const machinesResult = await admin
+    .from("machines")
+    .select("code, model, description, client, unit_city, serial, mechanical_list, manufacture_month, software_version, software_code, vm, ip_range, remote_access, access_method, vnc_ip, vnc_user, vnc_notes, sinema_url, sinema_user, sinema_notes, created_at, updated_at")
+    .order("code", { ascending: true });
 
-  const errors = [machinesResult.error, contactsResult.error, contractsResult.error, travelResult.error].filter(Boolean);
-  if (errors.length) {
-    throw new Error(errors.map((error) => error?.message).join(" | "));
+  if (machinesResult.error) {
+    throw new Error(machinesResult.error.message);
   }
 
   return {
-    machines: (machinesResult.data ?? []) as Record<string, unknown>[],
-    contacts: (contactsResult.data ?? []) as Record<string, unknown>[],
-    contracts: (contractsResult.data ?? []) as Record<string, unknown>[],
-    travelSchedules: (travelResult.data ?? []) as Record<string, unknown>[]
+    machines: (machinesResult.data ?? []) as Record<string, unknown>[]
   };
 }
 
