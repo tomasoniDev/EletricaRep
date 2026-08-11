@@ -1,9 +1,9 @@
 "use client";
 
-import { FormEvent, MouseEvent as ReactMouseEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, MouseEvent as ReactMouseEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { downloadServicePdf, servicePdfBase64, servicePdfFileName, servicePdfPreviewUrl } from "@/lib/pdf";
-import type { AppAdminInfo, AppAuditLog, AuthorizedUser, ChatContact, ChatConversation, ChatMessage, Machine, ServiceRecord, SupportContract, TravelSchedule, UserRole } from "@/lib/types";
+import type { AppAdminInfo, AppAuditLog, AuthorizedUser, ChatContact, ChatConversation, ChatMessage, Machine, ServiceAttachment, ServiceRecord, SupportContract, TravelSchedule, UserRole } from "@/lib/types";
 
 type View = "home" | "overview" | "admin" | "machineDetail" | "service" | "registry" | "schedule" | "chat";
 type RegistryTab = "machines" | "users" | "clients";
@@ -142,6 +142,7 @@ const THEME_KEY = "tomasoni-servicecore-theme";
 const REMOTE_ACCESS_STATUS_KEY = "tomasoni-servicecore-remote-access-status";
 const SERVICE_EMAIL_SUGGESTIONS_KEY = "tomasoni-servicecore-service-email-suggestions";
 const PWA_SW_RELOAD_KEY = "tomasoni-servicecore-sw-reload";
+const MAX_SERVICE_ATTACHMENTS = 6;
 const REMOTE_ACCESS_OPTIONS: RemoteAccess[] = ["Sem acesso remoto", "SINEMA", "VNC"];
 const SERVICE_TYPE_OPTIONS: ServiceType[] = ["Acesso remoto", "Visita técnica"];
 const CONTRACT_TYPE_OPTIONS: ContractType[] = ["Seg-Sex", "Seg-Sab", "Garantia"];
@@ -1316,6 +1317,7 @@ export default function Home() {
   const [serviceRecipientSuggestionsOpen, setServiceRecipientSuggestionsOpen] = useState(false);
   const [savedServiceEmails, setSavedServiceEmails] = useState<string[]>([]);
   const [customerSignature, setCustomerSignature] = useState("");
+  const [serviceAttachments, setServiceAttachments] = useState<ServiceAttachment[]>([]);
   const [isSigning, setIsSigning] = useState(false);
   const [signatureExpanded, setSignatureExpanded] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>("light");
@@ -1861,6 +1863,7 @@ export default function Home() {
     const nextServiceType = normalizeServiceType(editingServiceRecord?.service_type);
     setServiceType(nextServiceType);
     setCustomerSignature(nextServiceType === "Visita técnica" ? editingServiceRecord?.customer_signature ?? "" : "");
+    setServiceAttachments(editingServiceRecord?.attachments ?? []);
   }, [editingServiceRecord]);
 
   useEffect(() => {
@@ -2256,6 +2259,71 @@ export default function Home() {
     setServiceRecipientSuggestionsOpen(false);
   }
 
+  async function imageFileToAttachment(file: File): Promise<ServiceAttachment> {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result ?? ""));
+      reader.onerror = () => reject(new Error("Não foi possível ler a imagem."));
+      reader.readAsDataURL(file);
+    });
+
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new window.Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error("Arquivo de imagem inválido."));
+      element.src = dataUrl;
+    });
+
+    const maxSide = 1400;
+    const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Não foi possível preparar a imagem.");
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    return {
+      id: crypto.randomUUID(),
+      name: file.name,
+      type: "image/jpeg",
+      dataUrl: canvas.toDataURL("image/jpeg", 0.78),
+      caption: ""
+    };
+  }
+
+  async function addServiceAttachmentFiles(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []).filter((file) => file.type.startsWith("image/"));
+    event.target.value = "";
+    if (!files.length) return;
+
+    const available = MAX_SERVICE_ATTACHMENTS - serviceAttachments.length;
+    if (available <= 0) {
+      setMessage(`Limite de ${MAX_SERVICE_ATTACHMENTS} imagens por relatório atingido.`);
+      return;
+    }
+
+    try {
+      const nextAttachments = await Promise.all(files.slice(0, available).map(imageFileToAttachment));
+      setServiceAttachments((current) => [...current, ...nextAttachments].slice(0, MAX_SERVICE_ATTACHMENTS));
+      setMessage(files.length > available
+        ? `Foram anexadas ${available} imagens. O limite por relatório é ${MAX_SERVICE_ATTACHMENTS}.`
+        : `${nextAttachments.length} imagem(ns) anexada(s) ao relatório.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível anexar as imagens.");
+    }
+  }
+
+  function updateServiceAttachmentCaption(id: string, caption: string) {
+    setServiceAttachments((current) => current.map((attachment) => (
+      attachment.id === id ? { ...attachment, caption } : attachment
+    )));
+  }
+
+  function removeServiceAttachment(id: string) {
+    setServiceAttachments((current) => current.filter((attachment) => attachment.id !== id));
+  }
+
   function startNewService() {
     if (!currentUserCanEmitReports) {
       setMessage("Seu perfil não tem permissão para emitir relatórios.");
@@ -2266,6 +2334,7 @@ export default function Home() {
     setEditingServiceRecord(null);
     setEditingPreviewRecipients(null);
     setServiceRecipientsInput("");
+    setServiceAttachments([]);
     setSelectedServiceRecord(null);
     updateServiceType("Acesso remoto");
     setView("service");
@@ -2884,7 +2953,8 @@ export default function Home() {
       service_done: String(form.get("service_done") ?? "").trim(),
       observations: String(form.get("observations") ?? "").trim() || null,
       customer_name: selectedServiceType === "Visita técnica" ? String(form.get("customer_name") ?? "").trim() || null : null,
-      customer_signature: selectedServiceType === "Visita técnica" ? customerSignature || null : null
+      customer_signature: selectedServiceType === "Visita técnica" ? customerSignature || null : null,
+      attachments: serviceAttachments
     };
 
     let record: ServiceRecord;
@@ -2905,6 +2975,7 @@ export default function Home() {
     setSelectedServiceRecord(null);
     formElement.reset();
     setServiceRecipientsInput("");
+    setServiceAttachments([]);
     updateServiceType("Acesso remoto");
     await loadData();
     setView("machineDetail");
@@ -3998,6 +4069,36 @@ export default function Home() {
               <label className="wide">Diagnóstico<textarea name="diagnosis" rows={3} required defaultValue={editingServiceRecord?.diagnosis ?? ""} /></label>
               <label className="wide">Serviço realizado<textarea name="service_done" rows={3} required defaultValue={editingServiceRecord?.service_done ?? ""} /></label>
               <label className="wide">Observações<textarea name="observations" rows={3} defaultValue={editingServiceRecord?.observations ?? ""} /></label>
+              <section className="attachment-panel wide">
+                <div className="section-header">
+                  <div>
+                    <h3>Imagens do relatório</h3>
+                    <p>Anexe fotos de evidência, componentes, alarmes ou medições. Elas serão incluídas no PDF.</p>
+                  </div>
+                  <label className="button ghost attachment-upload-button">
+                    Anexar imagens
+                    <input type="file" accept="image/*" multiple onChange={addServiceAttachmentFiles} />
+                  </label>
+                </div>
+                {serviceAttachments.length > 0 ? (
+                  <div className="attachment-grid">
+                    {serviceAttachments.map((attachment, index) => (
+                      <article className="attachment-card" key={attachment.id}>
+                        <img src={attachment.dataUrl} alt={`Imagem ${index + 1} do relatório`} />
+                        <input
+                          value={attachment.caption ?? ""}
+                          onChange={(event) => updateServiceAttachmentCaption(attachment.id, event.target.value)}
+                          placeholder={`Legenda da imagem ${index + 1}`}
+                          maxLength={120}
+                        />
+                        <button className="button ghost" type="button" onClick={() => removeServiceAttachment(attachment.id)}>Remover</button>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="empty-state">Nenhuma imagem anexada.</p>
+                )}
+              </section>
               {serviceType === "Visita técnica" && (
                 <section className={`signature-panel wide ${signatureExpanded ? "signature-expanded" : ""}`}>
                   <div className="section-header">
@@ -4350,6 +4451,19 @@ export default function Home() {
                 <div><span>Diagnóstico</span><p>{selectedServiceRecord.diagnosis}</p></div>
                 <div><span>Serviço realizado</span><p>{selectedServiceRecord.service_done}</p></div>
                 <div><span>Observações</span><p>{selectedServiceRecord.observations || "-"}</p></div>
+                {(selectedServiceRecord.attachments?.length ?? 0) > 0 && (
+                  <div className="record-attachments">
+                    <span>Imagens do relatório</span>
+                    <div className="record-attachment-grid">
+                      {selectedServiceRecord.attachments?.map((attachment, index) => (
+                        <figure key={attachment.id || `${attachment.name}-${index}`}>
+                          <img src={attachment.dataUrl} alt={`Imagem ${index + 1} do atendimento`} />
+                          <figcaption>{attachment.caption || attachment.name || `Imagem ${index + 1}`}</figcaption>
+                        </figure>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="modal-actions">
                 <button className="icon-button download" type="button" title="Baixar PDF" aria-label="Baixar PDF" onClick={() => downloadServicePdf(selectedMachine, selectedServiceRecord)}><PdfDownloadIcon /></button>

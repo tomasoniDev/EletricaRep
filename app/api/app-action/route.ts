@@ -39,6 +39,30 @@ function bool(value: unknown) {
   return Boolean(value);
 }
 
+function serviceAttachments(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .slice(0, 6)
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const row = item as Record<string, unknown>;
+      const name = String(row.name ?? "imagem").trim().slice(0, 120) || "imagem";
+      const type = String(row.type ?? "image/jpeg").trim().slice(0, 80) || "image/jpeg";
+      const dataUrl = String(row.dataUrl ?? "").trim();
+      const caption = text(row.caption);
+      if (!type.startsWith("image/") || !dataUrl.startsWith("data:image/")) return null;
+      if (dataUrl.length > 900_000) return null;
+      return {
+        id: String(row.id ?? crypto.randomUUID()).trim().slice(0, 80) || crypto.randomUUID(),
+        name,
+        type,
+        dataUrl,
+        caption
+      };
+    })
+    .filter(Boolean);
+}
+
 function jsonError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
@@ -353,7 +377,8 @@ export async function POST(request: Request) {
         service_done: text(payload.service_done) ?? "",
         observations: text(payload.observations),
         customer_name: text(payload.customer_name),
-        customer_signature: text(payload.customer_signature)
+        customer_signature: text(payload.customer_signature),
+        attachments: serviceAttachments(payload.attachments)
       };
       if (!servicePayload.machine_id || !servicePayload.service_date) return jsonError("Máquina e data são obrigatórias.");
       const result = editingId

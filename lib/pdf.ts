@@ -1,5 +1,5 @@
 import { jsPDF } from "jspdf";
-import type { Machine, ServiceRecord } from "./types";
+import type { Machine, ServiceAttachment, ServiceRecord } from "./types";
 
 const PAGE_WIDTH = 595.28;
 const PAGE_HEIGHT = 841.89;
@@ -244,6 +244,52 @@ function drawTechnicianData(doc: jsPDF, record: ServiceRecord, y: number) {
   return y + 68;
 }
 
+function imageFormat(dataUrl: string) {
+  if (dataUrl.startsWith("data:image/png")) return "PNG";
+  if (dataUrl.startsWith("data:image/webp")) return "WEBP";
+  return "JPEG";
+}
+
+function attachmentCaption(attachment: ServiceAttachment, index: number) {
+  const caption = String(attachment.caption ?? "").trim();
+  return caption || `Imagem ${index + 1} - ${attachment.name}`;
+}
+
+function drawAttachmentImage(doc: jsPDF, attachment: ServiceAttachment, index: number, y: number) {
+  const imageWidth = CONTENT_WIDTH;
+  const imageHeight = 250;
+  const blockHeight = imageHeight + 42;
+  y = ensurePageSpace(doc, y, blockHeight);
+
+  setText(doc, MUTED, 7, "bold");
+  doc.text(attachmentCaption(attachment, index).toUpperCase(), MARGIN, y);
+  line(doc, MARGIN, y + 8, PAGE_WIDTH - MARGIN, y + 8, SOFT_LINE, 0.5);
+
+  try {
+    doc.addImage(attachment.dataUrl, imageFormat(attachment.dataUrl), MARGIN, y + 18, imageWidth, imageHeight, undefined, "FAST");
+  } catch {
+    setText(doc, MUTED, 9);
+    doc.text("Imagem não pôde ser renderizada no PDF.", MARGIN, y + 50);
+  }
+
+  return y + blockHeight;
+}
+
+function drawAttachments(doc: jsPDF, record: ServiceRecord, y: number) {
+  const attachments = (record.attachments ?? []).filter((item) => item?.dataUrl?.startsWith("data:image/"));
+  if (!attachments.length) return y;
+
+  y = ensurePageSpace(doc, y, 70);
+  sectionTitle(doc, "Evidências fotográficas", y);
+  y += 34;
+
+  attachments.forEach((attachment, index) => {
+    y = drawAttachmentImage(doc, attachment, index, y);
+  });
+
+  return y + 10;
+}
+
 function drawFooter(doc: jsPDF, pageNumber: number, totalPages: number) {
   line(doc, MARGIN, PAGE_HEIGHT - 45, PAGE_WIDTH - MARGIN, PAGE_HEIGHT - 45, BLUE, 1.2);
   setText(doc, MUTED, 7);
@@ -299,7 +345,8 @@ async function createServicePdf(machine: Machine, record: ServiceRecord) {
   await drawHeader(doc, machine, record);
   drawMachineData(doc, machine);
   const nextY = drawServiceData(doc, record);
-  const technicianY = drawTechnicianData(doc, record, nextY);
+  const attachmentY = drawAttachments(doc, record, nextY);
+  const technicianY = drawTechnicianData(doc, record, attachmentY);
   if (record.service_type === "Visita técnica") drawSignatureData(doc, record, technicianY + 16);
   drawAllFooters(doc);
 

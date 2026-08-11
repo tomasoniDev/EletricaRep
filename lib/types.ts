@@ -193,9 +193,18 @@ export type ServiceRecord = {
   observations: string | null;
   customer_name: string | null;
   customer_signature: string | null;
+  attachments: ServiceAttachment[] | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type ServiceAttachment = {
+  id: string;
+  name: string;
+  type: string;
+  dataUrl: string;
+  caption?: string | null;
 };
 
 export type AppAuditLog = {

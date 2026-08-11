@@ -2304,6 +2304,85 @@ tbody tr:hover { background: var(--surface-2); }
   color: var(--primary);
 }
 
+.attachment-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--surface);
+}
+
+.attachment-panel .section-header {
+  margin-bottom: 14px;
+}
+
+.attachment-panel h3,
+.signature-panel h3 {
+  margin: 0;
+}
+
+.attachment-panel p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.attachment-upload-button {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.attachment-upload-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.attachment-grid,
+.record-attachment-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.attachment-card,
+.record-attachment-grid figure {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  padding: 10px;
+}
+
+.attachment-card img,
+.record-attachment-grid img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.attachment-card input {
+  min-height: 38px;
+}
+
+.record-attachments {
+  grid-column: 1 / -1;
+}
+
+.record-attachment-grid figcaption {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .record-details {
   display: grid;
   gap: 14px;
