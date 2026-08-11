@@ -255,9 +255,9 @@ function attachmentCaption(attachment: ServiceAttachment, index: number) {
   return caption || `Imagem ${index + 1} - ${attachment.name}`;
 }
 
-function drawAttachmentImage(doc: jsPDF, attachment: ServiceAttachment, index: number, y: number) {
+function drawAttachmentImage(doc: jsPDF, attachment: ServiceAttachment, index: number, y: number, compact = false) {
   const maxImageWidth = CONTENT_WIDTH;
-  const maxImageHeight = 330;
+  const maxImageHeight = compact ? 245 : 330;
   let originalWidth = Number(attachment.width ?? 0);
   let originalHeight = Number(attachment.height ?? 0);
   if (!originalWidth || !originalHeight) {
@@ -295,13 +295,14 @@ function drawAttachmentImage(doc: jsPDF, attachment: ServiceAttachment, index: n
 function drawAttachments(doc: jsPDF, record: ServiceRecord, y: number) {
   const attachments = (record.attachments ?? []).filter((item) => item?.dataUrl?.startsWith("data:image/"));
   if (!attachments.length) return y;
+  const compact = attachments.length > 1;
 
   y = ensurePageSpace(doc, y, 70);
   sectionTitle(doc, "Evidências fotográficas", y);
   y += 34;
 
   attachments.forEach((attachment, index) => {
-    y = drawAttachmentImage(doc, attachment, index, y);
+    y = drawAttachmentImage(doc, attachment, index, y, compact);
   });
 
   return y + 10;
