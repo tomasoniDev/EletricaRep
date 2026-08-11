@@ -154,6 +154,7 @@ const SOFTWARE_OPTIONS = [
 const VM_OPTIONS = Array.from({ length: 9 }, (_, index) => `V${index + 13}`);
 const USER_ROLE_OPTIONS: UserRole[] = ["Admin", "Diretoria", "Coordenador", "Engenharia", "Montagem", "Comercial"];
 const TRAVEL_STATUS_OPTIONS = ["A definir", "Planejado", "Em andamento", "Concluido", "Cancelado"];
+const TRAVEL_CODE_PATTERN = /^C\d{3}$/;
 const STATE_CENTERS: Record<string, [number, number]> = {
   AC: [-9.0238, -70.812],
   AL: [-9.5713, -36.782],
@@ -336,6 +337,12 @@ function formatDayMonthInput(value: string) {
   const digits = onlyDigits(value).slice(0, 4);
   if (digits.length <= 2) return digits;
   return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+}
+
+function formatTravelClientCodeInput(value: string) {
+  const digits = onlyDigits(value).slice(0, 3);
+  if (!digits && !value.trim()) return "";
+  return `C${digits}`;
 }
 
 function formatServiceDateTimeInput(value: string) {
@@ -2274,7 +2281,7 @@ export default function Home() {
       element.src = dataUrl;
     });
 
-    const maxSide = 1400;
+    const maxSide = 1800;
     const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
@@ -2287,7 +2294,9 @@ export default function Home() {
       id: crypto.randomUUID(),
       name: file.name,
       type: "image/jpeg",
-      dataUrl: canvas.toDataURL("image/jpeg", 0.78),
+      dataUrl: canvas.toDataURL("image/jpeg", 0.9),
+      width: canvas.width,
+      height: canvas.height,
       caption: ""
     };
   }
@@ -2442,6 +2451,14 @@ export default function Home() {
         .filter((client): client is string => Boolean(client))
     )).sort((a, b) => compareText(a, b));
   }, [machines]);
+
+  const travelCodeSuggestions = useMemo(() => {
+    return Array.from(new Set(
+      travelSchedules
+        .map((item) => item.code?.trim().toUpperCase())
+        .filter((code): code is string => Boolean(code))
+    )).sort((a, b) => compareText(a, b));
+  }, [travelSchedules]);
 
   function toggleMachineSort(key: MachineSortKey) {
     setMachineSort((current) => ({ key, direction: nextDirection(current.key === key, current.direction) }));
@@ -2704,7 +2721,8 @@ export default function Home() {
 
     const validationErrors = [
       validateDayMonth(travelForm.start_date, "Data de início"),
-      validateDayMonth(travelForm.end_date, "Data de fim")
+      validateDayMonth(travelForm.end_date, "Data de fim"),
+      validateCodePattern(travelForm.code, TRAVEL_CODE_PATTERN, "Código do cliente")
     ].filter(Boolean);
 
     if (validationErrors.length) {
@@ -3713,12 +3731,14 @@ export default function Home() {
                 <div className="fields-grid">
                   <label>Data de início<input value={travelForm.start_date} onChange={(event) => setTravelForm((current) => ({ ...current, start_date: /^a/i.test(event.target.value) ? event.target.value : formatDayMonthInput(event.target.value) }))} placeholder="dd/mm ou A definir" maxLength={10} /></label>
                   <label>Data de fim<input value={travelForm.end_date} onChange={(event) => setTravelForm((current) => ({ ...current, end_date: /^a/i.test(event.target.value) ? event.target.value : formatDayMonthInput(event.target.value) }))} placeholder="dd/mm ou A definir" maxLength={10} /></label>
-                  <label>Código<input value={travelForm.code} onChange={(event) => setTravelForm((current) => ({ ...current, code: event.target.value }))} placeholder="T665-xxx" maxLength={10} /></label>
+                  <label>Código do cliente<input list="travel-code-suggestions" value={travelForm.code} onChange={(event) => setTravelForm((current) => ({ ...current, code: formatTravelClientCodeInput(event.target.value) }))} placeholder="Cxxx" maxLength={4} /></label>
+                  <datalist id="travel-code-suggestions">{travelCodeSuggestions.map((code) => <option key={code} value={code} />)}</datalist>
                   <label>Cliente<input list="client-suggestions" value={travelForm.client} onChange={(event) => setTravelForm((current) => ({ ...current, client: event.target.value }))} /></label>
                   <label>Técnicos<input value={travelForm.technicians} onChange={(event) => setTravelForm((current) => ({ ...current, technicians: event.target.value }))} placeholder="Nomes separados por vírgula" /></label>
-                  <label>Status<select value={travelForm.status} onChange={(event) => setTravelForm((current) => ({ ...current, status: event.target.value }))}>
-                    {TRAVEL_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-                  </select></label>
+                  <label>Status<input list="travel-status-suggestions" value={travelForm.status} onChange={(event) => setTravelForm((current) => ({ ...current, status: event.target.value }))} placeholder="Digite ou selecione" /></label>
+                  <datalist id="travel-status-suggestions">
+                    {TRAVEL_STATUS_OPTIONS.map((option) => <option key={option} value={option} />)}
+                  </datalist>
                   <label className="wide">Motivo<textarea rows={3} value={travelForm.reason} onChange={(event) => setTravelForm((current) => ({ ...current, reason: event.target.value }))} /></label>
                 </div>
               </form>
@@ -4415,6 +4435,11 @@ export default function Home() {
                 <span><strong>Envio:</strong> {servicePreview.recipients.length ? servicePreview.recipients.join("; ") : "Nenhum e-mail informado"}</span>
               </div>
               <iframe className="pdf-preview-frame" src={`${servicePreview.pdfUrl}#toolbar=0&navpanes=0&scrollbar=1`} title="Pr&eacute;via do relat&oacute;rio em PDF" />
+              <div className="pdf-mobile-preview">
+                <strong>PDF pronto para revis&atilde;o</strong>
+                <span>Em alguns celulares, a pr&eacute;via embutida do PDF n&atilde;o abre corretamente. Abra a pr&eacute;via em uma nova aba para revisar antes do envio.</span>
+                <a className="button ghost" href={servicePreview.pdfUrl} target="_blank" rel="noreferrer">Abrir pr&eacute;via</a>
+              </div>
               <div className="modal-actions">
                 <button className="button ghost" type="button" onClick={() => editServiceFromPreview(servicePreview.record)}>Editar</button>
                 <button className="button ghost" type="button" onClick={() => downloadServicePdf(previewMachine, servicePreview.record)}>Baixar PDF</button>

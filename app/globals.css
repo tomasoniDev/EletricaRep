@@ -2262,6 +2262,30 @@ tbody tr:hover { background: var(--surface-2); }
   background: #fff;
 }
 
+.pdf-mobile-preview {
+  display: none;
+  align-content: center;
+  justify-items: center;
+  gap: 14px;
+  min-height: 320px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+  color: var(--muted);
+  padding: 24px;
+  text-align: center;
+}
+
+.pdf-mobile-preview strong {
+  color: var(--text);
+  font-size: 1.05rem;
+}
+
+.pdf-mobile-preview span {
+  max-width: 420px;
+  line-height: 1.45;
+}
+
 .email-suggestion-field {
   position: relative;
 }
@@ -2576,7 +2600,10 @@ tbody tr:hover { background: var(--surface-2); }
     padding: 16px;
   }
   .pdf-preview-frame {
-    min-height: 360px;
+    display: none;
+  }
+  .pdf-mobile-preview {
+    display: grid;
   }
   .details-grid { grid-template-columns: 1fr; }
   .machine-hero {

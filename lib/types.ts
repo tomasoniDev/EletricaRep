@@ -204,6 +204,8 @@ export type ServiceAttachment = {
   name: string;
   type: string;
   dataUrl: string;
+  width?: number | null;
+  height?: number | null;
   caption?: string | null;
 };
 

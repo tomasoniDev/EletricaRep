@@ -256,8 +256,25 @@ function attachmentCaption(attachment: ServiceAttachment, index: number) {
 }
 
 function drawAttachmentImage(doc: jsPDF, attachment: ServiceAttachment, index: number, y: number) {
-  const imageWidth = CONTENT_WIDTH;
-  const imageHeight = 250;
+  const maxImageWidth = CONTENT_WIDTH;
+  const maxImageHeight = 330;
+  let originalWidth = Number(attachment.width ?? 0);
+  let originalHeight = Number(attachment.height ?? 0);
+  if (!originalWidth || !originalHeight) {
+    try {
+      const properties = doc.getImageProperties(attachment.dataUrl) as { width?: number; height?: number };
+      originalWidth = Number(properties.width ?? 0);
+      originalHeight = Number(properties.height ?? 0);
+    } catch {}
+  }
+  if (!originalWidth || !originalHeight) {
+    originalWidth = maxImageWidth;
+    originalHeight = 250;
+  }
+  const scale = Math.min(maxImageWidth / originalWidth, maxImageHeight / originalHeight);
+  const imageWidth = originalWidth * scale;
+  const imageHeight = originalHeight * scale;
+  const imageX = MARGIN + (CONTENT_WIDTH - imageWidth) / 2;
   const blockHeight = imageHeight + 42;
   y = ensurePageSpace(doc, y, blockHeight);
 
@@ -266,7 +283,7 @@ function drawAttachmentImage(doc: jsPDF, attachment: ServiceAttachment, index: n
   line(doc, MARGIN, y + 8, PAGE_WIDTH - MARGIN, y + 8, SOFT_LINE, 0.5);
 
   try {
-    doc.addImage(attachment.dataUrl, imageFormat(attachment.dataUrl), MARGIN, y + 18, imageWidth, imageHeight, undefined, "FAST");
+    doc.addImage(attachment.dataUrl, imageFormat(attachment.dataUrl), imageX, y + 18, imageWidth, imageHeight, undefined, "MEDIUM");
   } catch {
     setText(doc, MUTED, 9);
     doc.text("Imagem não pôde ser renderizada no PDF.", MARGIN, y + 50);

@@ -50,13 +50,17 @@ function serviceAttachments(value: unknown) {
       const type = String(row.type ?? "image/jpeg").trim().slice(0, 80) || "image/jpeg";
       const dataUrl = String(row.dataUrl ?? "").trim();
       const caption = text(row.caption);
+      const width = Number(row.width);
+      const height = Number(row.height);
       if (!type.startsWith("image/") || !dataUrl.startsWith("data:image/")) return null;
-      if (dataUrl.length > 900_000) return null;
+      if (dataUrl.length > 1_800_000) return null;
       return {
         id: String(row.id ?? crypto.randomUUID()).trim().slice(0, 80) || crypto.randomUUID(),
         name,
         type,
         dataUrl,
+        width: Number.isFinite(width) && width > 0 ? width : null,
+        height: Number.isFinite(height) && height > 0 ? height : null,
         caption
       };
     })
