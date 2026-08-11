@@ -1012,7 +1012,7 @@ input:focus, textarea:focus, select:focus {
 
 .dashboard-card {
   display: grid;
-  grid-template-rows: 32px minmax(0, auto);
+  grid-template-rows: auto minmax(0, auto);
   gap: 18px;
   align-content: start;
   min-width: 0;
@@ -2633,27 +2633,31 @@ tbody tr:hover { background: var(--surface-2); }
   .help-topic-list { grid-template-columns: 1fr; }
   .donut-panel { grid-template-columns: 1fr; justify-items: center; }
   .card-title {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) auto;
     gap: 8px 10px;
     height: auto;
     min-height: 32px;
+    align-items: center;
   }
   .card-title svg {
-    flex: 0 0 24px;
+    width: 22px;
+    height: 22px;
   }
   .card-title h3 {
-    flex: 1 1 calc(100% - 36px);
+    min-width: 0;
+    line-height: 1.18;
   }
   .card-title .button,
   .card-title .soft-pill {
     grid-column: auto;
-    justify-self: start;
-    margin-left: 36px;
-    margin-top: 4px;
+    justify-self: end;
+    margin: 0;
+    max-width: 100%;
+    white-space: nowrap;
   }
   .history-card .card-title .button {
-    margin-left: 36px;
+    justify-self: end;
   }
   .history-list button {
     grid-template-columns: minmax(82px, auto) minmax(0, 1fr);
@@ -2797,6 +2801,13 @@ tbody tr:hover { background: var(--surface-2); }
   .card-title {
     grid-template-columns: 24px minmax(0, 1fr);
     gap: 10px;
+  }
+
+  .card-title .button,
+  .card-title .soft-pill {
+    grid-column: 2;
+    justify-self: start;
+    margin-top: 2px;
   }
 
   .machine-metrics svg,
