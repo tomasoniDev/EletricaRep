@@ -2633,15 +2633,41 @@ tbody tr:hover { background: var(--surface-2); }
   .help-topic-list { grid-template-columns: 1fr; }
   .donut-panel { grid-template-columns: 1fr; justify-items: center; }
   .card-title {
-    grid-template-columns: 28px minmax(0, 1fr);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 10px;
     height: auto;
     min-height: 32px;
   }
+  .card-title svg {
+    flex: 0 0 24px;
+  }
+  .card-title h3 {
+    flex: 1 1 calc(100% - 36px);
+  }
   .card-title .button,
   .card-title .soft-pill {
-    grid-column: 2;
+    grid-column: auto;
     justify-self: start;
+    margin-left: 36px;
     margin-top: 4px;
+  }
+  .history-card .card-title .button {
+    margin-left: 36px;
+  }
+  .history-list button {
+    grid-template-columns: minmax(82px, auto) minmax(0, 1fr);
+    gap: 6px 10px;
+    min-height: auto;
+    padding: 8px 0;
+  }
+  .history-list button strong {
+    white-space: normal;
+  }
+  .history-list button em {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    text-align: center;
   }
   .overview-table button { grid-template-columns: 1fr auto; }
   .overview-table em { grid-column: 1 / -1; }
@@ -2666,6 +2692,8 @@ tbody tr:hover { background: var(--surface-2); }
   .spec-list dd {
     text-align: left;
     max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
   .segmented-control { width: 100%; }
   .segmented-control button { flex: 1; }

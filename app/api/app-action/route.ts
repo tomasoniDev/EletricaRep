@@ -14,7 +14,7 @@ import {
   requireAuthorizedSession
 } from "@/lib/server-auth";
 import { createSupabaseAdminClient } from "@/lib/server-supabase";
-import { safeBackupOperationalDataToSharePoint } from "@/lib/sharepoint";
+import { archiveServiceReportInSharePoint, safeBackupOperationalDataToSharePoint, uploadServiceReportToSharePoint } from "@/lib/sharepoint";
 
 type ActionBody = {
   action?: string;
@@ -402,6 +402,55 @@ export async function POST(request: Request) {
         }
       });
       return NextResponse.json({ data: result.data });
+    }
+
+    if (action === "syncServiceReportSharePoint") {
+      if (!canEmitReports(session.user.role)) return jsonError("Usuário sem permissão para atualizar o espelho do relatório.", 403);
+      const mode = text(payload.mode);
+      const filename = text(payload.filename);
+      if (!filename) return jsonError("Arquivo do relatório não informado.");
+
+      if (mode === "upload") {
+        const pdfBase64 = text(payload.pdfBase64);
+        if (!pdfBase64) return jsonError("PDF do relatório não informado.");
+        const sharePoint = await uploadServiceReportToSharePoint({
+          machineCode: text(payload.machineCode),
+          filename,
+          pdfBase64
+        });
+        await safeRecordAudit(admin, session, {
+          action: "sharepoint.report.uploaded",
+          entity: "service_records",
+          entityId: id(payload.recordId),
+          entityLabel: filename,
+          details: { machine_code: text(payload.machineCode), filename }
+        });
+        return NextResponse.json({ data: sharePoint });
+      }
+
+      if (mode === "archive") {
+        const recordId = id(payload.recordId);
+        if (recordId) {
+          const { data: existing } = await admin.from("service_records").select("created_by").eq("id", recordId).maybeSingle();
+          if (existing && !hasFullAccess(session.user.role) && existing.created_by !== session.userId) {
+            return jsonError("Este relatório só pode ser arquivado pelo autor ou por usuário com acesso total.", 403);
+          }
+        }
+        const sharePoint = await archiveServiceReportInSharePoint({
+          machineCode: text(payload.machineCode),
+          filename
+        });
+        await safeRecordAudit(admin, session, {
+          action: "sharepoint.report.archived",
+          entity: "service_records",
+          entityId: recordId,
+          entityLabel: filename,
+          details: { machine_code: text(payload.machineCode), filename }
+        });
+        return NextResponse.json({ data: sharePoint });
+      }
+
+      return jsonError("Ação do SharePoint não reconhecida.");
     }
 
     if (action === "delete") {

@@ -2894,6 +2894,36 @@ export default function Home() {
     return "Atendimento salvo, PDF gerado, e-mail enviado para " + recipients.join("; ") + " e PDF salvo no SharePoint.";
   }
 
+  async function syncServiceReportSharePoint(
+    mode: "upload" | "archive",
+    machine: Machine,
+    record: ServiceRecord,
+    filename = servicePdfFileName(machine, record)
+  ) {
+    const payload: Record<string, unknown> = {
+      mode,
+      recordId: record.id,
+      machineCode: displayMachineCode(machine),
+      filename
+    };
+
+    if (mode === "upload") {
+      payload.pdfBase64 = await servicePdfBase64(machine, record);
+    }
+
+    const result = await appAction<{
+      skipped?: boolean;
+      error?: string;
+      message?: string;
+    }>("syncServiceReportSharePoint", payload);
+
+    if (result.data?.error) {
+      throw new Error(result.data.error);
+    }
+
+    return result.data;
+  }
+
   async function sendPreviewServiceEmail() {
     if (!servicePreview || !previewMachine || servicePreviewSending) return;
 
@@ -2923,6 +2953,7 @@ export default function Home() {
     }
 
     const isEditingService = Boolean(editingServiceRecord);
+    const previousServiceRecord = editingServiceRecord;
     const formElement = event.currentTarget;
     const form = new FormData(event.currentTarget);
     const machine = findMachineByLookup(machines, String(form.get("machine_lookup") ?? ""));
@@ -2985,8 +3016,24 @@ export default function Home() {
       return;
     }
 
+    let sharePointMessage = "";
+    if (isEditingService && previousServiceRecord) {
+      try {
+        const previousFilename = servicePdfFileName(machine, previousServiceRecord);
+        const currentFilename = servicePdfFileName(machine, record);
+        await syncServiceReportSharePoint("upload", machine, record, currentFilename);
+        if (previousFilename !== currentFilename) {
+          await syncServiceReportSharePoint("archive", machine, previousServiceRecord, previousFilename);
+        }
+        sharePointMessage = " Espelho do SharePoint atualizado.";
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "erro nao informado";
+        sharePointMessage = " O atendimento foi salvo, mas o espelho do SharePoint nao foi atualizado. Detalhe: " + detail + ".";
+      }
+    }
+
     setSelectedMachineId(machine.id);
-    setMessage(shouldOpenPreview ? "Atendimento salvo. Preparando previa do PDF." : "Atendimento atualizado com sucesso.");
+    setMessage(shouldOpenPreview ? "Atendimento salvo. Preparando previa do PDF." : "Atendimento atualizado com sucesso." + sharePointMessage);
     setSignatureExpanded(false);
     setEditingServiceRecord(null);
     setEditingPreviewRecipients(null);
@@ -3071,7 +3118,26 @@ export default function Home() {
       return;
     }
     if (!confirm("Excluir este atendimento?")) return;
-    await deleteByAction("service_records", record.id, "Atendimento excluido.");
+    const machine = machines.find((item) => item.id === record.machine_id) ?? selectedMachine;
+    const filename = machine ? servicePdfFileName(machine, record) : "";
+    try {
+      await appAction("delete", { table: "service_records", id: record.id });
+      await loadData();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível excluir o atendimento.");
+      return;
+    }
+    if (machine && filename) {
+      try {
+        await syncServiceReportSharePoint("archive", machine, record, filename);
+        setMessage("Atendimento excluido. PDF movido para Relatórios excluídos no SharePoint.");
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "erro nao informado";
+        setMessage("Atendimento excluido, mas o PDF não foi arquivado no SharePoint. Detalhe: " + detail + ".");
+      }
+    } else {
+      setMessage("Atendimento excluido. Não foi possível localizar a máquina para arquivar o PDF no SharePoint.");
+    }
     setSelectedServiceRecord(null);
   }
 

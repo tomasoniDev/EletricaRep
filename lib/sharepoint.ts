@@ -16,6 +16,9 @@ type GraphDriveItem = {
   id: string;
   name: string;
   webUrl?: string;
+  parentReference?: {
+    path?: string;
+  };
 };
 
 type OperationalBackupData = {
@@ -175,6 +178,53 @@ async function uploadFile(folderPath: string, filename: string, content: Buffer,
   });
 }
 
+async function findFile(folderPath: string, filename: string) {
+  const site = await getSharePointSite();
+  const drive = await getSharePointDrive(site.id);
+  const normalizedFolder = normalizeSharePointPath(folderPath);
+  const filePath = encodePath(`${normalizedFolder}/${safePathSegment(filename, "arquivo")}`);
+
+  try {
+    const item = await graphRequest<GraphDriveItem>(`/drives/${drive.id}/root:/${filePath}`);
+    return { driveId: drive.id, item };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("404") || message.includes("itemNotFound")) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function moveFileToFolder(sourceFolderPath: string, destinationFolderPath: string, filename: string) {
+  const located = await findFile(sourceFolderPath, filename);
+  if (!located) return { skipped: true, message: "Arquivo não encontrado no SharePoint." };
+
+  await ensureFolder(located.driveId, destinationFolderPath);
+  const destinationFolder = await graphRequest<GraphDriveItem>(
+    `/drives/${located.driveId}/root:/${encodePath(normalizeSharePointPath(destinationFolderPath))}`
+  );
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const safeName = safePathSegment(filename, "relatorio.pdf");
+  const archivedName = safeName.toLowerCase().endsWith(".pdf")
+    ? safeName.replace(/\.pdf$/i, `-excluido-${timestamp}.pdf`)
+    : `${safeName}-excluido-${timestamp}`;
+
+  const moved = await graphRequest<GraphDriveItem>(`/drives/${located.driveId}/items/${located.item.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      name: archivedName,
+      parentReference: {
+        id: destinationFolder.id
+      },
+      "@microsoft.graph.conflictBehavior": "rename"
+    })
+  });
+
+  return { skipped: false, item: moved };
+}
+
 function htmlCell(value: unknown) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -299,6 +349,22 @@ export async function uploadServiceReportToSharePoint(options: {
   );
 
   return { skipped: false, item: uploaded };
+}
+
+export async function archiveServiceReportInSharePoint(options: {
+  machineCode?: string | null;
+  filename: string;
+}) {
+  if (!isSharePointConfigured()) {
+    return { skipped: true, message: sharePointConfigurationError() };
+  }
+
+  const machineFolder = safePathSegment(options.machineCode, "maquina-sem-codigo");
+  return moveFileToFolder(
+    `${sharePointBasePath}/Relatórios/${machineFolder}`,
+    `${sharePointBasePath}/Relatórios excluídos/${machineFolder}`,
+    options.filename
+  );
 }
 
 export async function safeBackupOperationalDataToSharePoint(admin: SupabaseClient) {
