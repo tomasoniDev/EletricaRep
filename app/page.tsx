@@ -4172,22 +4172,19 @@ export default function Home() {
                 </dl>
               </article>
 
-              <article className="dashboard-card">
+              <article className="dashboard-card remote-access-card">
                 <div className="card-title"><DetailIcon type="remote" /><h3>Acesso Remoto</h3><span className="soft-pill">{selectedMachineAccess}</span></div>
                 <dl className="spec-list">
-                  {selectedMachineAccess !== "Sem acesso remoto" && !currentUserCanAccessCredentials && (
-                    <div><dt>Status</dt><dd>Informações protegidas. Solicite permissão para acessar senhas.</dd></div>
-                  )}
-                  {selectedMachineAccess === "VNC" && currentUserCanAccessCredentials && (
+                  {selectedMachineAccess === "VNC" && (
                     <>
                       <div><dt>IP de acesso</dt><dd>{selectedMachine.vnc_ip || "-"}</dd></div>
-                      <div><dt>Senha</dt><dd>{selectedMachine.vnc_password || "-"}</dd></div>
                       <div><dt>Usuário VM</dt><dd>{selectedMachine.vnc_user || "-"}</dd></div>
-                      <div><dt>Senha VM</dt><dd>{selectedMachine.vnc_vm_password || "-"}</dd></div>
+                      <div><dt>Senha</dt><dd>{currentUserCanAccessCredentials ? selectedMachine.vnc_password || "-" : "Protegida"}</dd></div>
+                      <div><dt>Senha VM</dt><dd>{currentUserCanAccessCredentials ? selectedMachine.vnc_vm_password || "-" : "Protegida"}</dd></div>
                       <div><dt>Observações</dt><dd>{selectedMachine.vnc_notes || "-"}</dd></div>
                     </>
                   )}
-                  {selectedMachineAccess === "SINEMA" && currentUserCanAccessCredentials && (
+                  {selectedMachineAccess === "SINEMA" && (
                     <>
                       <div><dt>Device Name</dt><dd>{selectedMachine.sinema_url || "-"}</dd></div>
                       <div><dt>Subnet Name</dt><dd>{selectedMachine.sinema_user || "-"}</dd></div>

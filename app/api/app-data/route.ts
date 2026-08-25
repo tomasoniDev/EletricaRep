@@ -42,6 +42,9 @@ const EMPTY_MACHINE_CREDENTIALS = {
   sinema_notes: null
 };
 
+const MACHINE_CREDENTIAL_SAFE_SELECT = "machine_id, vnc_ip, vnc_user, vnc_notes, sinema_url, sinema_user, sinema_notes, created_at, updated_at";
+const MACHINE_CREDENTIAL_FULL_SELECT = "machine_id, vnc_ip, vnc_user, vnc_password, vnc_vm_password, vnc_notes, sinema_url, sinema_user, sinema_password, sinema_notes, created_at, updated_at";
+
 function loadMigrationInfo() {
   try {
     const migrationsDir = path.join(process.cwd(), "supabase", "migrations");
@@ -95,14 +98,23 @@ export async function GET() {
     const machineIds = (machineRows ?? []).map((machine) => machine.id).filter(Boolean);
     const credentialRows: MachineCredential[] = [];
 
-    if (canAccessCredentials(session.user) && machineIds.length) {
+    if (machineIds.length && canAccessCredentials(session.user)) {
       const { data: credentials, error: credentialError } = await admin
         .from("machine_credentials")
-        .select("machine_id, vnc_ip, vnc_user, vnc_password, vnc_vm_password, vnc_notes, sinema_url, sinema_user, sinema_password, sinema_notes, created_at, updated_at")
+        .select(MACHINE_CREDENTIAL_FULL_SELECT)
         .in("machine_id", machineIds);
 
       if (!credentialError) {
         credentialRows.push(...((credentials ?? []) as MachineCredential[]));
+      }
+    } else if (machineIds.length) {
+      const { data: credentials, error: credentialError } = await admin
+        .from("machine_credentials")
+        .select(MACHINE_CREDENTIAL_SAFE_SELECT)
+        .in("machine_id", machineIds);
+
+      if (!credentialError) {
+        credentialRows.push(...((credentials ?? []) as unknown as MachineCredential[]));
       }
     }
 

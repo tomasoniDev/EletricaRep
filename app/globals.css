@@ -1024,7 +1024,7 @@ input:focus, textarea:focus, select:focus {
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   gap: 16px;
 }
 
@@ -1608,6 +1608,8 @@ input:focus, textarea:focus, select:focus {
 
 .card-title .soft-pill {
   align-self: center;
+  justify-self: end;
+  max-width: min(100%, 170px);
 }
 
 .spec-list {
@@ -1644,6 +1646,11 @@ input:focus, textarea:focus, select:focus {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.remote-access-card .spec-list dd {
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .history-list {
