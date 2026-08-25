@@ -371,7 +371,7 @@ function normalizeFullDate(value: string) {
 
 function extractDateFromServiceDateTime(value: string) {
   const normalized = value.trim();
-  const match = normalized.match(/^(\d{2})\/(\d{2})\/(\d{2}|\d{4})\s*-\s*\d{2}:\d{2}$/);
+  const match = normalized.match(/^(\d{2})\/(\d{2})\/(\d{2}|\d{4})(?:\s*-\s*\d{2}:\d{2})?$/);
   if (!match) return "";
   const year = match[3].length === 2 ? `20${match[3]}` : match[3];
   return `${year}-${match[2]}-${match[1]}`;
@@ -752,7 +752,7 @@ function canEditMachine(role?: UserRole | null) {
 }
 
 function canManageContracts(role?: UserRole | null) {
-  return hasFullAccess(role) || role === "Comercial";
+  return hasFullAccess(role);
 }
 
 function canEmitReports(role?: UserRole | null) {
@@ -760,7 +760,7 @@ function canEmitReports(role?: UserRole | null) {
 }
 
 function canEditSchedule(role?: UserRole | null) {
-  return hasFullAccess(role) || role === "Comercial";
+  return hasFullAccess(role);
 }
 
 function validateCodePattern(value: string, pattern: RegExp, label: string) {
@@ -786,19 +786,19 @@ function validateServiceDateTime(value: string, label: string) {
   const normalized = value.trim();
   if (!normalized) return "";
   if (/^\d{2}\/\d{2}$/.test(normalized)) return validateDayMonth(normalized, label);
-  const match = normalized.match(/^(\d{2})\/(\d{2})\/(\d{2}|\d{4})\s*-\s*(\d{2}):(\d{2})$/);
-  if (!match) return `${label} deve estar no formato dd/mm/aa - hh:mm.`;
+  const match = normalized.match(/^(\d{2})\/(\d{2})\/(\d{2}|\d{4})(?:\s*-\s*(\d{2}):(\d{2}))?$/);
+  if (!match) return `${label} deve estar no formato dd/mm/aa ou dd/mm/aa - hh:mm.`;
   const day = Number(match[1]);
   const month = Number(match[2]);
   const year = match[3].length === 2 ? Number(`20${match[3]}`) : Number(match[3]);
-  const hour = Number(match[4]);
-  const minute = Number(match[5]);
-  if (month < 1 || month > 12) return `${label} possui mÃªs invÃ¡lido.`;
-  if (year < 2000 || year > 2099) return `${label} possui ano invÃ¡lido.`;
+  const hour = match[4] ? Number(match[4]) : null;
+  const minute = match[5] ? Number(match[5]) : null;
+  if (month < 1 || month > 12) return `${label} possui mês inválido.`;
+  if (year < 2000 || year > 2099) return `${label} possui ano inválido.`;
   const maxDay = new Date(year, month, 0).getDate();
-  if (day < 1 || day > maxDay) return `${label} possui dia invÃ¡lido para o mÃªs informado.`;
-  if (hour < 0 || hour > 23) return `${label} possui hora invÃ¡lida.`;
-  if (minute < 0 || minute > 59) return `${label} possui minuto invÃ¡lido.`;
+  if (day < 1 || day > maxDay) return `${label} possui dia inválido para o mês informado.`;
+  if (hour !== null && (hour < 0 || hour > 23)) return `${label} possui hora inválida.`;
+  if (minute !== null && (minute < 0 || minute > 59)) return `${label} possui minuto inválido.`;
   return "";
 }
 
@@ -1075,7 +1075,7 @@ function helpSections(view: View, registryTab: RegistryTab) {
     ["E-mail", "Informe o e-mail corporativo autorizado. Apenas e-mails cadastrados conseguem validar o acesso ao app."],
     ["Perfil / setor", "Escolha o perfil correto para liberar apenas as telas e ações compatíveis com o setor do usuário."],
     ["Acesso Remoto", "Marque esta permissão para liberar a tela de Acesso Remoto e o status de plantão no perfil inferior."],
-    ["Permissões", "Admin e Diretoria têm acesso total. Coordenador segue as permissões de Engenharia e também pode cadastrar usuários. Engenharia, Montagem e Comercial seguem restrições específicas de cadastro, cronograma, contratos e relatórios."],
+    ["Permissões", "Admin e Diretoria têm acesso total, incluindo Cronograma e Contratos. Coordenador segue as permissões de Engenharia e também pode cadastrar usuários. Engenharia, Montagem e Comercial seguem restrições específicas de cadastro e relatórios."],
     ["Ações", "Use o menu de ações da tabela para editar dados do usuário ou remover acessos que não devem mais entrar no sistema."]
   ];
 }
@@ -1620,6 +1620,12 @@ export default function Home() {
       setScheduleTab("travel");
     }
   }, [currentUserCanManageContracts, scheduleTab]);
+
+  useEffect(() => {
+    if (view === "schedule" && !currentUserCanEditSchedule) {
+      setView("home");
+    }
+  }, [currentUserCanEditSchedule, view]);
 
   useEffect(() => {
     if (view !== "registry") return;
@@ -3422,7 +3428,7 @@ export default function Home() {
           <button className={`nav-item ${view === "home" ? "active" : ""}`} onClick={() => setView("home")}>Tela inicial</button>
           <button className={`nav-item ${view === "overview" ? "active" : ""}`} onClick={() => setView("overview")}>Visão geral</button>
           {currentUserCanUseRemoteAccess && <button className={`nav-item ${view === "chat" ? "active" : ""}`} onClick={() => setView("chat")}>Acesso Remoto</button>}
-          <button className={`nav-item ${view === "schedule" ? "active" : ""}`} onClick={() => setView("schedule")}>Cronograma</button>
+          {currentUserCanEditSchedule && <button className={`nav-item ${view === "schedule" ? "active" : ""}`} onClick={() => setView("schedule")}>Cronograma</button>}
           {(currentUserCanEditMachine || currentUserCanManageUsers || currentUserCanUseRemoteAccess) && <button className={`nav-item ${view === "registry" ? "active" : ""}`} onClick={() => { setRegistryTab(currentUserCanEditMachine ? "machines" : currentUserCanUseRemoteAccess ? "clients" : "users"); setView("registry"); }}>Cadastro</button>}
           {currentUserCanViewAdmin && <button className={`nav-item ${view === "admin" ? "active" : ""}`} onClick={() => setView("admin")}>Administração</button>}
         </nav>
@@ -3921,7 +3927,7 @@ export default function Home() {
           </section>
         )}
 
-        {view === "schedule" && (
+        {view === "schedule" && currentUserCanEditSchedule && (
           <section className="view active schedule-page">
             {currentUserCanManageContracts && (
               <section className="table-panel">
@@ -4340,8 +4346,8 @@ export default function Home() {
                 />
               </label>
               <datalist id="service-technician-suggestions">{authorizedUsers.map((user) => <option key={user.id} value={serviceTechnicianLookupLabel(user)} />)}</datalist>
-              <label>Início do atendimento<input name="service_start" placeholder="dd/mm/aa - hh:mm" maxLength={16} defaultValue={editingServiceRecord?.service_start ?? ""} onChange={(event) => { event.currentTarget.value = formatServiceDateTimeInput(event.currentTarget.value); }} /></label>
-              <label>Fim do atendimento<input name="service_end" placeholder="dd/mm/aa - hh:mm" maxLength={16} defaultValue={editingServiceRecord?.service_end ?? ""} onChange={(event) => { event.currentTarget.value = formatServiceDateTimeInput(event.currentTarget.value); }} /></label>
+              <label>Início do atendimento<input name="service_start" placeholder="dd/mm/aa ou dd/mm/aa - hh:mm" maxLength={16} defaultValue={editingServiceRecord?.service_start ?? ""} onChange={(event) => { event.currentTarget.value = formatServiceDateTimeInput(event.currentTarget.value); }} /></label>
+              <label>Fim do atendimento<input name="service_end" placeholder="dd/mm/aa ou dd/mm/aa - hh:mm" maxLength={16} defaultValue={editingServiceRecord?.service_end ?? ""} onChange={(event) => { event.currentTarget.value = formatServiceDateTimeInput(event.currentTarget.value); }} /></label>
               <label>Tipo de atendimento<select name="service_type" value={serviceType} onChange={(event) => updateServiceType(event.target.value as ServiceType)}>
                 {SERVICE_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
               </select></label>

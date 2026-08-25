@@ -37,7 +37,7 @@ export function canEditMachine(role?: UserRole | null) {
 }
 
 export function canManageContracts(role?: UserRole | null) {
-  return role === "Admin" || role === "Diretoria" || role === "Comercial";
+  return role === "Admin" || role === "Diretoria";
 }
 
 export function canEmitReports(role?: UserRole | null) {
@@ -45,7 +45,7 @@ export function canEmitReports(role?: UserRole | null) {
 }
 
 export function canEditSchedule(role?: UserRole | null) {
-  return role === "Admin" || role === "Diretoria" || role === "Comercial";
+  return role === "Admin" || role === "Diretoria";
 }
 
 export function canUseRemoteAccess(user?: Pick<AuthorizedUser, "role" | "remote_access_allowed"> | null) {
