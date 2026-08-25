@@ -3456,7 +3456,6 @@ export default function Home() {
                   <button type="button" onClick={() => updateRemoteAccessStatus("Offline")}><span className="menu-status-dot offline" /> Offline</button>
                 </>
               )}
-              <button type="button" onClick={editUser}><EditIcon /> Editar Usuário</button>
               {canDownloadBackup && <button type="button" onClick={downloadMachinesBackup}><PdfDownloadIcon /> Backup SharePoint</button>}
               <button type="button" onClick={signOut}><LogOutIcon /> Sair</button>
             </div>

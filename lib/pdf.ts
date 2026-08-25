@@ -253,8 +253,7 @@ function drawTechnicianData(doc: jsPDF, record: ServiceRecord, y: number) {
     y = ensurePageSpace(doc, y, 20);
     const role = String(technician.role ?? "").trim();
     const email = role.toLowerCase() === "montagem" ? "" : String(technician.email ?? "").trim();
-    const details = [role, email].filter(Boolean).join(" - ");
-    const lineText = details ? `${technician.name} (${details})` : technician.name;
+    const lineText = email ? `${technician.name} (${email})` : technician.name;
     doc.text(doc.splitTextToSize(lineText, CONTENT_WIDTH - 8).slice(0, 1), MARGIN + 8, y);
     y += 18;
   });
