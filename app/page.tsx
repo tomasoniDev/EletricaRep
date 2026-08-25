@@ -681,6 +681,11 @@ function canUseWebAuthn() {
   return typeof window !== "undefined" && Boolean(window.PublicKeyCredential && navigator.credentials);
 }
 
+function isMobileAuthDevice() {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(max-width: 760px), ((pointer: coarse) and (max-width: 1024px))").matches;
+}
+
 function hasBiometricEnabledFor(email: string) {
   return Boolean(
     email
@@ -1286,6 +1291,7 @@ export default function Home() {
   const [authLoading, setAuthLoading] = useState(false);
   const [biometricPromptOpen, setBiometricPromptOpen] = useState(false);
   const [biometricRequired, setBiometricRequired] = useState(false);
+  const [isMobileAuthDeviceState, setIsMobileAuthDeviceState] = useState(() => isMobileAuthDevice());
   const [view, setView] = useState<View>("home");
   const [registryTab, setRegistryTab] = useState<RegistryTab>("machines");
   const [machines, setMachines] = useState<Machine[]>([]);
@@ -1373,6 +1379,24 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const query = window.matchMedia("(max-width: 760px), ((pointer: coarse) and (max-width: 1024px))");
+    const updateDeviceMode = () => setIsMobileAuthDeviceState(query.matches);
+    updateDeviceMode();
+    query.addEventListener("change", updateDeviceMode);
+    return () => query.removeEventListener("change", updateDeviceMode);
+  }, []);
+
+  useEffect(() => {
+    const authScreenOpen = sessionReady && (!isAuthenticated || biometricRequired);
+    document.documentElement.classList.toggle("auth-screen-open", authScreenOpen);
+    document.body.classList.toggle("auth-screen-open", authScreenOpen);
+    return () => {
+      document.documentElement.classList.remove("auth-screen-open");
+      document.body.classList.remove("auth-screen-open");
+    };
+  }, [biometricRequired, isAuthenticated, sessionReady]);
+
+  useEffect(() => {
     try {
       const storedEmails = JSON.parse(window.localStorage.getItem(SERVICE_EMAIL_SUGGESTIONS_KEY) ?? "[]");
       if (Array.isArray(storedEmails)) {
@@ -1441,7 +1465,7 @@ export default function Home() {
         }
 
         applyAuthorizedSession(session.userId, userEmail, user);
-        if (hasBiometricEnabledFor(userEmail) && !hasBiometricVerifiedThisOpen(userEmail)) {
+        if (isMobileAuthDeviceState && hasBiometricEnabledFor(userEmail) && !hasBiometricVerifiedThisOpen(userEmail)) {
           setBiometricRequired(true);
           setIsAuthenticated(false);
           setMessage("Confirme sua biometria para abrir o app neste dispositivo.");
@@ -1460,7 +1484,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isMobileAuthDeviceState]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -2007,7 +2031,7 @@ export default function Home() {
     setOtpSent(false);
     setIsAuthenticated(true);
     applyAuthorizedSession(authPayload.session.userId, authPayload.session.email, authPayload.user);
-    if (canUseWebAuthn() && !window.localStorage.getItem(BIOMETRIC_CREDENTIAL_KEY) && !window.localStorage.getItem(BIOMETRIC_PROMPT_DISMISSED_KEY)) {
+    if (isMobileAuthDeviceState && canUseWebAuthn() && !window.localStorage.getItem(BIOMETRIC_CREDENTIAL_KEY) && !window.localStorage.getItem(BIOMETRIC_PROMPT_DISMISSED_KEY)) {
       setBiometricPromptOpen(true);
     }
     setMessage("Acesso autorizado.");
@@ -2056,7 +2080,7 @@ export default function Home() {
   }
 
   async function enableBiometricAuth() {
-    if (!canUseWebAuthn() || !currentUserEmail) {
+    if (!isMobileAuthDeviceState || !canUseWebAuthn() || !currentUserEmail) {
       setMessage("Biometria indisponível neste navegador ou dispositivo.");
       return;
     }
@@ -2095,7 +2119,7 @@ export default function Home() {
 
   async function confirmBiometricAccess() {
     const credentialId = window.localStorage.getItem(BIOMETRIC_CREDENTIAL_KEY);
-    if (!credentialId || !canUseWebAuthn()) {
+    if (!isMobileAuthDeviceState || !credentialId || !canUseWebAuthn()) {
       setMessage("Biometria indisponível. Acesse novamente com o código enviado ao e-mail.");
       await signOut();
       return;
@@ -4744,7 +4768,7 @@ export default function Home() {
           </div>
         )}
 
-        {biometricPromptOpen && (
+        {biometricPromptOpen && isMobileAuthDeviceState && (
           <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="biometric-modal-title" onClick={() => setBiometricPromptOpen(false)}>
             <section className="modal-card profile-card" onClick={(event) => event.stopPropagation()}>
               <div className="section-header">
