@@ -194,6 +194,8 @@ export type ServiceRecord = {
   customer_name: string | null;
   customer_signature: string | null;
   attachments: ServiceAttachment[] | null;
+  report_status: "Rascunho" | "Finalizado" | null;
+  report_recipients: string[] | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

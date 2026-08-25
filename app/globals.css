@@ -1986,6 +1986,26 @@ input:focus, textarea:focus, select:focus {
   margin-bottom: 0;
 }
 
+.draft-history-card .section-header {
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.draft-history-card .section-header p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.draft-history-card .section-header span {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--primary);
+  font-weight: 800;
+  padding: 7px 12px;
+}
+
 .full-history-card {
   scroll-margin-top: 24px;
 }

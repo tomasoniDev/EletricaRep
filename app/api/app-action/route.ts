@@ -67,6 +67,14 @@ function serviceAttachments(value: unknown) {
     .filter(Boolean);
 }
 
+function serviceRecipients(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => text(item)?.toLowerCase())
+    .filter((item): item is string => Boolean(item))
+    .slice(0, 20);
+}
+
 function jsonError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
@@ -382,7 +390,9 @@ export async function POST(request: Request) {
         observations: text(payload.observations),
         customer_name: text(payload.customer_name),
         customer_signature: text(payload.customer_signature),
-        attachments: serviceAttachments(payload.attachments)
+        attachments: serviceAttachments(payload.attachments),
+        report_status: text(payload.report_status) === "Finalizado" ? "Finalizado" : "Rascunho",
+        report_recipients: serviceRecipients(payload.report_recipients)
       };
       if (!servicePayload.machine_id || !servicePayload.service_date) return jsonError("Máquina e data são obrigatórias.");
       const result = editingId
@@ -398,7 +408,40 @@ export async function POST(request: Request) {
           machine_id: servicePayload.machine_id,
           service_date: servicePayload.service_date,
           service_type: servicePayload.service_type,
-          issue_summary: servicePayload.issue_summary
+          issue_summary: servicePayload.issue_summary,
+          report_status: servicePayload.report_status
+        }
+      });
+      return NextResponse.json({ data: result.data });
+    }
+
+    if (action === "finalizeService") {
+      if (!canEmitReports(session.user.role)) return jsonError("Usuário sem permissão para finalizar relatórios.", 403);
+      const recordId = id(payload.id);
+      if (!recordId) return jsonError("Atendimento não informado.");
+
+      const { data: existing } = await admin.from("service_records").select("created_by").eq("id", recordId).maybeSingle();
+      if (existing?.created_by !== session.userId) {
+        return jsonError("Este atendimento só pode ser finalizado pelo usuário que lançou o registro.", 403);
+      }
+
+      const result = await admin
+        .from("service_records")
+        .update({ report_status: "Finalizado" })
+        .eq("id", recordId)
+        .select()
+        .single();
+
+      if (result.error || !result.data) return jsonError(result.error?.message ?? "Atendimento não finalizado.", 500);
+      await safeRecordAudit(admin, session, {
+        action: "service.finalized",
+        entity: "service_records",
+        entityId: result.data.id,
+        entityLabel: result.data.issue_summary ?? result.data.equipment ?? result.data.service_date,
+        details: {
+          machine_id: result.data.machine_id,
+          service_date: result.data.service_date,
+          service_type: result.data.service_type
         }
       });
       return NextResponse.json({ data: result.data });

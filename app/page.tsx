@@ -21,7 +21,7 @@ type ContractStatus = "Ativo" | "Inativo" | "Em negociação";
 type ActionMenuPosition = { top: number; right: number };
 type RemoteAccessStatus = "Online" | "Offline" | "Ocupado";
 type OnlineTechnician = { email: string; name: string; role?: string | null; status?: RemoteAccessStatus; onlineAt?: string };
-type ServicePreviewState = { machineId: string; record: ServiceRecord; recipients: string[]; pdfUrl: string };
+type ServicePreviewState = { machineId: string; record: ServiceRecord; recipients: string[]; pdfUrl: string; finalizeOnSend?: boolean };
 type AppSessionPayload = {
   session?: { userId: string; email: string; expiresAt?: number } | null;
   user?: AuthorizedUser | null;
@@ -539,8 +539,20 @@ function parseEmails(value: string) {
     .filter(Boolean);
 }
 
+function serviceReportStatus(record: ServiceRecord) {
+  return record.report_status === "Rascunho" ? "Rascunho" : "Finalizado";
+}
+
+function isServiceDraft(record: ServiceRecord) {
+  return serviceReportStatus(record) === "Rascunho";
+}
+
+function finalizedServiceRecords(machine?: Machine | null) {
+  return (machine?.service_records ?? []).filter((record) => !isServiceDraft(record));
+}
+
 function lastServiceDate(machine: Machine) {
-  const dates = machine.service_records?.map((record) => record.service_date).filter(Boolean) ?? [];
+  const dates = finalizedServiceRecords(machine).map((record) => record.service_date).filter(Boolean);
   return dates.sort().at(-1) ?? "";
 }
 
@@ -1520,7 +1532,10 @@ export default function Home() {
   const selectedMachineContractStatus = contractStatus(selectedMachineContract);
   const selectedMachineHasContractInfo = selectedMachineContractStatus === "Ativo" || selectedMachineContractStatus === "Em negociação";
   const selectedMachineContractDays = daysUntil(selectedMachineContract?.support_contract_until);
-  const selectedMachineRecentHistory = [...(selectedMachine?.service_records ?? [])]
+  const selectedMachineDraftReports = [...(selectedMachine?.service_records ?? [])]
+    .filter(isServiceDraft)
+    .sort((a, b) => compareDate(b.updated_at, a.updated_at) || compareDate(b.service_date, a.service_date));
+  const selectedMachineRecentHistory = finalizedServiceRecords(selectedMachine)
     .sort((a, b) => compareDate(b.service_date, a.service_date))
     .slice(0, 5);
   const openTravelSchedules = travelSchedules
@@ -1611,7 +1626,7 @@ export default function Home() {
     const today = new Date();
     const currentMonth = monthKey(today);
     const lastSixMonths = Array.from({ length: 6 }, (_, index) => monthKey(addMonths(today, index - 5)));
-    const serviceEntries = machines.flatMap((machine) => (machine.service_records ?? []).map((record) => ({ machine, record })));
+    const serviceEntries = machines.flatMap((machine) => finalizedServiceRecords(machine).map((record) => ({ machine, record })));
     const machinesWithRemote = machines.filter((machine) => machineHasRemoteAccess(normalizeRemoteAccess(machine.remote_access ?? machine.access_method)));
     const machinesWithoutService = machines.filter((machine) => !lastServiceDate(machine));
     const machineContracts = machines
@@ -1676,13 +1691,13 @@ export default function Home() {
         machine,
         lastDate: lastServiceDate(machine),
         days: daysSince(lastServiceDate(machine)),
-        services: machine.service_records?.length ?? 0
+        services: finalizedServiceRecords(machine).length
       }))
       .sort((a, b) => (b.days ?? 99999) - (a.days ?? 99999))
       .slice(0, 6);
 
     const topMachinesByService = [...machines]
-      .map((machine) => ({ machine, value: machine.service_records?.length ?? 0 }))
+      .map((machine) => ({ machine, value: finalizedServiceRecords(machine).length }))
       .sort((a, b) => b.value - a.value || compareText(displayMachineCode(a.machine), displayMachineCode(b.machine)))
       .slice(0, 6);
 
@@ -2400,7 +2415,7 @@ export default function Home() {
 
   const filteredHistory = useMemo(() => {
     const term = historyFilter.trim().toLowerCase();
-    const records = selectedMachine?.service_records ?? [];
+    const records = finalizedServiceRecords(selectedMachine);
     return [...records]
       .filter((record) => {
         if (!term) return true;
@@ -2928,10 +2943,31 @@ export default function Home() {
     if (!servicePreview || !previewMachine || servicePreviewSending) return;
 
     setServicePreviewSending(true);
-    setMessage("Enviando e-mail com o relatorio em anexo.");
+    setMessage(servicePreview.recipients.length ? "Enviando e-mail com o relatorio em anexo." : "Finalizando atendimento e salvando PDF.");
     try {
-      const resultMessage = await sendServiceEmail(previewMachine, servicePreview.record, servicePreview.recipients);
-      setMessage(resultMessage);
+      let resultMessage = "";
+      if (servicePreview.finalizeOnSend && !servicePreview.recipients.length) {
+        try {
+          await syncServiceReportSharePoint("upload", previewMachine, servicePreview.record);
+          resultMessage = "Atendimento salvo, PDF gerado e salvo no SharePoint. Nenhum e-mail foi informado para envio.";
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : "erro nao informado";
+          resultMessage = "Atendimento salvo e PDF gerado, mas o PDF não foi salvo no SharePoint. Nenhum e-mail foi informado para envio. Detalhe: " + detail + ".";
+        }
+      } else {
+        resultMessage = await sendServiceEmail(previewMachine, servicePreview.record, servicePreview.recipients);
+      }
+      if (servicePreview.finalizeOnSend) {
+        if (resultMessage.includes("e-mail nao foi enviado")) {
+          setMessage(resultMessage + " A prévia continua pendente para nova tentativa.");
+          return;
+        }
+        await appAction<ServiceRecord>("finalizeService", { id: servicePreview.record.id });
+        await loadData();
+        setMessage(resultMessage + " Atendimento finalizado.");
+      } else {
+        setMessage(resultMessage);
+      }
       closeServicePreview();
     } catch (error) {
       const detail = error instanceof DOMException && error.name === "AbortError"
@@ -2954,12 +2990,16 @@ export default function Home() {
 
     const isEditingService = Boolean(editingServiceRecord);
     const previousServiceRecord = editingServiceRecord;
+    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    const submitMode = submitter?.value === "draft" ? "draft" : submitter?.value === "finalize" ? "finalize" : "update";
+    const isDraftSave = submitMode === "draft";
+    const isFinalizeFlow = submitMode === "finalize";
     const formElement = event.currentTarget;
     const form = new FormData(event.currentTarget);
     const machine = findMachineByLookup(machines, String(form.get("machine_lookup") ?? ""));
     const serviceRecipients = parseEmails(serviceRecipientsInput || String(form.get("service_recipients") ?? ""));
-    const previewRecipients = isEditingService ? editingPreviewRecipients : serviceRecipients;
-    const shouldOpenPreview = !isEditingService || editingPreviewRecipients !== null;
+    const previewRecipients = isFinalizeFlow ? serviceRecipients : isEditingService ? editingPreviewRecipients : serviceRecipients;
+    const shouldOpenPreview = isFinalizeFlow || editingPreviewRecipients !== null;
 
     if (!machine) {
       setMessage("Informe uma maquina cadastrada usando o codigo exibido nas sugestoes.");
@@ -3003,7 +3043,9 @@ export default function Home() {
       observations: String(form.get("observations") ?? "").trim() || null,
       customer_name: selectedServiceType === "Visita técnica" ? String(form.get("customer_name") ?? "").trim() || null : null,
       customer_signature: selectedServiceType === "Visita técnica" ? customerSignature || null : null,
-      attachments: serviceAttachments
+      attachments: serviceAttachments,
+      report_status: isDraftSave ? "Rascunho" : isFinalizeFlow ? "Rascunho" : "Finalizado",
+      report_recipients: serviceRecipients
     };
 
     let record: ServiceRecord;
@@ -3017,7 +3059,7 @@ export default function Home() {
     }
 
     let sharePointMessage = "";
-    if (isEditingService && previousServiceRecord) {
+    if (isEditingService && previousServiceRecord && !isServiceDraft(record)) {
       try {
         const previousFilename = servicePdfFileName(machine, previousServiceRecord);
         const currentFilename = servicePdfFileName(machine, record);
@@ -3033,7 +3075,11 @@ export default function Home() {
     }
 
     setSelectedMachineId(machine.id);
-    setMessage(shouldOpenPreview ? "Atendimento salvo. Preparando previa do PDF." : "Atendimento atualizado com sucesso." + sharePointMessage);
+    setMessage(isDraftSave
+      ? "Prévia salva. Ela ficará disponível acima do histórico para revisão e finalização."
+      : shouldOpenPreview
+        ? "Atendimento salvo. Preparando previa do PDF."
+        : "Atendimento atualizado com sucesso." + sharePointMessage);
     setSignatureExpanded(false);
     setEditingServiceRecord(null);
     setEditingPreviewRecipients(null);
@@ -3048,7 +3094,7 @@ export default function Home() {
     if (shouldOpenPreview) {
       try {
         const pdfUrl = await servicePdfPreviewUrl(machine, record);
-        setServicePreview({ machineId: machine.id, record, recipients: previewRecipients ?? [], pdfUrl });
+        setServicePreview({ machineId: machine.id, record, recipients: previewRecipients ?? [], pdfUrl, finalizeOnSend: isFinalizeFlow || isServiceDraft(record) });
         setMessage("Atendimento salvo. Revise a previa do PDF antes do envio.");
       } catch (error) {
         const detail = error instanceof Error ? error.message : "erro nao informado";
@@ -3067,7 +3113,32 @@ export default function Home() {
     setSelectedServiceRecord(null);
     setEditingServiceRecord(record);
     setEditingPreviewRecipients(preservedRecipients);
+    setServiceRecipientsInput(preservedRecipients?.join("; ") ?? (isServiceDraft(record) ? (record.report_recipients ?? []).join("; ") : ""));
     setView("service");
+  }
+
+  async function openServiceDraftPreview(record: ServiceRecord) {
+    const machine = machines.find((item) => item.id === record.machine_id) ?? selectedMachine;
+    if (!machine) {
+      setMessage("Não foi possível localizar a máquina para gerar a prévia.");
+      return;
+    }
+
+    try {
+      setMessage("Preparando prévia do relatório.");
+      const pdfUrl = await servicePdfPreviewUrl(machine, record);
+      setServicePreview({
+        machineId: machine.id,
+        record,
+        recipients: record.report_recipients ?? [],
+        pdfUrl,
+        finalizeOnSend: true
+      });
+      setMessage("Revise a prévia. Ao finalizar, o PDF será gerado e enviado.");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "erro nao informado";
+      setMessage("A prévia do relatório não foi gerada. Detalhe: " + detail + ".");
+    }
   }
 
   async function deleteByAction(table: string, id: string, successMessage: string) {
@@ -3117,7 +3188,8 @@ export default function Home() {
       setMessage("Este atendimento so pode ser excluido pelo autor ou por usuario com acesso total.");
       return;
     }
-    if (!confirm("Excluir este atendimento?")) return;
+    const deletingDraft = isServiceDraft(record);
+    if (!confirm(deletingDraft ? "Excluir esta prévia não finalizada?" : "Excluir este atendimento?")) return;
     const machine = machines.find((item) => item.id === record.machine_id) ?? selectedMachine;
     const filename = machine ? servicePdfFileName(machine, record) : "";
     try {
@@ -3125,6 +3197,11 @@ export default function Home() {
       await loadData();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Não foi possível excluir o atendimento.");
+      return;
+    }
+    if (deletingDraft) {
+      setMessage("Prévia excluída.");
+      setSelectedServiceRecord(null);
       return;
     }
     if (machine && filename) {
@@ -4066,6 +4143,52 @@ export default function Home() {
               </div>
             </section>
 
+            {selectedMachineDraftReports.length > 0 && (
+              <section className="dashboard-card draft-history-card">
+                <div className="section-header">
+                  <div>
+                    <h2>Prévias não finalizadas</h2>
+                    <p>Relatórios salvos para revisão, assinatura ou envio posterior.</p>
+                  </div>
+                  <span>{selectedMachineDraftReports.length} pendente{selectedMachineDraftReports.length === 1 ? "" : "s"}</span>
+                </div>
+                <div className="table-wrap">
+                  <table className="history-table">
+                    <thead><tr>
+                      <th>Data</th>
+                      <th>Equipamento</th>
+                      <th>Técnico</th>
+                      <th>Motivo breve</th>
+                      <th>Ações</th>
+                    </tr></thead>
+                    <tbody>
+                      {selectedMachineDraftReports.map((record) => (
+                        <tr key={record.id}>
+                          <td>{formatDate(record.service_date)}</td>
+                          <td>{record.equipment || "-"}</td>
+                          <td>{record.technician_name}</td>
+                          <td>{record.issue_summary || "-"}</td>
+                          <td>
+                            <div className="row-actions">
+                              <button className="icon-button menu-trigger" type="button" title="Ações" aria-label="Ações da prévia" onClick={(event) => toggleActionMenu(`draft-service-${record.id}`, event)}><MoreIcon /></button>
+                              {openActionMenu === `draft-service-${record.id}` && (
+                                <div className="row-menu floating-row-menu" style={actionMenuPosition ?? undefined}>
+                                  <button type="button" onClick={() => { void openServiceDraftPreview(record); setOpenActionMenu(""); }}><PdfDownloadIcon /> Abrir prévia</button>
+                                  {record.created_by === currentUserId && <button type="button" onClick={() => { startServiceEdit(record); setOpenActionMenu(""); }}><EditIcon /> Editar</button>}
+                                  {record.created_by === currentUserId && <button type="button" onClick={() => { void openServiceDraftPreview(record); setOpenActionMenu(""); }}><DetailIcon type="mail" /> Finalizar</button>}
+                                  {(record.created_by === currentUserId || currentUserHasFullAccess) && <button className="danger" type="button" onClick={() => { void deleteServiceRecord(record); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+
             <section className="dashboard-card full-history-card" id="full-machine-history">
               <div className="section-header"><h2>Histórico completo de {displayMachineCode(selectedMachine)}</h2><span>{filteredHistory.length} registros</span></div>
               <label>Filtrar histórico<input value={historyFilter} onChange={(event) => setHistoryFilter(event.target.value)} /></label>
@@ -4121,7 +4244,7 @@ export default function Home() {
               <label>Tipo de atendimento<select name="service_type" value={serviceType} onChange={(event) => updateServiceType(event.target.value as ServiceType)}>
                 {SERVICE_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
               </select></label>
-              {!editingServiceRecord && (
+              {(!editingServiceRecord || isServiceDraft(editingServiceRecord)) && (
                 <label className="wide email-suggestion-field">
                   E-mails para envio
                   <textarea
@@ -4219,7 +4342,14 @@ export default function Home() {
             </div>
             <div className="service-form-actions">
               {editingServiceRecord && <button className="button ghost" type="button" onClick={startNewService}>Cancelar edição</button>}
-              <button className="icon-button save-action" type="submit" title={editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"} aria-label={editingServiceRecord ? "Salvar alterações" : "Salvar e gerar PDF"}><SaveIcon /></button>
+              {(!editingServiceRecord || isServiceDraft(editingServiceRecord)) ? (
+                <>
+                  <button className="button ghost" type="submit" name="report_action" value="draft">Salvar prévia</button>
+                  <button className="button primary" type="submit" name="report_action" value="finalize">Finalizar atendimento</button>
+                </>
+              ) : (
+                <button className="icon-button save-action" type="submit" name="report_action" value="update" title="Salvar alterações" aria-label="Salvar alterações"><SaveIcon /></button>
+              )}
             </div>
           </form>
         )}
@@ -4509,7 +4639,7 @@ export default function Home() {
               <div className="modal-actions">
                 <button className="button ghost" type="button" onClick={() => editServiceFromPreview(servicePreview.record)}>Editar</button>
                 <button className="button ghost" type="button" onClick={() => downloadServicePdf(previewMachine, servicePreview.record)}>Baixar PDF</button>
-                <button className="button primary" type="button" disabled={servicePreviewSending} onClick={() => void sendPreviewServiceEmail()}>{servicePreviewSending ? "Enviando..." : "Enviar e-mail"}</button>
+                <button className="button primary" type="button" disabled={servicePreviewSending} onClick={() => void sendPreviewServiceEmail()}>{servicePreviewSending ? "Enviando..." : servicePreview.finalizeOnSend ? servicePreview.recipients.length ? "Finalizar e enviar e-mail" : "Finalizar atendimento" : "Enviar e-mail"}</button>
               </div>
             </section>
           </div>
