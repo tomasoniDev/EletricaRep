@@ -3,7 +3,7 @@
 import { ChangeEvent, FormEvent, MouseEvent as ReactMouseEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { downloadServicePdf, servicePdfBase64, servicePdfFileName, servicePdfPreviewUrl } from "@/lib/pdf";
-import type { AppAdminInfo, AppAuditLog, AuthorizedUser, ChatContact, ChatConversation, ChatMessage, Machine, ServiceAttachment, ServiceRecord, SupportContract, TravelSchedule, UserRole } from "@/lib/types";
+import type { AppAdminInfo, AppAuditLog, AuthorizedUser, ChatContact, ChatConversation, ChatMessage, Machine, ServiceAttachment, ServiceRecord, ServiceTechnician, SupportContract, TravelSchedule, UserRole } from "@/lib/types";
 
 type View = "home" | "overview" | "admin" | "machineDetail" | "service" | "registry" | "schedule" | "chat";
 type RegistryTab = "machines" | "users" | "clients";
@@ -445,6 +445,11 @@ function serviceMachineLookupLabel(machine?: Machine | null) {
   return details ? `${code} - ${details}` : code;
 }
 
+function serviceTechnicianLookupLabel(user: AuthorizedUser) {
+  const details = [user.email, user.role].filter(Boolean).join(" - ");
+  return details ? `${user.name} - ${details}` : user.name;
+}
+
 function normalizeLookupText(value?: string | null) {
   return value?.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() ?? "";
 }
@@ -464,6 +469,33 @@ function findMachineByLookup(machines: Machine[], value: string) {
     ];
     return candidates.some((candidate) => normalizeLookupText(candidate) === target);
   }) ?? null;
+}
+
+function parseServiceTechnicianInput(value: string, users: AuthorizedUser[]) {
+  const seen = new Set<string>();
+  return value
+    .split(/[;,\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item): ServiceTechnician => {
+      const normalized = normalizeLookupText(item);
+      const user = users.find((candidate) => {
+        const candidates = [candidate.name, candidate.email, serviceTechnicianLookupLabel(candidate)];
+        return candidates.some((candidateValue) => normalizeLookupText(candidateValue) === normalized);
+      });
+      if (user) return { id: user.id, name: user.name, email: user.email, role: user.role };
+      return { name: item, email: null, role: null };
+    })
+    .filter((technician) => {
+      const key = normalizeLookupText(technician.email || technician.name);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function formatServiceTechniciansInput(technicians?: ServiceTechnician[] | null) {
+  return (technicians ?? []).map((technician) => technician.name).filter(Boolean).join("; ");
 }
 
 function contractMatchesMachine(contract: SupportContract, machine: Machine) {
@@ -1338,6 +1370,9 @@ export default function Home() {
   const [focusedMapState, setFocusedMapState] = useState("");
   const [machineForm, setMachineForm] = useState<MachineFormState>(EMPTY_MACHINE_FORM);
   const [serviceType, setServiceType] = useState<ServiceType>("Acesso remoto");
+  const [serviceMachineLookupInput, setServiceMachineLookupInput] = useState("");
+  const [serviceMachineTouched, setServiceMachineTouched] = useState(false);
+  const [supportTechniciansInput, setSupportTechniciansInput] = useState("");
   const [serviceRecipientsInput, setServiceRecipientsInput] = useState("");
   const [serviceRecipientSuggestionsOpen, setServiceRecipientSuggestionsOpen] = useState(false);
   const [savedServiceEmails, setSavedServiceEmails] = useState<string[]>([]);
@@ -1534,6 +1569,7 @@ export default function Home() {
         .filter((email) => email.includes(activeServiceEmailToken) && !parseEmails(serviceRecipientsInput).map((item) => item.toLowerCase()).includes(email.toLowerCase()))
         .slice(0, 5)
     : [];
+  const serviceMachineLookupInvalid = serviceMachineTouched && Boolean(serviceMachineLookupInput.trim()) && !findMachineByLookup(machines, serviceMachineLookupInput);
   const editingMachine = machines.find((machine) => machine.id === editingMachineId);
   const selectedChat = chatConversations.find((conversation) => conversation.id === selectedChatId) ?? chatConversations[0];
   const showRemoteAccess = machineHasRemoteAccess(machineForm.remote_access);
@@ -2381,6 +2417,9 @@ export default function Home() {
     setSignatureExpanded(false);
     setEditingServiceRecord(null);
     setEditingPreviewRecipients(null);
+    setServiceMachineLookupInput("");
+    setServiceMachineTouched(false);
+    setSupportTechniciansInput("");
     setServiceRecipientsInput("");
     setServiceAttachments([]);
     setSelectedServiceRecord(null);
@@ -3020,13 +3059,16 @@ export default function Home() {
     const isFinalizeFlow = submitMode === "finalize";
     const formElement = event.currentTarget;
     const form = new FormData(event.currentTarget);
-    const machine = findMachineByLookup(machines, String(form.get("machine_lookup") ?? ""));
+    const machineLookupValue = String(form.get("machine_lookup") ?? serviceMachineLookupInput);
+    const machine = findMachineByLookup(machines, machineLookupValue);
     const serviceRecipients = parseEmails(serviceRecipientsInput || String(form.get("service_recipients") ?? ""));
+    const supportTechnicians = parseServiceTechnicianInput(String(form.get("support_technicians") ?? supportTechniciansInput), authorizedUsers);
     const previewRecipients = isFinalizeFlow ? serviceRecipients : isEditingService ? editingPreviewRecipients : serviceRecipients;
     const shouldOpenPreview = isFinalizeFlow || editingPreviewRecipients !== null;
 
     if (!machine) {
-      setMessage("Informe uma maquina cadastrada usando o codigo exibido nas sugestoes.");
+      setServiceMachineTouched(true);
+      setMessage("Máquina não cadastrada. Selecione uma opção válida das sugestões antes de salvar.");
       return;
     }
 
@@ -3055,6 +3097,7 @@ export default function Home() {
     const payload = {
       id: editingServiceRecord?.id ?? null,
       machine_id: machine.id,
+      support_technicians: supportTechnicians,
       service_type: selectedServiceType,
       service_date: serviceDate,
       service_start: serviceStart || null,
@@ -3109,6 +3152,9 @@ export default function Home() {
     setEditingPreviewRecipients(null);
     setSelectedServiceRecord(null);
     formElement.reset();
+    setServiceMachineLookupInput("");
+    setServiceMachineTouched(false);
+    setSupportTechniciansInput("");
     setServiceRecipientsInput("");
     setServiceAttachments([]);
     updateServiceType("Acesso remoto");
@@ -3137,6 +3183,9 @@ export default function Home() {
     setSelectedServiceRecord(null);
     setEditingServiceRecord(record);
     setEditingPreviewRecipients(preservedRecipients);
+    setServiceMachineLookupInput(serviceMachineLookupLabel(machines.find((machine) => machine.id === record.machine_id)));
+    setServiceMachineTouched(false);
+    setSupportTechniciansInput(formatServiceTechniciansInput(record.support_technicians));
     setServiceRecipientsInput(preservedRecipients?.join("; ") ?? (isServiceDraft(record) ? (record.report_recipients ?? []).join("; ") : ""));
     setView("service");
   }
@@ -4259,10 +4308,38 @@ export default function Home() {
               <h2>{editingServiceRecord ? "Editar atendimento" : "Registrar atendimento"}</h2>
             </div>
             <div className="fields-grid">
-              <label>Máquina<input name="machine_lookup" list="service-machine-suggestions" required placeholder="Código, cliente ou modelo" defaultValue={editingServiceRecord ? serviceMachineLookupLabel(machines.find((machine) => machine.id === editingServiceRecord.machine_id)) : ""} /></label>
+              <label className={serviceMachineLookupInvalid ? "field-invalid" : ""}>
+                Máquina
+                <input
+                  name="machine_lookup"
+                  list="service-machine-suggestions"
+                  required
+                  placeholder="Código, cliente ou modelo"
+                  value={serviceMachineLookupInput}
+                  onChange={(event) => {
+                    setServiceMachineLookupInput(event.target.value);
+                    setServiceMachineTouched(Boolean(event.target.value.trim()));
+                  }}
+                  onBlur={() => setServiceMachineTouched(true)}
+                  aria-invalid={serviceMachineLookupInvalid}
+                  aria-describedby={serviceMachineLookupInvalid ? "service-machine-error" : undefined}
+                />
+                {serviceMachineLookupInvalid && <span id="service-machine-error" className="field-error">Máquina não cadastrada. Selecione uma opção válida das sugestões.</span>}
+              </label>
               <datalist id="service-machine-suggestions">{machines.map((machine) => <option key={machine.id} value={serviceMachineLookupLabel(machine)} />)}</datalist>
               <label>Equipamento<input name="equipment" placeholder="CLP, IHM, servo, inversor" defaultValue={editingServiceRecord?.equipment ?? ""} /></label>
               <label>Técnico responsável<input value={currentUserName || displayUserName(currentUserEmail)} readOnly /></label>
+              <label>
+                Demais técnicos
+                <input
+                  name="support_technicians"
+                  list="service-technician-suggestions"
+                  placeholder="Nome; outro nome"
+                  value={supportTechniciansInput}
+                  onChange={(event) => setSupportTechniciansInput(event.target.value)}
+                />
+              </label>
+              <datalist id="service-technician-suggestions">{authorizedUsers.map((user) => <option key={user.id} value={serviceTechnicianLookupLabel(user)} />)}</datalist>
               <label>Início do atendimento<input name="service_start" placeholder="dd/mm/aa - hh:mm" maxLength={16} defaultValue={editingServiceRecord?.service_start ?? ""} onChange={(event) => { event.currentTarget.value = formatServiceDateTimeInput(event.currentTarget.value); }} /></label>
               <label>Fim do atendimento<input name="service_end" placeholder="dd/mm/aa - hh:mm" maxLength={16} defaultValue={editingServiceRecord?.service_end ?? ""} onChange={(event) => { event.currentTarget.value = formatServiceDateTimeInput(event.currentTarget.value); }} /></label>
               <label>Tipo de atendimento<select name="service_type" value={serviceType} onChange={(event) => updateServiceType(event.target.value as ServiceType)}>

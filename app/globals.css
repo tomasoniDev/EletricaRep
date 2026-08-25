@@ -501,6 +501,19 @@ input:focus, textarea:focus, select:focus {
   box-shadow: 0 0 0 3px rgba(18, 104, 216, 0.14);
 }
 
+.field-invalid input,
+.field-invalid textarea,
+.field-invalid select {
+  border-color: var(--danger);
+}
+
+.field-error {
+  color: var(--danger);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .checkbox-field {
   display: flex;
   align-items: center;

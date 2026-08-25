@@ -75,6 +75,25 @@ function serviceRecipients(value: unknown) {
     .slice(0, 20);
 }
 
+function serviceTechnicians(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const row = item as Record<string, unknown>;
+      const name = text(row.name);
+      if (!name) return null;
+      return {
+        id: id(row.id),
+        name,
+        email: text(row.email)?.toLowerCase() ?? null,
+        role: text(row.role)
+      };
+    })
+    .filter((item): item is { id: string | null; name: string; email: string | null; role: string | null } => Boolean(item))
+    .slice(0, 12);
+}
+
 function jsonError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
@@ -378,6 +397,7 @@ export async function POST(request: Request) {
         technician_name: session.user.name,
         technician_email: session.email,
         technician_phone: text(session.user.phone),
+        support_technicians: serviceTechnicians(payload.support_technicians),
         service_type: text(payload.service_type),
         service_date: text(payload.service_date),
         service_start: text(payload.service_start),
@@ -409,7 +429,8 @@ export async function POST(request: Request) {
           service_date: servicePayload.service_date,
           service_type: servicePayload.service_type,
           issue_summary: servicePayload.issue_summary,
-          report_status: servicePayload.report_status
+          report_status: servicePayload.report_status,
+          support_technicians: servicePayload.support_technicians.map((technician) => technician.name)
         }
       });
       return NextResponse.json({ data: result.data });

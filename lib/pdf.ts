@@ -11,6 +11,7 @@ const MUTED = "#566170";
 const LINE = "#CAD6E6";
 const SOFT_LINE = "#E6ECF5";
 const CONTENT_BOTTOM = PAGE_HEIGHT - 78;
+const TOMASONI_CONTACT_PHONE = "(41) 3667-2063";
 
 function formatDate(value?: string | null) {
   if (!value) return "-";
@@ -44,14 +45,6 @@ function reportCode(machine: Machine, record: ServiceRecord) {
 function valueOrDash(value?: string | null) {
   const normalized = String(value ?? "").trim();
   return normalized || "-";
-}
-
-function formatPhone(value?: string | null) {
-  const rawValue = String(value ?? "").trim();
-  const digits = rawValue.replace(/\D/g, "");
-  if (digits.length === 11) return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
-  if (digits.length === 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
-  return valueOrDash(rawValue);
 }
 
 function serviceDateTimeOrFallback(value: string | null | undefined, fallbackDate?: string | null) {
@@ -119,10 +112,14 @@ function flowTextSection(doc: jsPDF, title: string, value: string | null, y: num
   line(doc, MARGIN, y + 8, PAGE_WIDTH - MARGIN, y + 8, SOFT_LINE, 0.5);
   y += 24;
   setText(doc, DARK, 8.8);
-  const paragraphs = valueOrDash(value)
-    .split(/\n\s*\n/)
-    .map((paragraph) => paragraph.replace(/\s*\n\s*/g, " ").trim())
-    .filter(Boolean);
+  const rawValue = valueOrDash(value);
+  const paragraphs = rawValue === "-"
+    ? ["-"]
+    : rawValue
+        .replace(/\r\n?/g, "\n")
+        .split("\n")
+        .map((paragraph) => paragraph.trimEnd())
+        .filter((paragraph) => paragraph.trim());
 
   for (const [paragraphIndex, paragraph] of paragraphs.entries()) {
     const lines = doc.splitTextToSize(paragraph, textWidth);
@@ -235,13 +232,33 @@ function drawServiceData(doc: jsPDF, record: ServiceRecord) {
 }
 
 function drawTechnicianData(doc: jsPDF, record: ServiceRecord, y: number) {
-  y = ensurePageSpace(doc, y, 70);
+  const supportTechnicians = (record.support_technicians ?? []).filter((technician) => technician?.name?.trim());
+  y = ensurePageSpace(doc, y, supportTechnicians.length ? 118 : 70);
   sectionTitle(doc, "Técnico responsável", y);
   const col = (CONTENT_WIDTH - 24) / 3;
   labelValue(doc, "Nome", record.technician_name, MARGIN, y + 31, col);
   labelValue(doc, "E-mail", record.technician_email, MARGIN + col + 12, y + 31, col);
-  labelValue(doc, "Telefone", formatPhone(record.technician_phone), MARGIN + (col + 12) * 2, y + 31, col);
-  return y + 68;
+  labelValue(doc, "Contato Tomasoni", TOMASONI_CONTACT_PHONE, MARGIN + (col + 12) * 2, y + 31, col);
+
+  if (!supportTechnicians.length) return y + 68;
+
+  y += 78;
+  y = ensurePageSpace(doc, y, 38 + supportTechnicians.length * 18);
+  setText(doc, MUTED, 7, "bold");
+  doc.text("DEMAIS TÉCNICOS PARTICIPANTES", MARGIN, y);
+  line(doc, MARGIN, y + 8, PAGE_WIDTH - MARGIN, y + 8, SOFT_LINE, 0.5);
+  y += 25;
+  setText(doc, DARK, 8.8);
+  supportTechnicians.forEach((technician) => {
+    y = ensurePageSpace(doc, y, 20);
+    const role = String(technician.role ?? "").trim();
+    const email = role.toLowerCase() === "montagem" ? "" : String(technician.email ?? "").trim();
+    const details = [role, email].filter(Boolean).join(" - ");
+    const lineText = details ? `${technician.name} (${details})` : technician.name;
+    doc.text(doc.splitTextToSize(lineText, CONTENT_WIDTH - 8).slice(0, 1), MARGIN + 8, y);
+    y += 18;
+  });
+  return y + 8;
 }
 
 function imageFormat(dataUrl: string) {

@@ -181,6 +181,7 @@ export type ServiceRecord = {
   technician_name: string;
   technician_email: string | null;
   technician_phone: string | null;
+  support_technicians: ServiceTechnician[] | null;
   service_type: "Acesso remoto" | "Visita técnica" | null;
   service_date: string;
   service_start: string | null;
@@ -199,6 +200,13 @@ export type ServiceRecord = {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type ServiceTechnician = {
+  id?: string | null;
+  name: string;
+  email?: string | null;
+  role?: UserRole | string | null;
 };
 
 export type ServiceAttachment = {
