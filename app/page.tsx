@@ -631,11 +631,16 @@ function clientServiceRecipients(recipients: string[], technicianEmail?: string 
   return uniqueValidEmails(recipients).filter((email) => !automaticRecipients.has(email));
 }
 
+function serviceEmailSubjectDate(record: ServiceRecord) {
+  const startDate = extractDateFromServiceDateTime(record.service_start ?? "");
+  return formatDate(startDate || record.service_date);
+}
+
 function serviceEmailSubject(machine: Machine, record: ServiceRecord) {
   return [
     "Relatório de atendimento",
     machine.client || "Cliente não informado",
-    record.service_start || formatDate(record.service_date),
+    serviceEmailSubjectDate(record),
     machine.model || displayMachineCode(machine)
   ].join(" - ");
 }
