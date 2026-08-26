@@ -1516,6 +1516,27 @@ input:focus, textarea:focus, select:focus {
   white-space: nowrap;
 }
 
+.secret-rotation-card.success {
+  border-color: color-mix(in srgb, #0f9b5f 28%, var(--line));
+}
+
+.secret-rotation-card.warning {
+  border-color: color-mix(in srgb, #d48114 34%, var(--line));
+}
+
+.secret-rotation-card.danger {
+  border-color: color-mix(in srgb, var(--danger) 36%, var(--line));
+}
+
+.secret-rotation-card .admin-info-list strong {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.secret-rotation-card .button {
+  justify-self: start;
+}
+
 .admin-migration-list {
   display: grid;
   gap: 9px;

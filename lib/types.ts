@@ -252,8 +252,17 @@ export type AppDeploymentInfo = {
   generated_at: string;
 };
 
+export type AppSecretRotationInfo = {
+  key: string;
+  label: string;
+  rotated_at: string | null;
+  rotation_days: number;
+  updated_at: string | null;
+};
+
 export type AppAdminInfo = {
   migrations: AppMigrationInfo[];
   deployment: AppDeploymentInfo;
   auditLogs: AppAuditLog[];
+  secretRotation: AppSecretRotationInfo | null;
 };

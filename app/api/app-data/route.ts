@@ -3,7 +3,7 @@ import { readdirSync, statSync } from "fs";
 import path from "path";
 import { authErrorResponse, canAccessCredentials, hasFullAccess, requireAuthorizedSession } from "@/lib/server-auth";
 import { createSupabaseAdminClient } from "@/lib/server-supabase";
-import type { AppAdminInfo, AppAuditLog, MachineCredential } from "@/lib/types";
+import type { AppAdminInfo, AppAuditLog, AppSecretRotationInfo, MachineCredential } from "@/lib/types";
 
 const MACHINE_SAFE_SELECT = `
   id,
@@ -78,6 +78,30 @@ function deploymentInfo() {
     region: process.env.VERCEL_REGION ?? process.env.VERCEL_FUNCTION_REGION ?? null,
     node_env: process.env.NODE_ENV ?? null,
     generated_at: new Date().toISOString()
+  };
+}
+
+function defaultSecretRotation(): AppSecretRotationInfo {
+  return {
+    key: "sharepoint_client_secret_rotation",
+    label: "CLIENT_SECRET SharePoint",
+    rotated_at: "2026-08-10",
+    rotation_days: 180,
+    updated_at: null
+  };
+}
+
+function secretRotationInfo(row?: { key?: string | null; value?: unknown; updated_at?: string | null } | null): AppSecretRotationInfo {
+  const fallback = defaultSecretRotation();
+  if (!row || !row.value || typeof row.value !== "object") return fallback;
+  const value = row.value as Record<string, unknown>;
+  const rotationDays = Number(value.rotation_days ?? fallback.rotation_days);
+  return {
+    key: row.key || fallback.key,
+    label: String(value.label ?? fallback.label),
+    rotated_at: typeof value.rotated_at === "string" ? value.rotated_at : fallback.rotated_at,
+    rotation_days: Number.isFinite(rotationDays) && rotationDays > 0 ? rotationDays : fallback.rotation_days,
+    updated_at: row.updated_at ?? null
   };
 }
 
@@ -156,6 +180,7 @@ export async function GET() {
 
     let adminInfo: AppAdminInfo | null = null;
     let auditWarning: string | null = null;
+    let settingsWarning: string | null = null;
     if (hasFullAccess(session.user.role)) {
       const auditResult = await admin
         .from("app_audit_logs")
@@ -163,11 +188,19 @@ export async function GET() {
         .order("created_at", { ascending: false })
         .limit(80);
 
+      const settingsResult = await admin
+        .from("app_settings")
+        .select("key, value, updated_at")
+        .eq("key", "sharepoint_client_secret_rotation")
+        .maybeSingle();
+
       auditWarning = auditResult.error?.message ?? null;
+      settingsWarning = settingsResult.error?.message ?? null;
       adminInfo = {
         migrations: loadMigrationInfo(),
         deployment: deploymentInfo(),
-        auditLogs: (auditResult.data ?? []) as AppAuditLog[]
+        auditLogs: (auditResult.data ?? []) as AppAuditLog[],
+        secretRotation: secretRotationInfo(settingsResult.data)
       };
     }
 
@@ -191,7 +224,8 @@ export async function GET() {
         supportContracts: contractResult.error?.message ?? null,
         chatContacts: contactResult.error?.message ?? null,
         chatConversations: chatResult.error?.message ?? null,
-        auditLogs: auditWarning
+        auditLogs: auditWarning,
+        appSettings: settingsWarning
       }
     });
   } catch (error) {

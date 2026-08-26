@@ -334,6 +334,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, backup });
     }
 
+    if (action === "resetClientSecretRotation") {
+      if (!hasFullAccess(session.user.role)) return jsonError("Usuário sem permissão para atualizar alertas administrativos.", 403);
+      const today = new Date().toISOString().slice(0, 10);
+      const settingPayload = {
+        key: "sharepoint_client_secret_rotation",
+        value: {
+          rotated_at: today,
+          rotation_days: 180
+        },
+        updated_by: session.userId
+      };
+      const result = await admin
+        .from("app_settings")
+        .upsert(settingPayload, { onConflict: "key" })
+        .select("key, value, updated_at")
+        .single();
+      if (result.error || !result.data) return jsonError(result.error?.message ?? "Alerta administrativo não atualizado.", 500);
+      await safeRecordAudit(admin, session, {
+        action: "security.client_secret_rotation_reset",
+        entity: "app_settings",
+        entityId: "sharepoint_client_secret_rotation",
+        entityLabel: "CLIENT_SECRET SharePoint",
+        details: settingPayload.value
+      });
+      return NextResponse.json({ data: result.data });
+    }
+
     if (action === "saveTravel") {
       if (!canEditSchedule(session.user.role)) return jsonError("Usuário sem permissão para editar cronograma.", 403);
       const travelPayload = {

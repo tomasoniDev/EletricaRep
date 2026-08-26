@@ -386,6 +386,28 @@ function daysUntil(value?: string | null) {
   return Math.ceil((target.getTime() - today.getTime()) / 86400000);
 }
 
+function addDays(value?: string | null, days = 0) {
+  if (!value) return "";
+  const target = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(target.getTime())) return "";
+  target.setDate(target.getDate() + days);
+  return target.toISOString().slice(0, 10);
+}
+
+function secretRotationStatus(days: number | null) {
+  if (days === null) return "warning";
+  if (days < 0) return "danger";
+  if (days <= 30) return "warning";
+  return "success";
+}
+
+function secretRotationMessage(days: number | null) {
+  if (days === null) return "Configure a data da última troca para ativar o acompanhamento.";
+  if (days < 0) return `Troca vencida há ${Math.abs(days)} dia${Math.abs(days) === 1 ? "" : "s"}.`;
+  if (days === 0) return "Troca vence hoje.";
+  return `Faltam ${days} dia${days === 1 ? "" : "s"} para a próxima troca.`;
+}
+
 function formatMonthYear(value?: string | null) {
   if (!value) return "-";
   const [year, month] = value.split("-");
@@ -1603,6 +1625,10 @@ export default function Home() {
   const adminDeployment = adminInfo?.deployment;
   const adminMigrations = adminInfo?.migrations ?? [];
   const adminAuditLogs = adminInfo?.auditLogs ?? [];
+  const adminSecretRotation = adminInfo?.secretRotation ?? null;
+  const adminSecretNextRotation = addDays(adminSecretRotation?.rotated_at, adminSecretRotation?.rotation_days ?? 180);
+  const adminSecretDaysRemaining = daysUntil(adminSecretNextRotation);
+  const adminSecretStatus = secretRotationStatus(adminSecretDaysRemaining);
   const machineMainFieldsDisabled = !currentUserCanEditMachine;
   const selectedMachineAccess = normalizeRemoteAccess(selectedMachine?.remote_access ?? selectedMachine?.access_method);
   const selectedMachineContract = latestContractForMachine(supportContracts, selectedMachine);
@@ -2222,6 +2248,25 @@ export default function Home() {
       setMessage("Backup atualizado no SharePoint com sucesso.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Não foi possível atualizar o backup no SharePoint.");
+    }
+  }
+
+  async function resetClientSecretRotation() {
+    if (!currentUserCanViewAdmin) {
+      setMessage("Seu usuário não tem permissão para atualizar alertas administrativos.");
+      return;
+    }
+
+    const confirmed = window.confirm("Confirma que o CLIENT_SECRET foi rotacionado no Azure/Vercel e deseja reiniciar a contagem de 180 dias?");
+    if (!confirmed) return;
+
+    setMessage("Atualizando controle de rotação do CLIENT_SECRET.");
+    try {
+      await appAction("resetClientSecretRotation");
+      await loadData();
+      setMessage("Contagem de rotação do CLIENT_SECRET reiniciada.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível atualizar o controle de rotação.");
     }
   }
 
@@ -3845,6 +3890,11 @@ export default function Home() {
                 <strong>{adminMigrations.length}</strong>
                 <small>Últimas versionadas</small>
               </article>
+              <article className={`kpi-card ${adminSecretStatus}`}>
+                <span>CLIENT_SECRET</span>
+                <strong>{adminSecretDaysRemaining === null ? "-" : adminSecretDaysRemaining}</strong>
+                <small>{adminSecretDaysRemaining === null ? "Rotação não configurada" : "dias para troca"}</small>
+              </article>
               <article className="kpi-card">
                 <span>Eventos auditados</span>
                 <strong>{adminAuditLogs.length}</strong>
@@ -3865,6 +3915,18 @@ export default function Home() {
                   <div><span>Runtime</span><strong>{adminDeployment?.node_env || "-"}</strong></div>
                   <div><span>Leitura</span><strong>{formatLongDateTime(adminDeployment?.generated_at)}</strong></div>
                 </div>
+              </article>
+
+              <article className={`dashboard-card admin-info-card secret-rotation-card ${adminSecretStatus}`}>
+                <div className="card-title"><DetailIcon type="alert" /><h3>Rotação CLIENT_SECRET</h3></div>
+                <div className="admin-info-list">
+                  <div><span>Integração</span><strong>{adminSecretRotation?.label || "CLIENT_SECRET SharePoint"}</strong></div>
+                  <div><span>Última troca</span><strong>{formatDate(adminSecretRotation?.rotated_at)}</strong></div>
+                  <div><span>Próxima troca</span><strong>{formatDate(adminSecretNextRotation)}</strong></div>
+                  <div><span>Ciclo</span><strong>{adminSecretRotation?.rotation_days ?? 180} dias</strong></div>
+                  <div><span>Status</span><strong>{secretRotationMessage(adminSecretDaysRemaining)}</strong></div>
+                </div>
+                <button className="button ghost" type="button" onClick={() => void resetClientSecretRotation()}>Resetar contagem</button>
               </article>
 
               <article className="dashboard-card admin-info-card">
