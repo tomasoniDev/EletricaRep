@@ -631,6 +631,28 @@ function clientServiceRecipients(recipients: string[], technicianEmail?: string 
   return uniqueValidEmails(recipients).filter((email) => !automaticRecipients.has(email));
 }
 
+function serviceEmailSubject(machine: Machine, record: ServiceRecord) {
+  return [
+    "Relatório de atendimento",
+    machine.client || "Cliente não informado",
+    record.service_start || formatDate(record.service_date),
+    machine.model || displayMachineCode(machine)
+  ].join(" - ");
+}
+
+function serviceEmailMessage(machine: Machine, record: ServiceRecord) {
+  const model = machine.model || displayMachineCode(machine);
+  const client = machine.client || "cliente não informado";
+  const unitCity = machine.unit_city || "unidade/cidade não informada";
+  const start = record.service_start || formatDate(record.service_date);
+  const end = record.service_end || "-";
+  const equipment = record.equipment || "-";
+  const mainMessage = `Relatório de atendimento técnico ao ${model} do ${client}, ${unitCity}, de ${start} a ${end}.`;
+  const text = `${mainMessage}\n\nEquipamento: ${equipment}\n\nMensagem automática. Não responda este e-mail.\n\nO relatório de atendimento segue em anexo.`;
+  const html = `<p>${escapeHtml(mainMessage)}</p><p><strong>Equipamento:</strong> ${escapeHtml(equipment)}</p><p>Mensagem automática. Não responda este e-mail.</p><p>O relatório de atendimento segue em anexo.</p>`;
+  return { text, html };
+}
+
 function serviceReportStatus(record: ServiceRecord) {
   return record.report_status === "Rascunho" ? "Rascunho" : "Finalizado";
 }
@@ -3029,13 +3051,15 @@ export default function Home() {
   }
 
   async function sendServiceEmail(machine: Machine, record: ServiceRecord, recipients: string[]) {
-    const deliveryRecipients = serviceReportRecipients(recipients, record.technician_email);
-    if (!deliveryRecipients.length) {
+    const customerRecipients = clientServiceRecipients(recipients, record.technician_email);
+    const blindCopyRecipients = serviceReportRecipients([], record.technician_email);
+    if (!customerRecipients.length && !blindCopyRecipients.length) {
       return "Atendimento salvo e PDF gerado. Nenhum e-mail foi informado para envio.";
     }
 
     const pdfRecord = serviceRecordWithTechnicianRole(record, authorizedUsers);
     const pdfBase64 = await servicePdfBase64(machine, pdfRecord);
+    const emailMessage = serviceEmailMessage(machine, pdfRecord);
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 20000);
     const response = await fetch("/api/send-service-email", {
@@ -3043,8 +3067,11 @@ export default function Home() {
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        to: deliveryRecipients,
-        subject: "Relatório de atendimento - Máquina " + displayMachineCode(machine),
+        to: customerRecipients,
+        bcc: blindCopyRecipients,
+        subject: serviceEmailSubject(machine, pdfRecord),
+        text: emailMessage.text,
+        html: emailMessage.html,
         filename: servicePdfFileName(machine, pdfRecord),
         machineCode: displayMachineCode(machine),
         pdfBase64
@@ -3058,15 +3085,18 @@ export default function Home() {
     }
 
     rememberServiceEmails(clientServiceRecipients(recipients, record.technician_email));
+    const deliverySummary = customerRecipients.length
+      ? customerRecipients.join("; ") + (blindCopyRecipients.length ? " com CCO para " + blindCopyRecipients.join("; ") : "")
+      : "CCO para " + blindCopyRecipients.join("; ");
     if (result?.sharePoint?.error) {
-      return "Atendimento salvo e e-mail enviado para " + deliveryRecipients.join("; ") + ", mas o PDF não foi salvo no SharePoint. Detalhe: " + result.sharePoint.error;
+      return "Atendimento salvo e e-mail enviado para " + deliverySummary + ", mas o PDF não foi salvo no SharePoint. Detalhe: " + result.sharePoint.error;
     }
 
     if (result?.sharePoint?.skipped) {
-      return "Atendimento salvo e e-mail enviado para " + deliveryRecipients.join("; ") + ". Backup do PDF no SharePoint não configurado.";
+      return "Atendimento salvo e e-mail enviado para " + deliverySummary + ". Backup do PDF no SharePoint não configurado.";
     }
 
-    return "Atendimento salvo, PDF gerado, e-mail enviado para " + deliveryRecipients.join("; ") + " e PDF salvo no SharePoint.";
+    return "Atendimento salvo, PDF gerado, e-mail enviado para " + deliverySummary + " e PDF salvo no SharePoint.";
   }
 
   function pdfReadyServiceRecord(record: ServiceRecord) {

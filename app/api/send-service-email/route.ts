@@ -5,7 +5,10 @@ import { uploadServiceReportToSharePoint } from "@/lib/sharepoint";
 
 type SendEmailPayload = {
   to?: string[];
+  bcc?: string[];
   subject?: string;
+  text?: string;
+  html?: string;
   filename?: string;
   pdfBase64?: string;
   machineCode?: string;
@@ -62,8 +65,9 @@ export async function POST(request: Request) {
 
     const body = (await request.json()) as SendEmailPayload;
     const to = cleanRecipients(body.to);
+    const bcc = cleanRecipients(body.bcc);
 
-    if (!to.length) {
+    if (!to.length && !bcc.length) {
       return NextResponse.json({ error: "Nenhum e-mail válido informado para envio." }, { status: 400 });
     }
 
@@ -88,9 +92,10 @@ export async function POST(request: Request) {
     const info = await transporter.sendMail({
       from: fromEmail,
       to,
+      bcc,
       subject: body.subject,
-      text: "Mensagem automática. Não responda este e-mail.\n\nO relatório de atendimento segue em anexo.",
-      html: "<p>Mensagem automática. Não responda este e-mail.</p><p>O relatório de atendimento segue em anexo.</p>",
+      text: body.text || "Mensagem automática. Não responda este e-mail.\n\nO relatório de atendimento segue em anexo.",
+      html: body.html || "<p>Mensagem automática. Não responda este e-mail.</p><p>O relatório de atendimento segue em anexo.</p>",
       attachments: [
         {
           filename: body.filename,
