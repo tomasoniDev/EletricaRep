@@ -652,7 +652,7 @@ function serviceEmailMessage(machine: Machine, record: ServiceRecord) {
   const start = record.service_start || formatDate(record.service_date);
   const end = record.service_end || "-";
   const equipment = record.equipment || "-";
-  const mainMessage = `Relatório de atendimento técnico ao ${model} do ${client}, ${unitCity}, de ${start} a ${end}.`;
+  const mainMessage = `Relatório de atendimento técnico ao ${model} da ${client}, ${unitCity}, de ${start} a ${end}.`;
   const text = `${mainMessage}\n\nEquipamento: ${equipment}\n\nMensagem automática. Não responda este e-mail.\n\nO relatório de atendimento segue em anexo.`;
   const html = `<p>${escapeHtml(mainMessage)}</p><p><strong>Equipamento:</strong> ${escapeHtml(equipment)}</p><p>Mensagem automática. Não responda este e-mail.</p><p>O relatório de atendimento segue em anexo.</p>`;
   return { text, html };
