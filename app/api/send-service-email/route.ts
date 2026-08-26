@@ -25,9 +25,15 @@ const fromEmail = process.env.SMTP_FROM ?? (smtpUser ? `Hub Tomasoni <${smtpUser
 
 function cleanRecipients(value: unknown) {
   if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
   return value
     .map((email) => String(email).trim().toLowerCase())
-    .filter((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+    .filter((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    .filter((email) => {
+      if (seen.has(email)) return false;
+      seen.add(email);
+      return true;
+    });
 }
 
 function smtpConfigurationError() {

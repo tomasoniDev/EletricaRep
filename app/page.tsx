@@ -143,6 +143,11 @@ const REMOTE_ACCESS_STATUS_KEY = "tomasoni-servicecore-remote-access-status";
 const SERVICE_EMAIL_SUGGESTIONS_KEY = "tomasoni-servicecore-service-email-suggestions";
 const PWA_SW_RELOAD_KEY = "tomasoni-servicecore-sw-reload";
 const MAX_SERVICE_ATTACHMENTS = 6;
+const INTERNAL_SERVICE_REPORT_RECIPIENTS = [
+  "comercial@tomasoni.ind.br",
+  "celia.bolgenhagen@tomasoni.ind.br",
+  "raquel.bordim@tomasoni.ind.br"
+];
 const REMOTE_ACCESS_OPTIONS: RemoteAccess[] = ["Sem acesso remoto", "SINEMA", "VNC"];
 const SERVICE_TYPE_OPTIONS: ServiceType[] = ["Acesso remoto", "Visita técnica"];
 const CONTRACT_TYPE_OPTIONS: ContractType[] = ["Seg-Sex", "Seg-Sab", "Garantia"];
@@ -605,6 +610,27 @@ function parseEmails(value: string) {
     .filter(Boolean);
 }
 
+function uniqueValidEmails(emails: (string | null | undefined)[]) {
+  const seen = new Set<string>();
+  return emails
+    .map((email) => String(email ?? "").trim().toLowerCase())
+    .filter((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    .filter((email) => {
+      if (seen.has(email)) return false;
+      seen.add(email);
+      return true;
+    });
+}
+
+function serviceReportRecipients(clientRecipients: string[], technicianEmail?: string | null) {
+  return uniqueValidEmails([...clientRecipients, ...INTERNAL_SERVICE_REPORT_RECIPIENTS, technicianEmail]);
+}
+
+function clientServiceRecipients(recipients: string[], technicianEmail?: string | null) {
+  const automaticRecipients = new Set(serviceReportRecipients([], technicianEmail));
+  return uniqueValidEmails(recipients).filter((email) => !automaticRecipients.has(email));
+}
+
 function serviceReportStatus(record: ServiceRecord) {
   return record.report_status === "Rascunho" ? "Rascunho" : "Finalizado";
 }
@@ -1046,7 +1072,7 @@ function helpSections(view: View, registryTab: RegistryTab) {
     return [
       ["Máquina e equipamento", "Selecione a máquina atendida e indique o equipamento ou área afetada."],
       ["Tipo de atendimento", "Use acesso remoto para suporte remoto e visita técnica quando houver atendimento presencial."],
-      ["E-mails para envio", "Informe os destinatários separados por ponto e vírgula. Esses e-mails não entram no PDF."],
+      ["E-mails para envio", "Informe os e-mails dos clientes. Comercial, Célia, Raquel e o técnico responsável entram automaticamente no envio."],
       ["Motivo breve", "Resumo curto que aparece nas tabelas, por exemplo: Falha no acionamento X."],
       ["Campos descritivos", "Registre solicitação, diagnóstico, serviço realizado e observações com o máximo de clareza."],
       ["Assinatura", "Em visita técnica, o campo de assinatura entra no relatório em PDF."]
@@ -3003,7 +3029,8 @@ export default function Home() {
   }
 
   async function sendServiceEmail(machine: Machine, record: ServiceRecord, recipients: string[]) {
-    if (!recipients.length) {
+    const deliveryRecipients = serviceReportRecipients(recipients, record.technician_email);
+    if (!deliveryRecipients.length) {
       return "Atendimento salvo e PDF gerado. Nenhum e-mail foi informado para envio.";
     }
 
@@ -3016,7 +3043,7 @@ export default function Home() {
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        to: recipients,
+        to: deliveryRecipients,
         subject: "Relatório de atendimento - Máquina " + displayMachineCode(machine),
         filename: servicePdfFileName(machine, pdfRecord),
         machineCode: displayMachineCode(machine),
@@ -3030,16 +3057,16 @@ export default function Home() {
       return "Atendimento salvo e PDF gerado, mas o e-mail nao foi enviado. Detalhe: " + (result?.error ?? "erro nao informado");
     }
 
-    rememberServiceEmails(recipients);
+    rememberServiceEmails(clientServiceRecipients(recipients, record.technician_email));
     if (result?.sharePoint?.error) {
-      return "Atendimento salvo e e-mail enviado para " + recipients.join("; ") + ", mas o PDF não foi salvo no SharePoint. Detalhe: " + result.sharePoint.error;
+      return "Atendimento salvo e e-mail enviado para " + deliveryRecipients.join("; ") + ", mas o PDF não foi salvo no SharePoint. Detalhe: " + result.sharePoint.error;
     }
 
     if (result?.sharePoint?.skipped) {
-      return "Atendimento salvo e e-mail enviado para " + recipients.join("; ") + ". Backup do PDF no SharePoint não configurado.";
+      return "Atendimento salvo e e-mail enviado para " + deliveryRecipients.join("; ") + ". Backup do PDF no SharePoint não configurado.";
     }
 
-    return "Atendimento salvo, PDF gerado, e-mail enviado para " + recipients.join("; ") + " e PDF salvo no SharePoint.";
+    return "Atendimento salvo, PDF gerado, e-mail enviado para " + deliveryRecipients.join("; ") + " e PDF salvo no SharePoint.";
   }
 
   function pdfReadyServiceRecord(record: ServiceRecord) {
@@ -3135,9 +3162,14 @@ export default function Home() {
     const form = new FormData(event.currentTarget);
     const machineLookupValue = String(form.get("machine_lookup") ?? serviceMachineLookupInput);
     const machine = findMachineByLookup(machines, machineLookupValue);
-    const serviceRecipients = parseEmails(serviceRecipientsInput || String(form.get("service_recipients") ?? ""));
+    const typedCustomerRecipients = parseEmails(serviceRecipientsInput || String(form.get("service_recipients") ?? ""));
+    const existingCustomerRecipients = clientServiceRecipients(editingServiceRecord?.report_recipients ?? [], editingServiceRecord?.technician_email);
+    const customerRecipients = (!editingServiceRecord || isServiceDraft(editingServiceRecord) || editingPreviewRecipients !== null)
+      ? typedCustomerRecipients
+      : existingCustomerRecipients;
+    const serviceRecipients = serviceReportRecipients(customerRecipients, editingServiceRecord?.technician_email ?? currentUserEmail);
     const supportTechnicians = parseServiceTechnicianInput(String(form.get("support_technicians") ?? supportTechniciansInput), authorizedUsers);
-    const previewRecipients = isFinalizeFlow ? serviceRecipients : isEditingService ? editingPreviewRecipients : serviceRecipients;
+    const previewRecipients = isFinalizeFlow || editingPreviewRecipients !== null || !isEditingService ? serviceRecipients : editingPreviewRecipients;
     const shouldOpenPreview = isFinalizeFlow || editingPreviewRecipients !== null;
 
     if (!machine) {
@@ -3264,7 +3296,7 @@ export default function Home() {
     setServiceMachineLookupInput(serviceMachineLookupLabel(machines.find((machine) => machine.id === record.machine_id)));
     setServiceMachineTouched(false);
     setSupportTechniciansInput(formatServiceTechniciansInput(record.support_technicians));
-    setServiceRecipientsInput(preservedRecipients?.join("; ") ?? (isServiceDraft(record) ? (record.report_recipients ?? []).join("; ") : ""));
+    setServiceRecipientsInput(clientServiceRecipients(preservedRecipients ?? (isServiceDraft(record) ? record.report_recipients ?? [] : []), record.technician_email).join("; "));
     setView("service");
   }
 
@@ -3281,7 +3313,7 @@ export default function Home() {
       setServicePreview({
         machineId: machine.id,
         record,
-        recipients: record.report_recipients ?? [],
+        recipients: serviceReportRecipients(record.report_recipients ?? [], record.technician_email),
         pdfUrl,
         finalizeOnSend: true
       });
@@ -4440,7 +4472,7 @@ export default function Home() {
               </select></label>
               {(!editingServiceRecord || isServiceDraft(editingServiceRecord)) && (
                 <label className="wide email-suggestion-field">
-                  E-mails para envio
+                  E-mails dos clientes para envio
                   <textarea
                     name="service_recipients"
                     rows={2}
