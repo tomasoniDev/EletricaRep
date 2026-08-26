@@ -2431,16 +2431,17 @@ export default function Home() {
     setServiceAttachments((current) => current.filter((attachment) => attachment.id !== id));
   }
 
-  function startNewService() {
+  function startNewService(machine?: Machine | null) {
     if (!currentUserCanEmitReports) {
       setMessage("Seu perfil não tem permissão para emitir relatórios.");
       return;
     }
 
+    const machineLookup = machine ? serviceMachineLookupLabel(machine) : "";
     setSignatureExpanded(false);
     setEditingServiceRecord(null);
     setEditingPreviewRecipients(null);
-    setServiceMachineLookupInput("");
+    setServiceMachineLookupInput(machineLookup);
     setServiceMachineTouched(false);
     setSupportTechniciansInput("");
     setServiceRecipientsInput("");
@@ -3497,7 +3498,7 @@ export default function Home() {
           <div className="topbar-actions">
             <button className="icon-button utility-action" type="button" title="Ajuda da tela" aria-label="Ajuda da tela" onClick={() => setHelpOpen(true)}><HelpIcon /></button>
             <button className="icon-button utility-action" type="button" title={theme === "dark" ? "Modo claro" : "Modo escuro"} aria-label={theme === "dark" ? "Modo claro" : "Modo escuro"} onClick={toggleTheme}>{theme === "dark" ? <SunIcon /> : <MoonIcon />}</button>
-            {currentUserCanEmitReports && <button className="icon-button add-action" type="button" title="Novo atendimento" aria-label="Novo atendimento" onClick={startNewService}><PlusIcon /></button>}
+            {currentUserCanEmitReports && <button className="icon-button add-action" type="button" title="Novo atendimento" aria-label="Novo atendimento" onClick={() => startNewService()}><PlusIcon /></button>}
           </div>
         </header>
 
@@ -4240,7 +4241,7 @@ export default function Home() {
             <section className="dashboard-card quick-actions-card">
               <div className="card-title"><DetailIcon type="mechanical" /><h3>Ações rápidas</h3></div>
               <div className="quick-action-grid">
-                {currentUserCanEmitReports && <button type="button" onClick={startNewService}><PlusIcon /><span>Novo atendimento</span></button>}
+                {currentUserCanEmitReports && <button type="button" onClick={() => startNewService(selectedMachine)}><PlusIcon /><span>Novo atendimento</span></button>}
                 {currentUserCanEditMachine && <button type="button" onClick={() => { setEditingMachineId(selectedMachine.id); setRegistryTab("machines"); setView("registry"); }}><EditIcon /><span>Alterar cadastro</span></button>}
                 <button type="button" onClick={() => selectedMachineRecentHistory[0] && downloadServicePdf(selectedMachine, pdfReadyServiceRecord(selectedMachineRecentHistory[0]))} disabled={!selectedMachineRecentHistory.length}><PdfDownloadIcon /><span>Baixar último PDF</span></button>
               </div>
@@ -4472,7 +4473,7 @@ export default function Home() {
               )}
             </div>
             <div className="service-form-actions">
-              {editingServiceRecord && <button className="button ghost" type="button" onClick={startNewService}>Cancelar edição</button>}
+              {editingServiceRecord && <button className="button ghost" type="button" onClick={() => startNewService()}>Cancelar edição</button>}
               {(!editingServiceRecord || isServiceDraft(editingServiceRecord)) ? (
                 <>
                   <button className="button ghost" type="submit" name="report_action" value="draft">Salvar prévia</button>
