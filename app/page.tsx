@@ -1705,7 +1705,7 @@ export default function Home() {
   const currentUserCanManageContracts = canManageContracts(currentUserRole);
   const currentUserCanEmitReports = canEmitReports(currentUserRole);
   const currentUserCanEditSchedule = canEditSchedule(currentUserRole);
-  const currentUserCanViewMachineDetailCards = !isAssemblyRole(currentUserRole) && currentUserRole !== "Controladoria";
+  const currentUserCanViewMachineDetailCards = !isAssemblyRole(currentUserRole) && currentUserRole !== "Controladoria" && currentUserRole !== "Comercial";
   const adminDeployment = adminInfo?.deployment;
   const adminMigrations = adminInfo?.migrations ?? [];
   const adminAuditLogs = adminInfo?.auditLogs ?? [];
