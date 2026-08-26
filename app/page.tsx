@@ -645,6 +645,22 @@ function serviceEmailSubject(machine: Machine, record: ServiceRecord) {
   ].join(" - ");
 }
 
+function serviceEmailTechnicians(record: ServiceRecord) {
+  const seen = new Set<string>();
+  return [
+    record.technician_name,
+    ...(record.support_technicians ?? []).map((technician) => technician?.name)
+  ]
+    .map((name) => String(name ?? "").trim())
+    .filter(Boolean)
+    .filter((name) => {
+      const key = normalizeLookupText(name);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 function serviceEmailMessage(machine: Machine, record: ServiceRecord) {
   const model = machine.model || displayMachineCode(machine);
   const client = machine.client || "cliente não informado";
@@ -652,9 +668,15 @@ function serviceEmailMessage(machine: Machine, record: ServiceRecord) {
   const start = record.service_start || formatDate(record.service_date);
   const end = record.service_end || "-";
   const equipment = record.equipment || "-";
+  const machineCode = displayMachineCode(machine);
+  const serial = machine.serial || "-";
+  const technicians = serviceEmailTechnicians(record);
+  const techniciansLabel = technicians.length > 1 ? "Técnicos" : "Técnico";
+  const techniciansValue = technicians.join("; ") || "-";
+  const serviceType = record.service_type || "-";
   const mainMessage = `Relatório de atendimento técnico ao ${model} da ${client}, ${unitCity}, de ${start} a ${end}.`;
-  const text = `${mainMessage}\n\nEquipamento: ${equipment}\n\nMensagem automática. Não responda este e-mail.\n\nO relatório de atendimento segue em anexo.`;
-  const html = `<p>${escapeHtml(mainMessage)}</p><p><strong>Equipamento:</strong> ${escapeHtml(equipment)}</p><p>Mensagem automática. Não responda este e-mail.</p><p>O relatório de atendimento segue em anexo.</p>`;
+  const text = `${mainMessage}\n\nEquipamento: ${equipment}\nCódigo da máquina: ${machineCode}\nNúmero de série: ${serial}\n${techniciansLabel}: ${techniciansValue}\nTipo: ${serviceType}\n\n\nMensagem automática. Não responda este e-mail.\n\nO relatório de atendimento segue em anexo.`;
+  const html = `<p>${escapeHtml(mainMessage)}</p><p><strong>Equipamento:</strong> ${escapeHtml(equipment)}<br/><strong>Código da máquina:</strong> ${escapeHtml(machineCode)}<br/><strong>Número de série:</strong> ${escapeHtml(serial)}<br/><strong>${techniciansLabel}:</strong> ${escapeHtml(techniciansValue)}<br/><strong>Tipo:</strong> ${escapeHtml(serviceType)}</p><p style="margin-top: 28px;">Mensagem automática. Não responda este e-mail.</p><p>O relatório de atendimento segue em anexo.</p>`;
   return { text, html };
 }
 
