@@ -146,6 +146,7 @@ const MAX_SERVICE_ATTACHMENTS = 6;
 const INTERNAL_SERVICE_REPORT_RECIPIENTS = [
   "comercial@tomasoni.ind.br",
   "celia.bolgenhagen@tomasoni.ind.br",
+  "maria.lukaszevski@tomasoni.ind.br",
   "raquel.bordim@tomasoni.ind.br"
 ];
 const REMOTE_ACCESS_OPTIONS: RemoteAccess[] = ["Sem acesso remoto", "SINEMA", "VNC"];
@@ -348,6 +349,13 @@ function formatTravelClientCodeInput(value: string) {
   const digits = onlyDigits(value).slice(0, 3);
   if (!digits && !value.trim()) return "";
   return `C${digits}`;
+}
+
+function formatMachineProjectCodeInput(value: string) {
+  const digits = onlyDigits(value);
+  const suffix = (digits.startsWith("665") ? digits.slice(3) : digits).slice(0, 4);
+  if (!suffix && !value.trim()) return "";
+  return `T-665 ${suffix}`;
 }
 
 function formatServiceDateTimeInput(value: string) {
@@ -2762,13 +2770,13 @@ export default function Home() {
       return;
     }
 
-    const normalizedCode = machineForm.code.trim().toUpperCase();
+    const normalizedCode = formatMachineProjectCodeInput(machineForm.code).trim().toUpperCase();
     const normalizedSerial = machineForm.serial.trim().toUpperCase();
     const normalizedMechanicalList = machineForm.mechanical_list.trim().toUpperCase();
-    const normalizedSoftwareCode = machineForm.software_code.trim().toUpperCase();
+    const normalizedSoftwareCode = formatMachineProjectCodeInput(machineForm.software_code).trim().toUpperCase();
     const validationErrors = [
-      validateCodePattern(normalizedCode, /^T665-\d{4}$/, "Código da máquina"),
-      validateCodePattern(normalizedSoftwareCode, /^T665-\d{4}$/, "Código do software"),
+      validateCodePattern(normalizedCode, /^T-665 \d{4}$/, "Código da máquina"),
+      validateCodePattern(normalizedSoftwareCode, /^T-665 \d{4}$/, "Código do software"),
       validateCodePattern(normalizedSerial, /^(500-\d{3}|500-\d{3}\/\d{2})$/, "Número de série"),
       validateCodePattern(normalizedMechanicalList, /^(500-\d{3}|T-0\d{3})$/, "Lista mecânica"),
       validateMonthYear(machineForm.manufacture_month, "Fabricação"),
@@ -4164,7 +4172,7 @@ export default function Home() {
                       <option value="">Selecionar manualmente, se necessário</option>
                       {machines.map((machine) => <option key={machine.id} value={machine.id}>{displayMachineCode(machine)} - {machine.client || "Cliente não informado"}</option>)}
                     </select></label>
-                    <label>Código<input value={contractForm.code} onChange={(event) => setContractForm((current) => ({ ...current, code: event.target.value }))} placeholder="T665-xxx" maxLength={10} /></label>
+                    <label>Código<input value={contractForm.code} onChange={(event) => setContractForm((current) => ({ ...current, code: formatMachineProjectCodeInput(event.target.value) }))} placeholder="T-665 9999" maxLength={10} /></label>
                     <label>Cliente<input list="client-suggestions" value={contractForm.client} onChange={(event) => setContractForm((current) => ({ ...current, client: event.target.value }))} /></label>
                     <label>Status do contrato<select value={contractForm.status} onChange={(event) => setContractForm((current) => ({ ...current, status: event.target.value as ContractStatus }))}>
                       {CONTRACT_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
@@ -4664,7 +4672,7 @@ export default function Home() {
                   <section className="form-card">
                     <h3>Dados da máquina</h3>
                     <div className="fields-grid">
-                      <label>Código<input disabled={machineMainFieldsDisabled} value={machineForm.code} onChange={(event) => updateMachineForm("code", event.target.value)} placeholder="T665-xxxx" maxLength={9} /></label>
+                      <label>Código<input disabled={machineMainFieldsDisabled} value={machineForm.code} onChange={(event) => updateMachineForm("code", formatMachineProjectCodeInput(event.target.value))} placeholder="T-665 9999" maxLength={10} /></label>
                       <label>Modelo<input disabled={machineMainFieldsDisabled} value={machineForm.model} onChange={(event) => updateMachineForm("model", event.target.value)} placeholder="Onduladeira, Dryend, ICV..." maxLength={120} /></label>
                       <label className="wide">Descrição<input disabled={machineMainFieldsDisabled} value={machineForm.description} onChange={(event) => updateMachineForm("description", event.target.value)} placeholder="Descrição curta do modelo da máquina" maxLength={160} /></label>
                       <label>Cliente<input disabled={machineMainFieldsDisabled} list="client-suggestions" value={machineForm.client} onChange={(event) => updateMachineForm("client", event.target.value)} placeholder="Nome da empresa" maxLength={160} /></label>
@@ -4672,7 +4680,7 @@ export default function Home() {
                       <label>Localização<input disabled={machineMainFieldsDisabled} list="city-suggestions" value={machineForm.unit_city} onChange={(event) => updateMachineForm("unit_city", event.target.value)} placeholder="Cidade - UF ou Cidade - PAIS" maxLength={160} /></label>
                       <datalist id="city-suggestions">{citySuggestions.map((city) => <option key={city} value={city} />)}</datalist>
                       <label>Mecânica<input disabled={machineMainFieldsDisabled} value={machineForm.mechanical_list} onChange={(event) => updateMachineForm("mechanical_list", event.target.value)} placeholder="500-xxx ou T-0xxx" maxLength={10} /></label>
-                      <label>Código do software<input disabled={machineMainFieldsDisabled} value={machineForm.software_code} onChange={(event) => updateMachineForm("software_code", event.target.value)} placeholder="T665-xxxx" maxLength={9} /></label>
+                      <label>Código do software<input disabled={machineMainFieldsDisabled} value={machineForm.software_code} onChange={(event) => updateMachineForm("software_code", formatMachineProjectCodeInput(event.target.value))} placeholder="T-665 9999" maxLength={10} /></label>
                       <label>VM<select disabled={machineMainFieldsDisabled} value={machineForm.vm} onChange={(event) => updateMachineForm("vm", event.target.value)}>
                         <option value="">Selecione</option>
                         {machineForm.vm && !VM_OPTIONS.includes(machineForm.vm) && <option value={machineForm.vm}>{machineForm.vm}</option>}
