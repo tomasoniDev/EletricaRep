@@ -1705,6 +1705,7 @@ export default function Home() {
   const currentUserCanManageContracts = canManageContracts(currentUserRole);
   const currentUserCanEmitReports = canEmitReports(currentUserRole);
   const currentUserCanEditSchedule = canEditSchedule(currentUserRole);
+  const currentUserCanViewMachineDetailCards = !isAssemblyRole(currentUserRole) && currentUserRole !== "Controladoria";
   const adminDeployment = adminInfo?.deployment;
   const adminMigrations = adminInfo?.migrations ?? [];
   const adminAuditLogs = adminInfo?.auditLogs ?? [];
@@ -4348,54 +4349,56 @@ export default function Home() {
               </aside>
             </section>
 
-            <section className="dashboard-grid">
-              <article className="dashboard-card">
-                <div className="card-title"><DetailIcon type="software" /><h3>Software</h3></div>
-                <dl className="spec-list">
-                  <div><dt>Software</dt><dd><span className="soft-pill">{selectedMachine.software_version || "-"}</span></dd></div>
-                  <div><dt>Código do software</dt><dd>{selectedMachine.software_code || "-"}</dd></div>
-                  <div><dt>VM</dt><dd>{selectedMachine.vm || "-"}</dd></div>
-                  <div><dt>Faixa de IP</dt><dd>{selectedMachine.ip_range || "-"}</dd></div>
-                  <div><dt>Último atendimento</dt><dd>{formatDate(lastServiceDate(selectedMachine))}</dd></div>
-                </dl>
-              </article>
+            {currentUserCanViewMachineDetailCards && (
+              <section className="dashboard-grid">
+                <article className="dashboard-card">
+                  <div className="card-title"><DetailIcon type="software" /><h3>Software</h3></div>
+                  <dl className="spec-list">
+                    <div><dt>Software</dt><dd><span className="soft-pill">{selectedMachine.software_version || "-"}</span></dd></div>
+                    <div><dt>Código do software</dt><dd>{selectedMachine.software_code || "-"}</dd></div>
+                    <div><dt>VM</dt><dd>{selectedMachine.vm || "-"}</dd></div>
+                    <div><dt>Faixa de IP</dt><dd>{selectedMachine.ip_range || "-"}</dd></div>
+                    <div><dt>Último atendimento</dt><dd>{formatDate(lastServiceDate(selectedMachine))}</dd></div>
+                  </dl>
+                </article>
 
-              <article className="dashboard-card remote-access-card">
-                <div className="card-title"><DetailIcon type="remote" /><h3>Acesso Remoto</h3><span className="soft-pill">{selectedMachineAccess}</span></div>
-                <dl className="spec-list">
-                  {selectedMachineAccess === "VNC" && (
-                    <>
-                      <div><dt>IP de acesso</dt><dd>{selectedMachine.vnc_ip || "-"}</dd></div>
-                      <div><dt>Usuário VM</dt><dd>{selectedMachine.vnc_user || "-"}</dd></div>
-                      <div><dt>Senha</dt><dd>{currentUserCanAccessCredentials ? selectedMachine.vnc_password || "-" : "Protegida"}</dd></div>
-                      <div><dt>Senha VM</dt><dd>{currentUserCanAccessCredentials ? selectedMachine.vnc_vm_password || "-" : "Protegida"}</dd></div>
-                      <div><dt>Observações</dt><dd>{selectedMachine.vnc_notes || "-"}</dd></div>
-                    </>
-                  )}
-                  {selectedMachineAccess === "SINEMA" && (
-                    <>
-                      <div><dt>Device Name</dt><dd>{selectedMachine.sinema_url || "-"}</dd></div>
-                      <div><dt>Subnet Name</dt><dd>{selectedMachine.sinema_user || "-"}</dd></div>
-                      <div><dt>Observações</dt><dd>{selectedMachine.sinema_notes || "-"}</dd></div>
-                    </>
-                  )}
-                  {selectedMachineAccess === "Sem acesso remoto" && <div><dt>Status</dt><dd>Sem acesso remoto cadastrado</dd></div>}
-                </dl>
-              </article>
+                <article className="dashboard-card remote-access-card">
+                  <div className="card-title"><DetailIcon type="remote" /><h3>Acesso Remoto</h3><span className="soft-pill">{selectedMachineAccess}</span></div>
+                  <dl className="spec-list">
+                    {selectedMachineAccess === "VNC" && (
+                      <>
+                        <div><dt>IP de acesso</dt><dd>{selectedMachine.vnc_ip || "-"}</dd></div>
+                        <div><dt>Usuário VM</dt><dd>{selectedMachine.vnc_user || "-"}</dd></div>
+                        <div><dt>Senha</dt><dd>{currentUserCanAccessCredentials ? selectedMachine.vnc_password || "-" : "Protegida"}</dd></div>
+                        <div><dt>Senha VM</dt><dd>{currentUserCanAccessCredentials ? selectedMachine.vnc_vm_password || "-" : "Protegida"}</dd></div>
+                        <div><dt>Observações</dt><dd>{selectedMachine.vnc_notes || "-"}</dd></div>
+                      </>
+                    )}
+                    {selectedMachineAccess === "SINEMA" && (
+                      <>
+                        <div><dt>Device Name</dt><dd>{selectedMachine.sinema_url || "-"}</dd></div>
+                        <div><dt>Subnet Name</dt><dd>{selectedMachine.sinema_user || "-"}</dd></div>
+                        <div><dt>Observações</dt><dd>{selectedMachine.sinema_notes || "-"}</dd></div>
+                      </>
+                    )}
+                    {selectedMachineAccess === "Sem acesso remoto" && <div><dt>Status</dt><dd>Sem acesso remoto cadastrado</dd></div>}
+                  </dl>
+                </article>
 
-              <article className="dashboard-card history-card">
-                <div className="card-title"><DetailIcon type="history" /><h3>Histórico de Atendimentos</h3><button className="button ghost" type="button" onClick={showFullHistory}>Ver todos</button></div>
-                <div className="history-list">
-                  {selectedMachineRecentHistory.length ? selectedMachineRecentHistory.map((record) => (
-                    <button key={record.id} type="button" onClick={() => setSelectedServiceRecord(record)}>
-                      <span>{formatDate(record.service_date)}</span>
-                      <strong>{record.issue_summary || record.equipment || "Atendimento"}</strong>
-                      <em>{normalizeServiceType(record.service_type)}</em>
-                    </button>
-                  )) : <p>Nenhum atendimento registrado.</p>}
-                </div>
-              </article>
-            </section>
+                <article className="dashboard-card history-card">
+                  <div className="card-title"><DetailIcon type="history" /><h3>Histórico de Atendimentos</h3><button className="button ghost" type="button" onClick={showFullHistory}>Ver todos</button></div>
+                  <div className="history-list">
+                    {selectedMachineRecentHistory.length ? selectedMachineRecentHistory.map((record) => (
+                      <button key={record.id} type="button" onClick={() => setSelectedServiceRecord(record)}>
+                        <span>{formatDate(record.service_date)}</span>
+                        <strong>{record.issue_summary || record.equipment || "Atendimento"}</strong>
+                        <em>{normalizeServiceType(record.service_type)}</em>
+                      </button>
+                    )) : <p>Nenhum atendimento registrado.</p>}
+                  </div>
+                </article>
+              </section>
+            )}
 
             <section className="dashboard-card quick-actions-card">
               <div className="card-title"><DetailIcon type="mechanical" /><h3>Ações rápidas</h3></div>
