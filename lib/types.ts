@@ -73,7 +73,7 @@ export type Technician = {
   updated_at: string;
 };
 
-export type UserRole = "Admin" | "Diretoria" | "Coordenador" | "Engenharia" | "Montagem" | "Comercial";
+export type UserRole = "Admin" | "Diretoria" | "Coordenador" | "Engenharia" | "Montagem" | "Montagem Elétrica" | "Montagem Mecânica" | "Controladoria" | "Comercial";
 
 export type AuthorizedUser = {
   id: string;
@@ -180,6 +180,7 @@ export type ServiceRecord = {
   technician_id: string | null;
   technician_name: string;
   technician_email: string | null;
+  technician_role: UserRole | string | null;
   technician_phone: string | null;
   support_technicians: ServiceTechnician[] | null;
   service_type: "Acesso remoto" | "Visita técnica" | null;

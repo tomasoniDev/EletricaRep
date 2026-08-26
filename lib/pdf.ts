@@ -13,6 +13,10 @@ const SOFT_LINE = "#E6ECF5";
 const CONTENT_BOTTOM = PAGE_HEIGHT - 78;
 const TOMASONI_CONTACT_PHONE = "(41) 3667-2063";
 
+function isAssemblyRole(role?: string | null) {
+  return String(role ?? "").trim().toLowerCase().startsWith("montagem");
+}
+
 function formatDate(value?: string | null) {
   if (!value) return "-";
   const [year, month, day] = value.split("-");
@@ -236,8 +240,9 @@ function drawTechnicianData(doc: jsPDF, record: ServiceRecord, y: number) {
   y = ensurePageSpace(doc, y, supportTechnicians.length ? 118 : 70);
   sectionTitle(doc, "Técnico responsável", y);
   const col = (CONTENT_WIDTH - 24) / 3;
+  const responsibleEmail = isAssemblyRole(record.technician_role) ? "" : record.technician_email;
   labelValue(doc, "Nome", record.technician_name, MARGIN, y + 31, col);
-  labelValue(doc, "E-mail", record.technician_email, MARGIN + col + 12, y + 31, col);
+  labelValue(doc, "E-mail", responsibleEmail, MARGIN + col + 12, y + 31, col);
   labelValue(doc, "Contato Tomasoni", TOMASONI_CONTACT_PHONE, MARGIN + (col + 12) * 2, y + 31, col);
 
   if (!supportTechnicians.length) return y + 68;
@@ -252,7 +257,7 @@ function drawTechnicianData(doc: jsPDF, record: ServiceRecord, y: number) {
   supportTechnicians.forEach((technician) => {
     y = ensurePageSpace(doc, y, 20);
     const role = String(technician.role ?? "").trim();
-    const email = role.toLowerCase() === "montagem" ? "" : String(technician.email ?? "").trim();
+    const email = isAssemblyRole(role) ? "" : String(technician.email ?? "").trim();
     const lineText = email ? `${technician.name} (${email})` : technician.name;
     doc.text(doc.splitTextToSize(lineText, CONTENT_WIDTH - 8).slice(0, 1), MARGIN + 8, y);
     y += 18;

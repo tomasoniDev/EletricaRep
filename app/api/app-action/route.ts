@@ -21,9 +21,26 @@ type ActionBody = {
   payload?: Record<string, unknown>;
 };
 
+const AUTHORIZED_USER_ROLES = new Set([
+  "Admin",
+  "Diretoria",
+  "Coordenador",
+  "Engenharia",
+  "Montagem",
+  "Montagem Elétrica",
+  "Montagem Mecânica",
+  "Controladoria",
+  "Comercial"
+]);
+
 function text(value: unknown) {
   const normalized = String(value ?? "").trim();
   return normalized || null;
+}
+
+function userRole(value: unknown) {
+  const role = text(value) ?? "Montagem Elétrica";
+  return AUTHORIZED_USER_ROLES.has(role) ? role : null;
 }
 
 function upper(value: unknown) {
@@ -207,11 +224,12 @@ export async function POST(request: Request) {
       const userPayload = {
         name: text(payload.name),
         email,
-        role: text(payload.role) ?? "Montagem",
+        role: userRole(payload.role),
         phone: String(payload.phone ?? "").replace(/\D/g, ""),
         remote_access_allowed: bool(payload.remote_access_allowed),
         credential_access_allowed: bool(payload.credential_access_allowed)
       };
+      if (!userPayload.role) return jsonError("Perfil de usuário inválido.");
       const editingId = id(payload.id);
       const result = await admin
         .rpc("save_authorized_user_as_operator", {
@@ -396,6 +414,7 @@ export async function POST(request: Request) {
         technician_id: null,
         technician_name: session.user.name,
         technician_email: session.email,
+        technician_role: session.user.role,
         technician_phone: text(session.user.phone),
         support_technicians: serviceTechnicians(payload.support_technicians),
         service_type: text(payload.service_type),
@@ -531,7 +550,7 @@ export async function POST(request: Request) {
       if (table === "support_contracts" && !canManageContracts(session.user.role)) return jsonError("Usuário sem permissão para excluir contratos.", 403);
       if (table === "service_records") {
         const { data: existing } = await admin.from("service_records").select("created_by").eq("id", rowId).maybeSingle();
-        if (!hasFullAccess(session.user.role) && existing?.created_by !== session.userId) {
+        if (!hasFullAccess(session.user.role) && (!canEmitReports(session.user.role) || existing?.created_by !== session.userId)) {
           return jsonError("Este atendimento só pode ser excluído pelo autor ou por usuário com acesso total.", 403);
         }
       }

@@ -41,7 +41,13 @@ export function canManageContracts(role?: UserRole | null) {
 }
 
 export function canEmitReports(role?: UserRole | null) {
-  return role === "Admin" || role === "Diretoria" || role === "Engenharia" || role === "Coordenador" || role === "Montagem";
+  return role === "Admin"
+    || role === "Diretoria"
+    || role === "Engenharia"
+    || role === "Coordenador"
+    || role === "Montagem"
+    || role === "Montagem Elétrica"
+    || role === "Montagem Mecânica";
 }
 
 export function canEditSchedule(role?: UserRole | null) {

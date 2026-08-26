@@ -152,7 +152,7 @@ const SOFTWARE_OPTIONS = [
   ...Array.from({ length: 5 }, (_, index) => `Scout 4.${index + 4}`)
 ];
 const VM_OPTIONS = Array.from({ length: 9 }, (_, index) => `V${index + 13}`);
-const USER_ROLE_OPTIONS: UserRole[] = ["Admin", "Diretoria", "Coordenador", "Engenharia", "Montagem", "Comercial"];
+const USER_ROLE_OPTIONS: UserRole[] = ["Admin", "Diretoria", "Coordenador", "Engenharia", "Montagem Elétrica", "Montagem Mecânica", "Controladoria", "Comercial"];
 const TRAVEL_STATUS_OPTIONS = ["A definir", "Planejado", "Em andamento", "Concluido", "Cancelado"];
 const TRAVEL_CODE_PATTERN = /^C\d{3}$/;
 const STATE_CENTERS: Record<string, [number, number]> = {
@@ -218,7 +218,7 @@ const EMPTY_MACHINE_FORM: MachineFormState = {
 const EMPTY_USER_FORM: AuthorizedUserFormState = {
   name: "",
   email: "",
-  role: "Montagem",
+  role: "Montagem Elétrica",
   phone: "",
   remote_access_allowed: false,
   credential_access_allowed: false
@@ -450,6 +450,10 @@ function serviceTechnicianLookupLabel(user: AuthorizedUser) {
   return details ? `${user.name} - ${details}` : user.name;
 }
 
+function isAssemblyRole(role?: string | null) {
+  return String(role ?? "").trim().toLowerCase().startsWith("montagem");
+}
+
 function normalizeLookupText(value?: string | null) {
   return value?.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() ?? "";
 }
@@ -496,6 +500,14 @@ function parseServiceTechnicianInput(value: string, users: AuthorizedUser[]) {
 
 function formatServiceTechniciansInput(technicians?: ServiceTechnician[] | null) {
   return (technicians ?? []).map((technician) => technician.name).filter(Boolean).join("; ");
+}
+
+function serviceRecordWithTechnicianRole(record: ServiceRecord, users: AuthorizedUser[]) {
+  if (record.technician_role) return record;
+  const technicianEmail = normalizeLookupText(record.technician_email);
+  if (!technicianEmail) return record;
+  const technician = users.find((user) => normalizeLookupText(user.email) === technicianEmail);
+  return technician?.role ? { ...record, technician_role: technician.role } : record;
 }
 
 function contractMatchesMachine(contract: SupportContract, machine: Machine) {
@@ -756,7 +768,12 @@ function canManageContracts(role?: UserRole | null) {
 }
 
 function canEmitReports(role?: UserRole | null) {
-  return role !== "Comercial";
+  return hasFullAccess(role)
+    || role === "Coordenador"
+    || role === "Engenharia"
+    || role === "Montagem"
+    || role === "Montagem Elétrica"
+    || role === "Montagem Mecânica";
 }
 
 function canEditSchedule(role?: UserRole | null) {
@@ -1075,7 +1092,7 @@ function helpSections(view: View, registryTab: RegistryTab) {
     ["E-mail", "Informe o e-mail corporativo autorizado. Apenas e-mails cadastrados conseguem validar o acesso ao app."],
     ["Perfil / setor", "Escolha o perfil correto para liberar apenas as telas e ações compatíveis com o setor do usuário."],
     ["Acesso Remoto", "Marque esta permissão para liberar a tela de Acesso Remoto e o status de plantão no perfil inferior."],
-    ["Permissões", "Admin e Diretoria têm acesso total, incluindo Cronograma e Contratos. Coordenador segue as permissões de Engenharia e também pode cadastrar usuários. Engenharia, Montagem e Comercial seguem restrições específicas de cadastro e relatórios."],
+    ["Permissões", "Admin e Diretoria têm acesso total, incluindo Cronograma e Contratos. Coordenador segue as permissões de Engenharia e também pode cadastrar usuários. Montagem Elétrica e Montagem Mecânica podem emitir relatórios. Controladoria e Comercial ficam em consulta, sem edição ou emissão."],
     ["Ações", "Use o menu de ações da tabela para editar dados do usuário ou remover acessos que não devem mais entrar no sistema."]
   ];
 }
@@ -1593,7 +1610,7 @@ export default function Home() {
   const selectedMachineHasContractInfo = selectedMachineContractStatus === "Ativo" || selectedMachineContractStatus === "Em negociação";
   const selectedMachineContractDays = daysUntil(selectedMachineContract?.support_contract_until);
   const selectedMachineDraftReports = [...(selectedMachine?.service_records ?? [])]
-    .filter(isServiceDraft)
+    .filter((record) => currentUserCanEmitReports && isServiceDraft(record) && record.created_by === currentUserId)
     .sort((a, b) => compareDate(b.updated_at, a.updated_at) || compareDate(b.service_date, a.service_date));
   const selectedMachineRecentHistory = finalizedServiceRecords(selectedMachine)
     .sort((a, b) => compareDate(b.service_date, a.service_date))
@@ -2944,7 +2961,8 @@ export default function Home() {
       return "Atendimento salvo e PDF gerado. Nenhum e-mail foi informado para envio.";
     }
 
-    const pdfBase64 = await servicePdfBase64(machine, record);
+    const pdfRecord = serviceRecordWithTechnicianRole(record, authorizedUsers);
+    const pdfBase64 = await servicePdfBase64(machine, pdfRecord);
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 20000);
     const response = await fetch("/api/send-service-email", {
@@ -2954,7 +2972,7 @@ export default function Home() {
       body: JSON.stringify({
         to: recipients,
         subject: "Relatório de atendimento - Máquina " + displayMachineCode(machine),
-        filename: servicePdfFileName(machine, record),
+        filename: servicePdfFileName(machine, pdfRecord),
         machineCode: displayMachineCode(machine),
         pdfBase64
       }),
@@ -2978,6 +2996,10 @@ export default function Home() {
     return "Atendimento salvo, PDF gerado, e-mail enviado para " + recipients.join("; ") + " e PDF salvo no SharePoint.";
   }
 
+  function pdfReadyServiceRecord(record: ServiceRecord) {
+    return serviceRecordWithTechnicianRole(record, authorizedUsers);
+  }
+
   async function syncServiceReportSharePoint(
     mode: "upload" | "archive",
     machine: Machine,
@@ -2992,7 +3014,7 @@ export default function Home() {
     };
 
     if (mode === "upload") {
-      payload.pdfBase64 = await servicePdfBase64(machine, record);
+      payload.pdfBase64 = await servicePdfBase64(machine, serviceRecordWithTechnicianRole(record, authorizedUsers));
     }
 
     const result = await appAction<{
@@ -3169,7 +3191,7 @@ export default function Home() {
 
     if (shouldOpenPreview) {
       try {
-        const pdfUrl = await servicePdfPreviewUrl(machine, record);
+        const pdfUrl = await servicePdfPreviewUrl(machine, pdfReadyServiceRecord(record));
         setServicePreview({ machineId: machine.id, record, recipients: previewRecipients ?? [], pdfUrl, finalizeOnSend: isFinalizeFlow || isServiceDraft(record) });
         setMessage("Atendimento salvo. Revise a previa do PDF antes do envio.");
       } catch (error) {
@@ -3180,6 +3202,10 @@ export default function Home() {
   }
 
   function startServiceEdit(record: ServiceRecord, preservedRecipients: string[] | null = null) {
+    if (!currentUserCanEmitReports) {
+      setMessage("Seu perfil nao tem permissao para alterar relatorios.");
+      return;
+    }
     if (record.created_by !== currentUserId) {
       setMessage("Este atendimento so pode ser alterado pelo usuario que lancou o registro.");
       return;
@@ -3205,7 +3231,7 @@ export default function Home() {
 
     try {
       setMessage("Preparando prévia do relatório.");
-      const pdfUrl = await servicePdfPreviewUrl(machine, record);
+      const pdfUrl = await servicePdfPreviewUrl(machine, pdfReadyServiceRecord(record));
       setServicePreview({
         machineId: machine.id,
         record,
@@ -3263,7 +3289,7 @@ export default function Home() {
   }
 
   async function deleteServiceRecord(record: ServiceRecord) {
-    if (!currentUserHasFullAccess && record.created_by !== currentUserId) {
+    if (!currentUserHasFullAccess && (!currentUserCanEmitReports || record.created_by !== currentUserId)) {
       setMessage("Este atendimento so pode ser excluido pelo autor ou por usuario com acesso total.");
       return;
     }
@@ -3858,6 +3884,8 @@ export default function Home() {
                 <div className="admin-info-list">
                   <div><span>Admin</span><strong>{authorizedUsers.filter((user) => user.role === "Admin").length}</strong></div>
                   <div><span>Diretoria</span><strong>{authorizedUsers.filter((user) => user.role === "Diretoria").length}</strong></div>
+                  <div><span>Montagens</span><strong>{authorizedUsers.filter((user) => isAssemblyRole(user.role)).length}</strong></div>
+                  <div><span>Controladoria</span><strong>{authorizedUsers.filter((user) => user.role === "Controladoria").length}</strong></div>
                   <div><span>Acesso Remoto</span><strong>{authorizedUsers.filter((user) => user.remote_access_allowed).length}</strong></div>
                   <div><span>Acesso a senhas</span><strong>{authorizedUsers.filter((user) => user.credential_access_allowed).length}</strong></div>
                   <div><span>Conversas</span><strong>{chatConversations.length}</strong></div>
@@ -4212,9 +4240,9 @@ export default function Home() {
             <section className="dashboard-card quick-actions-card">
               <div className="card-title"><DetailIcon type="mechanical" /><h3>Ações rápidas</h3></div>
               <div className="quick-action-grid">
-                <button type="button" onClick={startNewService}><PlusIcon /><span>Novo atendimento</span></button>
+                {currentUserCanEmitReports && <button type="button" onClick={startNewService}><PlusIcon /><span>Novo atendimento</span></button>}
                 {currentUserCanEditMachine && <button type="button" onClick={() => { setEditingMachineId(selectedMachine.id); setRegistryTab("machines"); setView("registry"); }}><EditIcon /><span>Alterar cadastro</span></button>}
-                <button type="button" onClick={() => selectedMachineRecentHistory[0] && downloadServicePdf(selectedMachine, selectedMachineRecentHistory[0])} disabled={!selectedMachineRecentHistory.length}><PdfDownloadIcon /><span>Baixar último PDF</span></button>
+                <button type="button" onClick={() => selectedMachineRecentHistory[0] && downloadServicePdf(selectedMachine, pdfReadyServiceRecord(selectedMachineRecentHistory[0]))} disabled={!selectedMachineRecentHistory.length}><PdfDownloadIcon /><span>Baixar último PDF</span></button>
               </div>
             </section>
 
@@ -4249,9 +4277,9 @@ export default function Home() {
                               {openActionMenu === `draft-service-${record.id}` && (
                                 <div className="row-menu floating-row-menu" style={actionMenuPosition ?? undefined}>
                                   <button type="button" onClick={() => { void openServiceDraftPreview(record); setOpenActionMenu(""); }}><PdfDownloadIcon /> Abrir prévia</button>
-                                  {record.created_by === currentUserId && <button type="button" onClick={() => { startServiceEdit(record); setOpenActionMenu(""); }}><EditIcon /> Editar</button>}
-                                  {record.created_by === currentUserId && <button type="button" onClick={() => { void openServiceDraftPreview(record); setOpenActionMenu(""); }}><DetailIcon type="mail" /> Finalizar</button>}
-                                  {(record.created_by === currentUserId || currentUserHasFullAccess) && <button className="danger" type="button" onClick={() => { void deleteServiceRecord(record); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>}
+                                  {currentUserCanEmitReports && record.created_by === currentUserId && <button type="button" onClick={() => { startServiceEdit(record); setOpenActionMenu(""); }}><EditIcon /> Editar</button>}
+                                  {currentUserCanEmitReports && record.created_by === currentUserId && <button type="button" onClick={() => { void openServiceDraftPreview(record); setOpenActionMenu(""); }}><DetailIcon type="mail" /> Finalizar</button>}
+                                  {(currentUserHasFullAccess || (currentUserCanEmitReports && record.created_by === currentUserId)) && <button className="danger" type="button" onClick={() => { void deleteServiceRecord(record); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>}
                                 </div>
                               )}
                             </div>
@@ -4288,9 +4316,9 @@ export default function Home() {
                             <button className="icon-button menu-trigger" type="button" title="Ações" aria-label="Ações do atendimento" onClick={(event) => toggleActionMenu(`service-${record.id}`, event)}><MoreIcon /></button>
                             {openActionMenu === `service-${record.id}` && (
                               <div className="row-menu floating-row-menu" style={actionMenuPosition ?? undefined}>
-                                <button type="button" onClick={() => { downloadServicePdf(selectedMachine, record); setOpenActionMenu(""); }}><PdfDownloadIcon /> Baixar PDF</button>
-                                {record.created_by === currentUserId && <button type="button" onClick={() => { startServiceEdit(record); setOpenActionMenu(""); }}><EditIcon /> Editar</button>}
-                                {(record.created_by === currentUserId || currentUserHasFullAccess) && <button className="danger" type="button" onClick={() => { void deleteServiceRecord(record); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>}
+                                <button type="button" onClick={() => { downloadServicePdf(selectedMachine, pdfReadyServiceRecord(record)); setOpenActionMenu(""); }}><PdfDownloadIcon /> Baixar PDF</button>
+                                {currentUserCanEmitReports && record.created_by === currentUserId && <button type="button" onClick={() => { startServiceEdit(record); setOpenActionMenu(""); }}><EditIcon /> Editar</button>}
+                                {(currentUserHasFullAccess || (currentUserCanEmitReports && record.created_by === currentUserId)) && <button className="danger" type="button" onClick={() => { void deleteServiceRecord(record); setOpenActionMenu(""); }}><TrashIcon /> Excluir</button>}
                               </div>
                             )}
                           </div>
@@ -4624,6 +4652,7 @@ export default function Home() {
                     <label>E-mail<input value={userForm.email} onChange={(event) => setUserForm((current) => ({ ...current, email: event.target.value }))} type="email" /></label>
                     <label>Telefone<input value={formatPhone(userForm.phone)} onChange={(event) => setUserForm((current) => ({ ...current, phone: formatPhone(event.target.value) }))} placeholder="(45) 99952-6775" inputMode="tel" maxLength={15} /></label>
                     <label>Perfil / Setor<select value={userForm.role} onChange={(event) => setUserForm((current) => ({ ...current, role: event.target.value as UserRole }))}>
+                      {userForm.role === "Montagem" && <option value="Montagem">Montagem (legado)</option>}
                       {USER_ROLE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                     </select></label>
                     <label className="checkbox-field"><input type="checkbox" checked={userForm.remote_access_allowed} onChange={(event) => setUserForm((current) => ({ ...current, remote_access_allowed: event.target.checked }))} /> Permitir Acesso Remoto</label>
@@ -4730,7 +4759,7 @@ export default function Home() {
               </div>
               <div className="pdf-preview-meta">
                 <span><strong>M&aacute;quina:</strong> {displayMachineCode(previewMachine)}</span>
-                <span><strong>Arquivo:</strong> {servicePdfFileName(previewMachine, servicePreview.record)}</span>
+                <span><strong>Arquivo:</strong> {servicePdfFileName(previewMachine, pdfReadyServiceRecord(servicePreview.record))}</span>
                 <span><strong>Envio:</strong> {servicePreview.recipients.length ? servicePreview.recipients.join("; ") : "Nenhum e-mail informado"}</span>
               </div>
               <iframe className="pdf-preview-frame" src={`${servicePreview.pdfUrl}#toolbar=0&navpanes=0&scrollbar=1`} title="Pr&eacute;via do relat&oacute;rio em PDF" />
@@ -4741,7 +4770,7 @@ export default function Home() {
               </div>
               <div className="modal-actions">
                 <button className="button ghost" type="button" onClick={() => editServiceFromPreview(servicePreview.record)}>Editar</button>
-                <button className="button ghost" type="button" onClick={() => downloadServicePdf(previewMachine, servicePreview.record)}>Baixar PDF</button>
+                <button className="button ghost" type="button" onClick={() => downloadServicePdf(previewMachine, pdfReadyServiceRecord(servicePreview.record))}>Baixar PDF</button>
                 <button className="button primary" type="button" disabled={servicePreviewSending} onClick={() => void sendPreviewServiceEmail()}>{servicePreviewSending ? "Enviando..." : servicePreview.finalizeOnSend ? servicePreview.recipients.length ? "Finalizar e enviar e-mail" : "Finalizar atendimento" : "Enviar e-mail"}</button>
               </div>
             </section>
@@ -4790,11 +4819,11 @@ export default function Home() {
                 )}
               </div>
               <div className="modal-actions">
-                <button className="icon-button download" type="button" title="Baixar PDF" aria-label="Baixar PDF" onClick={() => downloadServicePdf(selectedMachine, selectedServiceRecord)}><PdfDownloadIcon /></button>
-                {selectedServiceRecord.created_by === currentUserId && (
+                <button className="icon-button download" type="button" title="Baixar PDF" aria-label="Baixar PDF" onClick={() => downloadServicePdf(selectedMachine, pdfReadyServiceRecord(selectedServiceRecord))}><PdfDownloadIcon /></button>
+                {currentUserCanEmitReports && selectedServiceRecord.created_by === currentUserId && (
                   <button className="button primary" type="button" onClick={() => startServiceEdit(selectedServiceRecord)}>Editar atendimento</button>
                 )}
-                {(currentUserHasFullAccess || selectedServiceRecord.created_by === currentUserId) && (
+                {(currentUserHasFullAccess || (currentUserCanEmitReports && selectedServiceRecord.created_by === currentUserId)) && (
                   <button className="button danger" type="button" onClick={() => void deleteServiceRecord(selectedServiceRecord)}>Excluir atendimento</button>
                 )}
               </div>
