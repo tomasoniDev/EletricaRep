@@ -185,9 +185,15 @@ function imageToDataUrl(path: string) {
 }
 
 async function drawLogo(doc: jsPDF) {
-  const logo = await imageToDataUrl("/tomasoni-logo-reference.png");
+  const logo = await imageToDataUrl("/tomasoni-logo-transparent.png");
   if (logo) {
-    doc.addImage(logo, "PNG", MARGIN, 72, 170, 52);
+    const maxWidth = 170;
+    const maxHeight = 52;
+    const properties = doc.getImageProperties(logo);
+    const ratio = Math.min(maxWidth / properties.width, maxHeight / properties.height);
+    const logoWidth = properties.width * ratio;
+    const logoHeight = properties.height * ratio;
+    doc.addImage(logo, "PNG", MARGIN, 72 + (maxHeight - logoHeight) / 2, logoWidth, logoHeight);
     return;
   }
 
