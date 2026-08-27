@@ -3556,7 +3556,7 @@ export default function Home() {
     return (
       <main className="login-page">
         <section className="login-card">
-          <Image className="login-logo" src="/tomasoni-logo-transparent.png" alt="Tomasoni" width={300} height={80} priority />
+          <Image className="login-logo" src="/tomasoni-logo-clean.png?v=20260827-transparent" alt="Tomasoni" width={300} height={80} priority />
           <h1>Confirmar acesso</h1>
           <p>Use a biometria deste dispositivo para abrir o app. A renovação de acesso por e-mail continua sendo solicitada a cada 7 dias.</p>
           <button className="button primary" type="button" onClick={() => void confirmBiometricAccess()}>Confirmar por biometria</button>
@@ -3571,7 +3571,7 @@ export default function Home() {
     return (
       <main className="login-page">
         <form className="login-card" onSubmit={signIn}>
-          <Image className="login-logo" src="/tomasoni-logo-transparent.png" alt="Tomasoni" width={300} height={80} priority />
+          <Image className="login-logo" src="/tomasoni-logo-clean.png?v=20260827-transparent" alt="Tomasoni" width={300} height={80} priority />
           <label>
             E-mail corporativo
             <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder={`nome@${ALLOWED_EMAIL_DOMAINS[0]}`} required disabled={otpSent} />
@@ -3593,7 +3593,7 @@ export default function Home() {
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <div className="brand"><Image src="/tomasoni-logo-transparent.png" alt="Tomasoni" width={220} height={59} priority /></div>
+        <div className="brand"><Image src="/tomasoni-logo-clean.png?v=20260827-transparent" alt="Tomasoni" width={220} height={59} priority /></div>
         <nav className="side-nav">
           <button className={`nav-item ${view === "home" ? "active" : ""}`} onClick={() => setView("home")}>Tela inicial</button>
           <button className={`nav-item ${view === "overview" ? "active" : ""}`} onClick={() => setView("overview")}>Visão geral</button>

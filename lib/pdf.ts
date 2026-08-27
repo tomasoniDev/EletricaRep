@@ -185,7 +185,7 @@ function imageToDataUrl(path: string) {
 }
 
 async function drawLogo(doc: jsPDF) {
-  const logo = await imageToDataUrl("/tomasoni-logo-transparent.png");
+  const logo = await imageToDataUrl("/tomasoni-logo-clean.png?v=20260827-transparent");
   if (logo) {
     const maxWidth = 170;
     const maxHeight = 52;

@@ -1,6 +1,5 @@
 <svg width="920" height="220" viewBox="0 0 920 220" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
   <title id="title">Tomasoni</title>
-  <rect width="920" height="220" fill="white"/>
   <g fill="#1268D8">
     <path d="M43 78H190L178 108H129V154H93V108H31L43 78Z"/>
     <path d="M195 78H330C364 78 381 91 381 116C381 142 360 154 321 154H185C151 154 134 141 134 116C134 91 154 78 195 78ZM206 108C184 108 173 111 173 117C173 123 182 126 201 126H317C335 126 344 123 344 117C344 111 336 108 321 108H206Z"/>
