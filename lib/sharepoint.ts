@@ -32,6 +32,8 @@ const clientSecret = process.env.MS_GRAPH_CLIENT_SECRET;
 const sharePointSiteUrl = process.env.SHAREPOINT_SITE_URL;
 const sharePointDriveName = process.env.SHAREPOINT_DRIVE_NAME ?? "Máquinas";
 const sharePointBasePath = normalizeSharePointPath(process.env.SHAREPOINT_BASE_PATH ?? "");
+const sharePointBackupDriveName = process.env.SHAREPOINT_BACKUP_DRIVE_NAME ?? "Backups";
+const sharePointBackupBasePath = normalizeSharePointPath(process.env.SHAREPOINT_BACKUP_BASE_PATH ?? "");
 
 export function isSharePointConfigured() {
   return Boolean(tenantId && clientId && clientSecret && sharePointSiteUrl);
@@ -120,16 +122,16 @@ async function getSharePointSite() {
   return graphRequest<GraphSite>(`/sites/${url.hostname}:${sitePath}`);
 }
 
-async function getSharePointDrive(siteId: string) {
-  if (!sharePointDriveName.trim()) {
+async function getSharePointDrive(siteId: string, driveName = sharePointDriveName) {
+  if (!driveName.trim()) {
     return graphRequest<GraphDrive>(`/sites/${siteId}/drive`);
   }
 
   const data = await graphRequest<{ value?: GraphDrive[] }>(`/sites/${siteId}/drives`);
-  const normalizedTarget = sharePointDriveName.trim().toLowerCase();
+  const normalizedTarget = driveName.trim().toLowerCase();
   const drive = data.value?.find((item) => item.name.trim().toLowerCase() === normalizedTarget);
   if (!drive) {
-    throw new Error(`Biblioteca do SharePoint não encontrada: ${sharePointDriveName}.`);
+    throw new Error(`Biblioteca do SharePoint não encontrada: ${driveName}.`);
   }
 
   return drive;
@@ -164,9 +166,9 @@ async function ensureFolder(driveId: string, folderPath: string) {
   }
 }
 
-async function uploadFile(folderPath: string, filename: string, content: Buffer, contentType: string) {
+async function uploadFile(folderPath: string, filename: string, content: Buffer, contentType: string, driveName = sharePointDriveName) {
   const site = await getSharePointSite();
-  const drive = await getSharePointDrive(site.id);
+  const drive = await getSharePointDrive(site.id, driveName);
   const normalizedFolder = normalizeSharePointPath(folderPath);
   await ensureFolder(drive.id, normalizedFolder);
   const filePath = encodePath(`${normalizedFolder}/${safePathSegment(filename, "arquivo")}`);
@@ -322,10 +324,11 @@ export async function backupOperationalDataToSharePoint(admin: SupabaseClient) {
   const data = await loadOperationalBackupData(admin);
   const workbook = createOperationalBackupWorkbook(data);
   const uploaded = await uploadFile(
-    `${sharePointBasePath}/Backup`,
+    `${sharePointBackupBasePath}/Backup`,
     "backup-cadastros-hub-tomasoni.xls",
     workbook,
-    "application/vnd.ms-excel; charset=utf-8"
+    "application/vnd.ms-excel; charset=utf-8",
+    sharePointBackupDriveName
   );
 
   return { skipped: false, item: uploaded };
